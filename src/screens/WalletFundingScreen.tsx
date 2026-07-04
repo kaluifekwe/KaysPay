@@ -1,0 +1,419 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  ScrollView,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
+import { Colors } from '../constants/colors';
+import { Typography } from '../constants/typography';
+import { Spacing } from '../constants/spacing';
+import { formatNaira } from '../utils/formatCurrency';
+import { walletService } from '../services/wallet.service';
+import { virtualAccountService, VirtualAccount } from '../services/virtualAccount.service';
+import { supabase } from '../lib/supabase';
+
+const QUICK_AMOUNTS = [500, 1000, 2000, 5000, 10000, 20000];
+
+// Dedicated Virtual Accounts are not yet approved for live mode on our
+// Paystack account. Flip this back on once live DVA is approved.
+const DVA_LIVE_ENABLED = false;
+
+const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+  const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
+  const [customAmount, setCustomAmount] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [balance, setBalance] = useState(0);
+  const [account, setAccount] = useState<VirtualAccount | null>(null);
+  const [accountLoading, setAccountLoading] = useState(false);
+
+  const fetchBalance = useCallback(async () => {
+    try {
+      const result = await walletService.getWallet();
+      setBalance(result.wallet?.balance ?? 0);
+    } catch (error) {
+      console.error('Failed to fetch balance', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBalance();
+    if (DVA_LIVE_ENABLED) {
+      virtualAccountService.getMine().then(setAccount);
+    }
+  }, [fetchBalance]);
+
+  const handleGetAccount = async () => {
+    setAccountLoading(true);
+    const res = await virtualAccountService.create();
+    setAccountLoading(false);
+    if (res.success && res.account) {
+      setAccount(res.account);
+    } else {
+      Alert.alert('Bank Transfer', res.error || 'Could not set up your account number.');
+    }
+  };
+
+  const getAmount = (): number => {
+    if (selectedAmount) return selectedAmount;
+    const parsed = parseFloat(customAmount);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
+  const handleQuickAmount = (amount: number) => {
+    setSelectedAmount(amount);
+    setCustomAmount('');
+  };
+
+  const handleCustomAmountChange = (text: string) => {
+    const cleaned = text.replace(/[^0-9.]/g, '');
+    setCustomAmount(cleaned);
+    setSelectedAmount(null);
+  };
+
+  const handleFundWallet = async () => {
+    const amount = getAmount();
+    if (amount <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter or select a valid amount.');
+      return;
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || !user.email) {
+        Alert.alert('Error', 'Please log in to fund your wallet.');
+        return;
+      }
+
+      navigation.navigate('PaystackCheckout', {
+        amount,
+        email: user.email,
+      });
+    } catch (error) {
+      Alert.alert('Error', 'Something went wrong. Please try again.');
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.container}>
+          <View style={styles.header}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+            >
+              <Text style={styles.backText}>{'<'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.title}>Fund Wallet</Text>
+
+            <View style={styles.balanceCard}>
+              <Text style={styles.balanceLabel}>Current Balance</Text>
+              <Text style={styles.balanceAmount}>{formatNaira(balance)}</Text>
+            </View>
+
+            <Text style={styles.sectionTitle}>Quick Amounts</Text>
+            <View style={styles.quickAmountsGrid}>
+              {QUICK_AMOUNTS.map((amount) => (
+                <TouchableOpacity
+                  key={amount}
+                  style={[
+                    styles.quickAmountButton,
+                    selectedAmount === amount && styles.quickAmountSelected,
+                  ]}
+                  onPress={() => handleQuickAmount(amount)}
+                >
+                  <Text
+                    style={[
+                      styles.quickAmountText,
+                      selectedAmount === amount && styles.quickAmountTextSelected,
+                    ]}
+                  >
+                    {formatNaira(amount)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.sectionTitle}>Custom Amount</Text>
+            <View style={styles.inputContainer}>
+              <Text style={styles.currencySymbol}>₦</Text>
+              <TextInput
+                style={styles.input}
+                value={customAmount}
+                onChangeText={handleCustomAmountChange}
+                placeholder="Enter amount"
+                placeholderTextColor={Colors.GRAY}
+                keyboardType="numeric"
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.fundButton,
+                getAmount() <= 0 && styles.fundButtonDisabled,
+              ]}
+              onPress={handleFundWallet}
+              disabled={getAmount() <= 0}
+            >
+              <Text style={styles.fundButtonText}>Fund with Paystack</Text>
+            </TouchableOpacity>
+
+            {DVA_LIVE_ENABLED && (
+              <>
+                <View style={styles.dividerRow}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>OR</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+
+                <Text style={styles.sectionTitle}>Fund by Bank Transfer</Text>
+                {account ? (
+                  <View style={styles.transferCard}>
+                    <Text style={styles.transferHint}>
+                      Transfer any amount to this account. Your wallet is credited automatically.
+                    </Text>
+                    <View style={styles.transferRow}>
+                      <Text style={styles.transferLabel}>Bank</Text>
+                      <Text style={styles.transferValue}>{account.bank_name}</Text>
+                    </View>
+                    <View style={styles.transferRow}>
+                      <Text style={styles.transferLabel}>Account Number</Text>
+                      <Text style={styles.transferAccount} selectable>
+                        {account.account_number}
+                      </Text>
+                    </View>
+                    <View style={styles.transferRow}>
+                      <Text style={styles.transferLabel}>Account Name</Text>
+                      <Text style={styles.transferValue}>{account.account_name}</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.transferButton}
+                    onPress={handleGetAccount}
+                    disabled={accountLoading}
+                  >
+                    {accountLoading ? (
+                      <ActivityIndicator color={Colors.GREEN} />
+                    ) : (
+                      <Text style={styles.transferButtonText}>Get my account number</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: Colors.WHITE,
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  container: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.SCREEN_PADDING,
+    paddingTop: Spacing.S,
+    paddingBottom: Spacing.XS,
+  },
+  backButton: {
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  backText: {
+    fontSize: 28,
+    fontWeight: '600',
+    color: Colors.DARK,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: Spacing.SCREEN_PADDING,
+    paddingBottom: Spacing.XL,
+  },
+  title: {
+    ...Typography.SCREEN_TITLE,
+    marginTop: Spacing.S,
+    marginBottom: Spacing.L,
+  },
+  balanceCard: {
+    backgroundColor: Colors.GREEN,
+    borderRadius: 12,
+    paddingHorizontal: Spacing.L,
+    paddingVertical: Spacing.XL,
+    marginBottom: Spacing.L,
+  },
+  balanceLabel: {
+    ...Typography.CAPTION,
+    color: Colors.WHITE_80,
+    marginBottom: Spacing.S,
+  },
+  balanceAmount: {
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 32,
+    color: Colors.WHITE,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: Spacing.L,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.BORDER,
+  },
+  dividerText: {
+    ...Typography.CAPTION,
+    color: Colors.GRAY,
+    marginHorizontal: Spacing.M,
+  },
+  transferButton: {
+    height: Spacing.BUTTON_HEIGHT_PRIMARY,
+    borderRadius: Spacing.BUTTON_RADIUS,
+    borderWidth: 1,
+    borderColor: Colors.GREEN,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  transferButtonText: {
+    ...Typography.BUTTON_TEXT,
+    color: Colors.GREEN,
+  },
+  transferCard: {
+    backgroundColor: Colors.LIGHT_GRAY,
+    borderRadius: 12,
+    padding: Spacing.L,
+  },
+  transferHint: {
+    ...Typography.CAPTION,
+    color: Colors.GRAY,
+    marginBottom: Spacing.M,
+  },
+  transferRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.S,
+  },
+  transferLabel: {
+    ...Typography.BODY,
+    color: Colors.GRAY,
+  },
+  transferValue: {
+    ...Typography.BODY,
+    color: Colors.DARK,
+    fontWeight: '600',
+    flexShrink: 1,
+    textAlign: 'right',
+    marginLeft: Spacing.M,
+  },
+  transferAccount: {
+    ...Typography.HEADING,
+    color: Colors.GREEN,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  sectionTitle: {
+    ...Typography.SECTION_HEADING,
+    marginBottom: Spacing.M,
+  },
+  quickAmountsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.S,
+    marginBottom: Spacing.L,
+  },
+  quickAmountButton: {
+    width: '30%',
+    paddingVertical: Spacing.M,
+    borderRadius: Spacing.BUTTON_RADIUS,
+    borderWidth: Spacing.INPUT_BORDER_WIDTH,
+    borderColor: Colors.BORDER,
+    alignItems: 'center',
+    backgroundColor: Colors.WHITE,
+  },
+  quickAmountSelected: {
+    backgroundColor: Colors.GREEN_LIGHT,
+    borderColor: Colors.GREEN,
+  },
+  quickAmountText: {
+    ...Typography.BODY,
+    fontWeight: '600',
+    color: Colors.DARK,
+  },
+  quickAmountTextSelected: {
+    color: Colors.GREEN_DARK,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: Spacing.INPUT_BORDER_WIDTH,
+    borderColor: Colors.BORDER,
+    borderRadius: Spacing.BUTTON_RADIUS,
+    height: Spacing.INPUT_HEIGHT,
+    paddingHorizontal: Spacing.M,
+    marginBottom: Spacing.L,
+    backgroundColor: Colors.WHITE,
+  },
+  currencySymbol: {
+    ...Typography.BODY,
+    color: Colors.GRAY,
+    marginRight: Spacing.S,
+  },
+  input: {
+    flex: 1,
+    ...Typography.BODY,
+    color: Colors.DARK,
+    height: '100%',
+  },
+  fundButton: {
+    backgroundColor: Colors.GREEN,
+    height: Spacing.BUTTON_HEIGHT_PRIMARY,
+    borderRadius: Spacing.BUTTON_RADIUS,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.M,
+  },
+  fundButtonDisabled: {
+    opacity: 0.5,
+  },
+  fundButtonText: {
+    ...Typography.BUTTON_TEXT,
+    color: Colors.WHITE,
+  },
+});
+
+export default WalletFundingScreen;

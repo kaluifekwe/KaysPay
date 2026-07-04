@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "KaysPay",
+    "slug": "KaysPay",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.KaysPay",
+      "permissions": [
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/cf76d478-2ceb-4f07-8e52-9864d94437fa"
+    },
+    "plugins": [
+      "expo-asset",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow Kay's Pay to access your contacts so you can send airtime and data without typing numbers."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "cf76d478-2ceb-4f07-8e52-9864d94437fa"
+      }
+    },
+    "owner": "ifekwe"
+  }
+}

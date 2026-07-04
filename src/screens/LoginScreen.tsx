@@ -1,0 +1,428 @@
+import React, { useState, useRef } from 'react';
+import {
+  View,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Alert,
+} from 'react-native';
+import { authService } from '../services/auth.service';
+
+const BRAND_GREEN = '#1A5C3A';
+const DARK_TEXT = '#0F1A14';
+const GRAY_TEXT = '#6B7280';
+const LABEL_COLOR = '#374151';
+const BORDER_COLOR = '#E5E7EB';
+const ERROR_RED = '#DC2626';
+const WHITE = '#FFFFFF';
+const SCREEN_BG = '#F8FAF9';
+const FOCUS_BG = '#FAFFFE';
+const BACK_BTN_BG = '#F3F4F6';
+
+interface LoginScreenProps {
+  navigation: any;
+}
+
+export default function LoginScreen({ navigation }: LoginScreenProps) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
+
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [emailValid, setEmailValid] = useState(false);
+  const [passwordValid, setPasswordValid] = useState(false);
+
+  const passwordRef = useRef<TextInput>(null);
+  const scrollRef = useRef<ScrollView>(null);
+
+  const validateEmailField = (value: string) => {
+    if (!value.trim()) {
+      setEmailError('');
+      setEmailValid(false);
+      return false;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(value)) {
+      setEmailError('Please enter a valid email address');
+      setEmailValid(false);
+      return false;
+    }
+    setEmailError('');
+    setEmailValid(true);
+    return true;
+  };
+
+  const validatePasswordField = (value: string) => {
+    if (!value) {
+      setPasswordError('');
+      setPasswordValid(false);
+      return false;
+    }
+    if (value.length < 6) {
+      setPasswordError('Password must be at least 6 characters');
+      setPasswordValid(false);
+      return false;
+    }
+    setPasswordError('');
+    setPasswordValid(true);
+    return true;
+  };
+
+  const isFormValid = emailValid && passwordValid;
+
+  const handleLogin = async () => {
+    const emailOk = validateEmailField(email);
+    const passwordOk = validatePasswordField(password);
+
+    if (!emailOk || !passwordOk) return;
+
+    setLoading(true);
+    try {
+      const result = await authService.signInWithEmail(email.trim().toLowerCase(), password);
+
+      if (!result.success) {
+        Alert.alert('Login Failed', result.error || 'Invalid email or password. Please try again.');
+        return;
+      }
+
+      // No manual navigation here — AppNavigator's root-level auth listener
+      // detects the new session and routes to Main (or the mandatory PIN
+      // setup gate, if this account somehow doesn't have one yet) on its own.
+    } catch (error: any) {
+      Alert.alert('Login Failed', error.message || 'Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getFieldStyle = (hasError: boolean, isFocused: boolean) => {
+    if (hasError) return styles.inputError;
+    if (isFocused) return styles.inputFocused;
+    return null;
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            activeOpacity={0.7}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={styles.backArrow}>‹</Text>
+          </TouchableOpacity>
+          <Text style={styles.title}>Welcome Back</Text>
+          <Text style={styles.subtitle}>Sign in to your account</Text>
+        </View>
+
+        <ScrollView
+          ref={scrollRef}
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.formCard}>
+            {/* Email */}
+            <View style={styles.fieldContainer}>
+              <Text style={styles.label}>
+                Email Address<Text style={styles.required}> *</Text>
+              </Text>
+              <View style={[styles.inputWrapper, getFieldStyle(!!emailError, focusedField === 'email')]}>
+                <Text style={styles.fieldIcon}>✉</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="example@gmail.com"
+                  placeholderTextColor="#9CA3AF"
+                  value={email}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    validateEmailField(text);
+                  }}
+                  onFocus={() => setFocusedField('email')}
+                  onBlur={() => setFocusedField(null)}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="next"
+                  onSubmitEditing={() => passwordRef.current?.focus()}
+                />
+                {email.length > 0 && !emailError && (
+                  <Text style={styles.validIcon}>✓</Text>
+                )}
+                {emailError ? <Text style={styles.errorIcon}>×</Text> : null}
+              </View>
+              {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
+            </View>
+
+            {/* Password */}
+            <View style={styles.fieldContainer}>
+              <Text style={styles.label}>
+                Password<Text style={styles.required}> *</Text>
+              </Text>
+              <View style={[styles.inputWrapper, getFieldStyle(!!passwordError, focusedField === 'password')]}>
+                <Text style={styles.fieldIcon}>🔒</Text>
+                <TextInput
+                  ref={passwordRef}
+                  style={styles.input}
+                  placeholder="Enter your password"
+                  placeholderTextColor="#9CA3AF"
+                  value={password}
+                  onChangeText={(text) => {
+                    setPassword(text);
+                    validatePasswordField(text);
+                  }}
+                  onFocus={() => setFocusedField('password')}
+                  onBlur={() => setFocusedField(null)}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="done"
+                  onSubmitEditing={handleLogin}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  activeOpacity={0.7}
+                  style={styles.eyeButton}
+                >
+                  <Text style={styles.eyeIcon}>{showPassword ? '👁' : '👁‍🗨'}</Text>
+                </TouchableOpacity>
+              </View>
+              {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
+            </View>
+          </View>
+
+          {/* Login Button */}
+          <TouchableOpacity
+            style={[styles.loginButton, (!isFormValid || loading) && styles.loginButtonDisabled]}
+            onPress={handleLogin}
+            disabled={!isFormValid || loading}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.loginButtonText}>
+              {loading ? 'Signing in...' : 'Login'}
+            </Text>
+            {!loading && <Text style={styles.loginButtonArrow}>→</Text>}
+          </TouchableOpacity>
+
+          {/* Forgot Password */}
+          <TouchableOpacity
+            style={styles.forgotLink}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.forgotText}>Forgot password?</Text>
+          </TouchableOpacity>
+
+          {/* Sign Up Link */}
+          <TouchableOpacity
+            style={styles.signupLink}
+            onPress={() => navigation.navigate('Registration')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.signupLinkText}>
+              Don't have an account? <Text style={styles.signupLinkBold}>Sign Up</Text>
+            </Text>
+          </TouchableOpacity>
+
+          {/* Terms */}
+          <Text style={styles.terms}>
+            By logging in, you agree to our{' '}
+            <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
+            <Text style={styles.termsLink}>Privacy Policy</Text>.
+          </Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: SCREEN_BG,
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 16,
+    zIndex: 10,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: BACK_BTN_BG,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  backArrow: {
+    fontSize: 22,
+    color: DARK_TEXT,
+    fontWeight: '600',
+  },
+  title: {
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 26,
+    color: DARK_TEXT,
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: GRAY_TEXT,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 40,
+  },
+  formCard: {
+    backgroundColor: WHITE,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  fieldContainer: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 13,
+    color: LABEL_COLOR,
+    fontWeight: '500',
+    marginBottom: 6,
+  },
+  required: {
+    color: ERROR_RED,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 56,
+    borderWidth: 1.5,
+    borderColor: BORDER_COLOR,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    backgroundColor: WHITE,
+  },
+  inputFocused: {
+    borderColor: BRAND_GREEN,
+    backgroundColor: FOCUS_BG,
+    borderWidth: 2,
+  },
+  inputError: {
+    borderColor: ERROR_RED,
+  },
+  fieldIcon: {
+    fontSize: 18,
+    marginRight: 10,
+    opacity: 0.5,
+  },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    color: DARK_TEXT,
+    padding: 0,
+  },
+  validIcon: {
+    fontSize: 18,
+    color: BRAND_GREEN,
+    fontWeight: '700',
+    marginLeft: 8,
+  },
+  errorIcon: {
+    fontSize: 18,
+    color: ERROR_RED,
+    fontWeight: '700',
+    marginLeft: 8,
+  },
+  errorText: {
+    fontSize: 11,
+    color: ERROR_RED,
+    marginTop: 6,
+    marginLeft: 4,
+  },
+  eyeButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  eyeIcon: {
+    fontSize: 18,
+  },
+  loginButton: {
+    height: 56,
+    backgroundColor: BRAND_GREEN,
+    borderRadius: 14,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  loginButtonDisabled: {
+    opacity: 0.6,
+  },
+  loginButtonText: {
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 16,
+    color: WHITE,
+  },
+  loginButtonArrow: {
+    fontSize: 18,
+    color: WHITE,
+    marginLeft: 8,
+  },
+  forgotLink: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  forgotText: {
+    fontSize: 14,
+    color: BRAND_GREEN,
+    fontWeight: '600',
+  },
+  signupLink: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  signupLinkText: {
+    fontSize: 14,
+    color: GRAY_TEXT,
+  },
+  signupLinkBold: {
+    color: BRAND_GREEN,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+  terms: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  termsLink: {
+    color: BRAND_GREEN,
+    fontWeight: '600',
+  },
+});
