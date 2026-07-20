@@ -4,16 +4,14 @@ import { adminClient } from "./auth.ts";
 // rate-limited to 3 requests/minute to fetch, so it's cached (same pattern
 // as VTU.ng's JWT cache) rather than fetched per-request.
 //
-// Environment is chosen by the AIRALO_ENV secret and defaults to SANDBOX:
-// production is only ever reached when AIRALO_ENV is explicitly "production",
-// so a missing/typo'd value fails safe (test eSIMs, no real money) instead of
-// silently charging real orders. Sandbox and production use SEPARATE
-// credentials — set AIRALO_CLIENT_ID/SECRET to match whichever env is active.
-const AIRALO_ENV = (Deno.env.get("AIRALO_ENV") || "sandbox").toLowerCase();
-const AIRALO_BASE_URL =
-  AIRALO_ENV === "production"
-    ? "https://partners-api.airalo.com"
-    : "https://sandbox-partners-api.airalo.com";
+// Airalo uses ONE base URL for both sandbox and production — there is no
+// separate sandbox host (confirmed at developers.partners.airalo.com). Which
+// mode you get is decided entirely by the CREDENTIALS configured: sandbox
+// client_id/secret => sandbox mode (test eSIMs, no real charge); production
+// client_id/secret => real orders. So "going live" is purely swapping
+// AIRALO_CLIENT_ID/SECRET to the production pair — no code or URL change, and
+// there is no AIRALO_ENV switch.
+const AIRALO_BASE_URL = "https://partners-api.airalo.com";
 const AIRALO_CLIENT_ID = Deno.env.get("AIRALO_CLIENT_ID");
 const AIRALO_CLIENT_SECRET = Deno.env.get("AIRALO_CLIENT_SECRET");
 
