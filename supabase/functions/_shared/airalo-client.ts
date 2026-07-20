@@ -3,7 +3,17 @@ import { adminClient } from "./auth.ts";
 // Airalo Partner API — OAuth2 client_credentials. Token is valid ~24h and
 // rate-limited to 3 requests/minute to fetch, so it's cached (same pattern
 // as VTU.ng's JWT cache) rather than fetched per-request.
-const AIRALO_BASE_URL = "https://partners-api.airalo.com";
+//
+// Environment is chosen by the AIRALO_ENV secret and defaults to SANDBOX:
+// production is only ever reached when AIRALO_ENV is explicitly "production",
+// so a missing/typo'd value fails safe (test eSIMs, no real money) instead of
+// silently charging real orders. Sandbox and production use SEPARATE
+// credentials — set AIRALO_CLIENT_ID/SECRET to match whichever env is active.
+const AIRALO_ENV = (Deno.env.get("AIRALO_ENV") || "sandbox").toLowerCase();
+const AIRALO_BASE_URL =
+  AIRALO_ENV === "production"
+    ? "https://partners-api.airalo.com"
+    : "https://sandbox-partners-api.airalo.com";
 const AIRALO_CLIENT_ID = Deno.env.get("AIRALO_CLIENT_ID");
 const AIRALO_CLIENT_SECRET = Deno.env.get("AIRALO_CLIENT_SECRET");
 
