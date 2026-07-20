@@ -36,7 +36,6 @@ const TRANSACTION_LABELS: Record<string, string> = {
   exam_pin: 'Exam Pin',
   foreign_number: 'Foreign Number',
   card_fund: 'Card Funding',
-  payroll: 'Payroll',
   withdrawal: 'Withdrawal',
   esim: 'eSIM',
   nin_verification: 'NIN Verification',

@@ -5,7 +5,6 @@ import AuthNavigator from './AuthNavigator';
 import RequireEmailVerifyNavigator from './RequireEmailVerifyNavigator';
 import RequirePinNavigator from './RequirePinNavigator';
 import TabNavigator from './TabNavigator';
-import { Features } from '../constants/features';
 import AirtimeScreen from '../screens/AirtimeScreen';
 import DataScreen from '../screens/DataScreen';
 import BulkSendReviewScreen from '../screens/BulkSendReviewScreen';
@@ -13,8 +12,6 @@ import BillsScreen from '../screens/BillsScreen';
 import ElectricityPayScreen from '../screens/ElectricityPayScreen';
 import ExamPinsScreen from '../screens/ExamPinsScreen';
 import TVScreen from '../screens/TVScreen';
-import BettingScreen from '../screens/BettingScreen';
-import BettingFundScreen from '../screens/BettingFundScreen';
 import NinServicesScreen from '../screens/NinServicesScreen';
 import TravelEsimScreen from '../screens/TravelEsimScreen';
 import WalletFundingScreen from '../screens/WalletFundingScreen';
@@ -24,7 +21,6 @@ import BankListScreen from '../screens/BankListScreen';
 import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
 import ForeignNumbersScreen from '../screens/ForeignNumbersScreen';
 import DollarCardsScreen from '../screens/DollarCardsScreen';
-import PayrollScreen from '../screens/PayrollScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
@@ -50,12 +46,6 @@ function MainStackScreen() {
       <MainStack.Screen name="ElectricityPay" component={ElectricityPayScreen} />
       <MainStack.Screen name="ExamPins" component={ExamPinsScreen} />
       <MainStack.Screen name="TV" component={TVScreen} />
-      {Features.BETTING_ENABLED && (
-        <MainStack.Screen name="Betting" component={BettingScreen} />
-      )}
-      {Features.BETTING_ENABLED && (
-        <MainStack.Screen name="BettingFund" component={BettingFundScreen} />
-      )}
       <MainStack.Screen name="NinServices" component={NinServicesScreen} />
       <MainStack.Screen name="TravelEsim" component={TravelEsimScreen} />
       <MainStack.Screen name="WalletFunding" component={WalletFundingScreen} />
@@ -65,9 +55,6 @@ function MainStackScreen() {
       <MainStack.Screen name="TransactionHistory" component={TransactionHistoryScreen} />
       <MainStack.Screen name="ForeignNumber" component={ForeignNumbersScreen} />
       <MainStack.Screen name="DollarCard" component={DollarCardsScreen} />
-      {Features.PAYROLL_ENABLED && (
-        <MainStack.Screen name="Payroll" component={PayrollScreen} />
-      )}
       <MainStack.Screen name="Notifications" component={NotificationsScreen} />
       <MainStack.Screen name="Profile" component={ProfileScreen} />
       <MainStack.Screen name="EditProfile" component={EditProfileScreen} />

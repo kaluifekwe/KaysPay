@@ -2,7 +2,7 @@ import { supabase } from '../lib/supabase';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 
-export type ServiceType = 'airtime' | 'data' | 'bill' | 'exam_pin' | 'tv' | 'wallet_fund' | 'foreign_number' | 'dollar_card' | 'payroll';
+export type ServiceType = 'airtime' | 'data' | 'bill' | 'exam_pin' | 'tv' | 'wallet_fund' | 'foreign_number' | 'dollar_card';
 export type LogAction = 'view' | 'attempt' | 'success' | 'failure';
 export type Provider = 'mtn' | 'airtel' | 'glo' | '9mobile' | 'ikeja-electric' | 'eko-electric' | 'dstv' | 'startimes' | 'gotv' | 'waec' | 'jamb' | 'neco' | 'paystack' | null;
 

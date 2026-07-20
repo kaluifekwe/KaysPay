@@ -25,7 +25,6 @@ export type TransactionType =
   | 'exam_pin'
   | 'foreign_number'
   | 'card_fund'
-  | 'payroll'
   | 'wallet_fund'
   | 'refund'
   | 'withdrawal'
@@ -47,38 +46,6 @@ export interface Transaction {
   metadata: Record<string, any> | null;
   created_at: string;
   completed_at: string | null;
-}
-
-export type PayrollServiceType = 'airtime' | 'data';
-
-export type PayrollScheduleType = 'once' | 'weekly' | 'monthly' | 'custom';
-
-export type PayrollFailurePreference = 'partial' | 'cancel' | 'top_up';
-
-export type PayrollStatus = 'active' | 'paused' | 'completed' | 'cancelled';
-
-export interface PayrollPlan {
-  id: string;
-  user_id: string;
-  name: string;
-  service_type: PayrollServiceType;
-  data_bundle_code: string | null;
-  schedule_type: PayrollScheduleType;
-  scheduled_at: string;
-  repeat_day: number | null;
-  failure_preference: PayrollFailurePreference;
-  status: PayrollStatus;
-  locked_amount: number;
-  created_at: string;
-}
-
-export interface PayrollRecipient {
-  id: string;
-  plan_id: string;
-  phone_number: string;
-  amount_ngn: number;
-  last_status: string;
-  last_delivered_at: string | null;
 }
 
 export type VirtualCardStatus = 'active' | 'frozen' | 'cancelled';

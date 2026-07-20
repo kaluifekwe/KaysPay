@@ -32,11 +32,6 @@ export interface ExamType {
   requiresProfileCode?: boolean;
 }
 
-export interface BettingProvider {
-  id: string;
-  name: string;
-}
-
 export interface VTUResult {
   success: boolean;
   order_id?: string;
@@ -288,26 +283,6 @@ const tvProviders: TVProvider[] = [
   },
 ];
 
-// Must match `_shared/vtu-catalog.ts`'s BETTING_PROVIDERS `id` values exactly
-// (those are the literal VTUAfrica `service` codes, confirmed live against
-// their docs 2026-07-02 — betting funding routes through VTUAfrica, not
-// VTU.ng, which never had a working betting integration).
-// Only platforms VTUAfrica can actually name-verify are offered — the 7 it
-// can't verify (BetKing, BetBiga, SportyBet, MelBet, LiveScoreBet, CloudBet,
-// Paripesa) were removed 2026-07-05 so users never fund an unverifiable
-// account. Confirmed live against /merchant-verify.
-const bettingProviders: BettingProvider[] = [
-  { id: 'bet9ja', name: 'Bet9ja' },
-  { id: '1xbet', name: '1xBet' },
-  { id: 'nairabet', name: 'NairaBet' },
-  { id: 'merrybet', name: 'MerryBet' },
-  { id: 'naijabet', name: 'NaijaBet' },
-  { id: 'betway', name: 'BetWay' },
-  { id: 'bangbet', name: 'BangBet' },
-  { id: 'naira-million', name: 'Naira Million' },
-  { id: 'mylottohub', name: 'MyLottoHub' },
-];
-
 // Routed to VTUAfrica's `/exam-pin` endpoint (VTU.ng never had a working
 // exam pin integration). Ids match `_shared/vtu-catalog.ts`'s EXAM_PIN_TYPES
 // exactly, confirmed live 2026-07-02. NECO GCE and NABTEB GCE are excluded —
@@ -415,42 +390,6 @@ export const vtuService = {
     return examTypes;
   },
 
-  getBettingProviders(): BettingProvider[] {
-    return bettingProviders;
-  },
-
-  /**
-   * Resolves a betting account id to its registered customer name before
-   * funding it, same "show the name before you pay" pattern used for bank
-   * withdrawals — catches a mistyped account id before money leaves the wallet.
-   */
-  async verifyBettingCustomer(
-    providerId: string,
-    customerId: string,
-  ): Promise<{ success: boolean; customer_name?: string; unverifiable?: boolean; error?: string }> {
-    try {
-      const { data, error } = await withTimeout(
-        supabase.functions.invoke('vtu-verify-customer', {
-          body: { provider_id: providerId, customer_id: customerId },
-        }),
-      );
-      if (error) {
-        let msg = 'Could not verify this account.';
-        try {
-          const errBody = await (error as any)?.context?.json?.();
-          if (errBody?.error) msg = errBody.error;
-        } catch {}
-        return { success: false, error: msg };
-      }
-      if (!data?.success) {
-        return { success: false, error: data?.error || 'Could not verify this account' };
-      }
-      return { success: true, customer_name: data.customer_name, unverifiable: data.unverifiable };
-    } catch {
-      return { success: false, error: 'Network error. Please try again.' };
-    }
-  },
-
   buyAirtime(phone: string, network: NetworkProvider, amount: number, authToken: string): Promise<VTUResult> {
     // amount is naira from the UI; the server ledger works in kobo.
     return purchase({ service: 'airtime', phone, network, amount: nairaToKobo(amount) }, authToken);
@@ -554,15 +493,6 @@ export const vtuService = {
       exam_id: examType.id,
       quantity,
       ...(profileCode ? { profile_code: profileCode } : {}),
-    }, authToken);
-  },
-
-  buyBetting(providerId: string, customerId: string, amount: number, authToken: string): Promise<VTUResult> {
-    return purchase({
-      service: 'betting',
-      provider_id: providerId,
-      customer_id: customerId,
-      amount: nairaToKobo(amount),
     }, authToken);
   },
 };

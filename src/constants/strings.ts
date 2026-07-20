@@ -53,11 +53,9 @@ export const Strings = {
   SERVICE_BILLS: "Bills",
   SERVICE_EXAMS: "Exams",
   SERVICE_TV: "TV",
-  SERVICE_BETTING: "Betting",
   SERVICE_ESIM: "Travel eSIM",
   SERVICE_FOREIGN: "Foreign No.",
   SERVICE_DOLLAR_CARD: "Dollar Card",
-  SERVICE_PAYROLL: "Payroll",
   SERVICE_NIN: "NIN Services",
 
   // Airtime

@@ -23,12 +23,6 @@ export interface TransactionDetailItem {
   metadata?: Record<string, any> | null;
 }
 
-interface PayrollRecipientEntry {
-  phone: string;
-  status: string;
-  reason?: string;
-}
-
 function getStatusColor(status: string) {
   switch (status) {
     case 'successful':
@@ -129,13 +123,6 @@ export default function TransactionDetailModal({
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
   if (!transaction) return null;
-
-  const isPayroll = transaction.rawType === 'payroll';
-  const recipients: PayrollRecipientEntry[] = isPayroll && Array.isArray(transaction.metadata?.result)
-    ? transaction.metadata!.result
-    : [];
-  const sentCount = recipients.filter((r) => r.status === 'sent').length;
-  const failedRecipients = recipients.filter((r) => r.status !== 'sent');
 
   const failureReason = extractFailureReason(transaction.metadata);
   const allowedMetadataEntries = getAllowedMetadataEntries(transaction.metadata);
@@ -253,41 +240,15 @@ export default function TransactionDetailModal({
               </View>
             )}
 
-            {!isPayroll && failureReason && (
+            {failureReason && (
               <View style={styles.reasonBox}>
                 <Text style={styles.reasonLabel}>Why this didn't go through</Text>
                 <Text style={styles.reasonText}>{failureReason}</Text>
               </View>
             )}
 
-            {isPayroll && recipients.length > 0 && (
-              <View style={styles.payrollSection}>
-                <Text style={styles.sectionTitle}>
-                  Recipients ({sentCount}/{recipients.length} sent)
-                </Text>
-                {recipients.map((r, i) => (
-                  <View key={`${r.phone}-${i}`} style={styles.recipientRow}>
-                    <View style={styles.recipientLeft}>
-                      <Text style={styles.recipientPhone}>{r.phone}</Text>
-                      {r.status !== 'sent' && (
-                        <Text style={styles.recipientReason}>{sanitizeReason(r.reason) || GENERIC_FAILURE_MESSAGE}</Text>
-                      )}
-                    </View>
-                    <Text style={[styles.recipientStatus, { color: r.status === 'sent' ? Colors.SUCCESS : Colors.ERROR }]}>
-                      {r.status === 'sent' ? '✓ Sent' : '✗ Failed'}
-                    </Text>
-                  </View>
-                ))}
-                {failedRecipients.length > 0 && (
-                  <Text style={styles.payrollNote}>
-                    The value of any failed recipient above was refunded to your wallet.
-                  </Text>
-                )}
-              </View>
-            )}
-
-            {!isPayroll && allowedMetadataEntries.length > 0 && (
-              <View style={styles.payrollSection}>
+            {allowedMetadataEntries.length > 0 && (
+              <View style={styles.detailSection}>
                 <Text style={styles.sectionTitle}>Details</Text>
                 {allowedMetadataEntries.map(([label, value]) => (
                   <View key={label} style={styles.row}>
@@ -414,45 +375,13 @@ const styles = StyleSheet.create({
     ...Typography.BODY,
     color: Colors.DARK,
   },
-  payrollSection: {
+  detailSection: {
     marginTop: Spacing.L,
   },
   sectionTitle: {
     ...Typography.SECTION_HEADING,
     color: Colors.DARK,
     marginBottom: Spacing.S,
-  },
-  recipientRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingVertical: Spacing.S,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
-  },
-  recipientLeft: {
-    flex: 1,
-    marginRight: Spacing.M,
-  },
-  recipientPhone: {
-    ...Typography.BODY,
-    color: Colors.DARK,
-    fontWeight: '600',
-  },
-  recipientReason: {
-    ...Typography.CAPTION,
-    color: Colors.GRAY,
-    marginTop: 2,
-  },
-  recipientStatus: {
-    ...Typography.CAPTION,
-    fontWeight: '700',
-  },
-  payrollNote: {
-    ...Typography.CAPTION,
-    color: Colors.GRAY,
-    fontStyle: 'italic',
-    marginTop: Spacing.S,
   },
   closeButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,

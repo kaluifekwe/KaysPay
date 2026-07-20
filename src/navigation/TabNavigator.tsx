@@ -5,11 +5,9 @@ import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { Strings } from '../constants/strings';
-import { Features } from '../constants/features';
 import HomeScreen from '../screens/HomeScreen';
 import PayScreen from '../screens/PayScreen';
 import CardsScreen from '../screens/CardsScreen';
-import PayrollScreen from '../screens/PayrollScreen';
 import MoreScreen from '../screens/MoreScreen';
 
 const Tab = createBottomTabNavigator();
@@ -59,17 +57,6 @@ export default function TabNavigator() {
           ),
         }}
       />
-      {Features.PAYROLL_ENABLED && (
-        <Tab.Screen
-          name="Payroll"
-          component={PayrollScreen}
-          options={{
-            tabBarIcon: ({ focused }) => (
-              <TabIcon icon="👥" label="Payroll" focused={focused} />
-            ),
-          }}
-        />
-      )}
       <Tab.Screen
         name="More"
         component={MoreScreen}

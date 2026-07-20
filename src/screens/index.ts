@@ -7,6 +7,5 @@ export { default as BiometricSetupScreen } from './BiometricSetupScreen';
 export { default as HomeScreen } from './HomeScreen';
 export { default as PayScreen } from './PayScreen';
 export { default as CardsScreen } from './CardsScreen';
-export { default as PayrollScreen } from './PayrollScreen';
 export { default as MoreScreen } from './MoreScreen';
 export { default as DataScreen } from './DataScreen';

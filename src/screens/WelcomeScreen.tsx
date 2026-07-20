@@ -11,8 +11,6 @@ import {
   StatusBar,
 } from 'react-native';
 
-import { Features } from '../constants/features';
-
 const { width } = Dimensions.get('window');
 const BRAND_GREEN = '#1A5C3A';
 const DARK_BG = '#0F1A14';
@@ -139,49 +137,6 @@ const ForeignNumbersSlide = () => (
   </View>
 );
 
-const PayrollSlide = () => (
-  <View style={styles.slideIllustration}>
-    <View style={styles.payrollCard}>
-      <View style={styles.payrollPlanRow}>
-        <View style={styles.payrollPlanLeft}>
-          <View style={styles.payrollCalendarIcon}><Text style={styles.payrollCalendarIconText}>📅</Text></View>
-          <Text style={styles.payrollPlanName}>Staff Monthly Airtime</Text>
-        </View>
-        <View style={styles.payrollActivePill}><Text style={styles.payrollActiveText}>Active</Text></View>
-      </View>
-      <View style={styles.payrollDivider} />
-      <View style={styles.payrollRecipientRow}>
-        <View style={[styles.payrollRecipientAvatar, { backgroundColor: '#E8F5E9' }]}><Text style={[styles.payrollRecipientAvatarText, { color: BRAND_GREEN }]}>A</Text></View>
-        <Text style={styles.payrollRecipientName}>Amina Bello</Text>
-        <Text style={styles.payrollRecipientAmount}>₦500 airtime</Text>
-        <Text style={styles.payrollDelivered}>✓ Delivered</Text>
-      </View>
-      <View style={styles.payrollDivider} />
-      <View style={styles.payrollRecipientRow}>
-        <View style={[styles.payrollRecipientAvatar, { backgroundColor: '#E3F2FD' }]}><Text style={[styles.payrollRecipientAvatarText, { color: '#1976D2' }]}>C</Text></View>
-        <Text style={styles.payrollRecipientName}>Chidi Okonkwo</Text>
-        <Text style={styles.payrollRecipientAmount}>₦500 airtime</Text>
-        <Text style={styles.payrollDelivered}>✓ Delivered</Text>
-      </View>
-      <View style={styles.payrollDivider} />
-      <View style={styles.payrollRecipientRow}>
-        <View style={[styles.payrollRecipientAvatar, { backgroundColor: '#FFF3E0' }]}><Text style={[styles.payrollRecipientAvatarText, { color: '#E65100' }]}>F</Text></View>
-        <Text style={styles.payrollRecipientName}>Fatima Yusuf</Text>
-        <Text style={styles.payrollRecipientAmount}>₦500 airtime</Text>
-        <Text style={styles.payrollDelivered}>✓ Delivered</Text>
-      </View>
-      <View style={styles.payrollDivider} />
-      <View style={styles.payrollNextRunRow}>
-        <View style={styles.payrollNextRunLeft}>
-          <Text style={styles.payrollClockIcon}>🕐</Text>
-          <Text style={styles.payrollNextRunText}>Next run: Aug 25, 9:00 AM</Text>
-        </View>
-        <Text style={styles.payrollLockedAmount}>₦1,500 locked</Text>
-      </View>
-    </View>
-  </View>
-);
-
 const slides = [
   {
     id: '1',
@@ -201,16 +156,6 @@ const slides = [
     subtitle: 'US, UK & Canada numbers for WhatsApp, PayPal, Fiverr and more.',
     Component: ForeignNumbersSlide,
   },
-  ...(Features.PAYROLL_ENABLED
-    ? [
-        {
-          id: '4',
-          title: 'Airtime Payroll',
-          subtitle: 'Schedule bulk recharge for staff, family or anyone. Auto-sends every time.',
-          Component: PayrollSlide,
-        },
-      ]
-    : []),
 ];
 
 export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {
@@ -638,120 +583,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: WHITE,
     fontStyle: 'italic',
-  },
-
-  payrollCard: {
-    width: width - 48,
-    backgroundColor: WHITE,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  payrollPlanRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-  },
-  payrollPlanLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  payrollCalendarIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    backgroundColor: '#E8F5E9',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  payrollCalendarIconText: {
-    fontSize: 14,
-  },
-  payrollPlanName: {
-    fontFamily: 'Helvetica-Bold',
-    fontSize: 13,
-    color: SLIDE_TITLE_COLOR,
-  },
-  payrollActivePill: {
-    backgroundColor: '#D6F0E3',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  payrollActiveText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: BRAND_GREEN,
-  },
-  payrollDivider: {
-    height: 0.5,
-    backgroundColor: '#E5E7EB',
-    marginHorizontal: 2,
-  },
-  payrollRecipientRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  payrollRecipientAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  payrollRecipientAvatarText: {
-    fontFamily: 'Helvetica-Bold',
-    fontSize: 12,
-  },
-  payrollRecipientName: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
-    color: SLIDE_TITLE_COLOR,
-  },
-  payrollRecipientAmount: {
-    fontSize: 11,
-    color: SLIDE_SUBTITLE_COLOR,
-    marginRight: 8,
-  },
-  payrollDelivered: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: BRAND_GREEN,
-  },
-  payrollNextRunRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-  },
-  payrollNextRunLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  payrollClockIcon: {
-    fontSize: 12,
-    marginRight: 6,
-  },
-  payrollNextRunText: {
-    fontSize: 11,
-    color: SLIDE_SUBTITLE_COLOR,
-  },
-  payrollLockedAmount: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#F59E0B',
   },
 
   foreignCard: {

@@ -42,9 +42,6 @@ verify_jwt = true
 [functions.vtuafrica-reconcile]
 verify_jwt = true
 
-[functions.payroll-execute]
-verify_jwt = true
-
 # --- Public utility: no sensitive/user-specific data ---
 [functions.paystack-banks]
 verify_jwt = false
@@ -98,15 +95,6 @@ verify_jwt = true
 [functions.nin-verify]
 verify_jwt = true
 
-[functions.payroll-cancel]
-verify_jwt = true
-
-[functions.payroll-schedule]
-verify_jwt = true
-
-[functions.payroll-update]
-verify_jwt = true
-
 [functions.paystack-init]
 verify_jwt = true
 
@@ -120,7 +108,4 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.vtu-purchase]
-verify_jwt = true
-
-[functions.vtu-verify-customer]
 verify_jwt = true

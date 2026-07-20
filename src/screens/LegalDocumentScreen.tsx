@@ -44,7 +44,7 @@ function PrivacyPolicyContent() {
     <>
       <Para>
         KaysPay ("we", "us", "our") provides a mobile app for buying airtime, data, bills, exam pins,
-        betting funding, foreign phone numbers, eSIMs, sending payroll to contacts, verifying NIN/BVN
+        foreign phone numbers, eSIMs, verifying NIN/BVN
         details, and funding/withdrawing from an in-app wallet. This policy explains what information
         we collect, why, and how it's protected.
       </Para>
@@ -60,7 +60,7 @@ function PrivacyPolicyContent() {
           birth, gender, phone number, and photo on file), only when you use the NIN/BVN Services or
           bank-transfer wallet funding features and only for that purpose.</Bullet>
         <Bullet>Contacts on your device, only if you grant permission and only to let you pick
-          recipients for bulk airtime/data sends and payroll — we do not upload your full address book
+          recipients for bulk airtime/data sends — we do not upload your full address book
           anywhere.</Bullet>
         <Bullet>A profile photo, if you choose to upload one.</Bullet>
         <Bullet>Basic technical information needed to operate the app reliably (device type,
@@ -84,7 +84,7 @@ function PrivacyPolicyContent() {
         </Para>
         <Bullet>Payment processors (Paystack, Flutterwave) — for wallet funding, withdrawals, and bank
           account verification.</Bullet>
-        <Bullet>Airtime/data/bills/betting/exam-pin providers (VTU.ng, VTUAfrica) — to deliver the
+        <Bullet>Airtime/data/bills/exam-pin providers (VTU.ng, VTUAfrica) — to deliver the
           specific product you purchased to the recipient number you provide.</Bullet>
         <Bullet>Identity verification providers (Prembly, CheckMyNINBVN) — only when you use NIN/BVN
           verification or update services, to check your NIN/BVN against official records.</Bullet>
@@ -168,9 +168,8 @@ function TermsOfServiceContent() {
       <Section title="2. Our Services">
         <Para>KaysPay lets you, subject to available balance and provider availability:</Para>
         <Bullet>Buy airtime, data bundles, TV subscriptions, electricity, and exam pins.</Bullet>
-        <Bullet>Fund betting accounts and foreign/virtual phone numbers.</Bullet>
+        <Bullet>Fund foreign/virtual phone numbers.</Bullet>
         <Bullet>Purchase travel eSIMs.</Bullet>
-        <Bullet>Schedule one-time or recurring payroll disbursements to your contacts.</Bullet>
         <Bullet>Verify NIN/BVN details, and submit NIN correction requests to NIMC via our provider.</Bullet>
         <Bullet>Fund your in-app wallet and withdraw to a linked bank account.</Bullet>
       </Section>
@@ -178,7 +177,7 @@ function TermsOfServiceContent() {
       <Section title="3. Wallet, Fees, and Charges">
         <Para>
           Your wallet balance reflects funds you have added, minus completed purchases, plus any
-          refunds. Where a purchase includes a service fee (for example, betting funding), the fee is
+          refunds. Where a purchase includes a service fee, the fee is
           shown to you before you confirm. Prices for identity verification and NIN update services are
           shown before you confirm and may change from time to time.
         </Para>
@@ -189,8 +188,8 @@ function TermsOfServiceContent() {
           If a purchase cannot be completed by the provider, the amount debited for that specific
           purchase is automatically refunded to your wallet — you do not need to request it. Reviewed
           orders (such as NIN validation/correction requests) that are rejected by NIMC are refunded
-          once the rejection is confirmed. You can see the outcome and reason for any transaction,
-          including individual payroll recipients, in your Transaction History.
+          once the rejection is confirmed. You can see the outcome and reason for any transaction
+          in your Transaction History.
         </Para>
       </Section>
 

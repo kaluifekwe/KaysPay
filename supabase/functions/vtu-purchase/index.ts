@@ -10,15 +10,10 @@ import {
   TV_BOUQUETS,
   ELECTRICITY_PROVIDERS,
   VALID_NETWORKS,
-  VALID_BETTING_IDS,
-  BETTING_MIN,
-  BETTING_MAX,
-  BETTING_SERVICE_FEE,
   EXAM_PIN_TYPES,
   KOBO,
   NetworkProvider,
 } from "../_shared/vtu-catalog.ts";
-import { Features } from "../_shared/features.ts";
 import {
   callVTUNG,
   isVtuConfigured,
@@ -51,8 +46,8 @@ type Provider = "vtu_ng" | "vtuafrica";
  *
  * Provider routing: VTUAfrica now handles every service — airtime, data (all
  * 4 networks), electricity, and TV — moved off VTU.ng by explicit choice.
- * Betting and exam pins were already VTUAfrica-only (VTU.ng never had a
- * working integration for either).
+ * Exam pins were already VTUAfrica-only (VTU.ng never had a working
+ * integration for them).
  */
 function resolvePurchase(body: any): {
   amount: number; // kobo
@@ -147,29 +142,6 @@ function resolvePurchase(body: any): {
           variation: bouquet.variationCode,
           maxamount: bouquet.amount / KOBO,
         },
-      };
-    }
-
-    case "betting": {
-      // Switched off 2026-07-18 — rejected here, before any debit, so no
-      // money can move. Flip Features.BETTING_ENABLED to restore.
-      if (!Features.BETTING_ENABLED) throw "SERVICE_UNAVAILABLE";
-      const providerId = String(body.provider_id || "");
-      const customerId = String(body.customer_id || "").trim();
-      const funding = Number(body.amount); // kobo — the amount to reach the bet wallet
-      if (!VALID_BETTING_IDS.includes(providerId)) throw "INVALID_PROVIDER";
-      if (!customerId) throw "INVALID_CUSTOMER_ID";
-      if (!Number.isInteger(funding) || funding < BETTING_MIN || funding > BETTING_MAX) throw "INVALID_AMOUNT";
-      // The user is debited funding + our flat service fee; only the funding
-      // itself is sent to VTUAfrica (it deducts its own ₦20 from our float).
-      return {
-        amount: funding + BETTING_SERVICE_FEE,
-        txType: "bill",
-        network: "N/A",
-        recipient: customerId,
-        provider: "vtuafrica",
-        endpoint: "/betpay",
-        providerPayload: { userid: customerId, service: providerId, amount: funding / KOBO },
       };
     }
 
