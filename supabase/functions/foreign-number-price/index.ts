@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser } from "../_shared/auth.ts";
 import { getPrices, isGrizzlySMSConfigured } from "../_shared/grizzlysms-client.ts";
-import { FOREIGN_NUMBER_SERVICES, isValidServiceCode, usdToNgnKobo } from "../_shared/foreign-number-catalog.ts";
+import { FOREIGN_NUMBER_SERVICES, isPlausibleServiceCode, usdToNgnKobo } from "../_shared/foreign-number-catalog.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -40,7 +40,7 @@ serve(async (req: Request) => {
   const service = body?.service ? String(body.service) : "";
   const country = String(body?.country || "");
 
-  if (service && !isValidServiceCode(service)) return json({ success: false, error: "Unknown service" }, 400);
+  if (service && !isPlausibleServiceCode(service)) return json({ success: false, error: "Unknown service" }, 400);
   if (!/^\d+$/.test(country)) return json({ success: false, error: "Invalid country" }, 400);
 
   try {

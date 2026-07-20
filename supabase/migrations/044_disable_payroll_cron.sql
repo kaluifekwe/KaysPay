@@ -1,0 +1,51 @@
+-- Kay's Pay: unschedule the payroll executor while payroll is switched off
+-- =====================================================================
+-- The owner switched Betting and Payroll off on 2026-07-18 ("the service is
+-- not available at the moment"), with an explicit requirement that turning
+-- either back on later stays easy. So this migration deliberately does NOT
+-- drop anything: `scheduled_payrolls`, every payroll RPC (create_payroll,
+-- debit_payroll_run, finish_payroll_run, skip_payroll_run,
+-- advance_payroll_schedule, update_payroll, cancel_payroll) and all payroll
+-- Edge Functions stay exactly as they are. The only change is that the
+-- 5-minutely executor stops running.
+--
+-- Verified before writing this: 0 active mandates (`active = true`) and 0
+-- betting transactions have ever existed, so nothing in flight is being cut
+-- off. The 3 rows in scheduled_payrolls are inactive test runs and are left
+-- untouched for history.
+--
+-- Defence in depth: payroll-execute ALSO returns early on
+-- Features.PAYROLL_ENABLED === false (see _shared/features.ts), so even a
+-- stray invocation of the function cannot debit a wallet. This migration
+-- removes the scheduled trigger; the code guard covers everything else.
+--
+-- TO RE-ENABLE payroll, all three must be done together:
+--   1. Features.PAYROLL_ENABLED = true in supabase/functions/_shared/features.ts
+--      (then redeploy payroll-schedule, payroll-update, payroll-execute)
+--   2. Features.PAYROLL_ENABLED = true in src/constants/features.ts
+--   3. Re-run the cron.schedule block below (copied verbatim from migration
+--      043, the last migration to define it) as a new migration.
+-- =====================================================================
+
+SELECT cron.unschedule('payroll-execute-due');
+
+-- Reference only — the exact job definition as of migration 043, so
+-- re-enabling is a copy/paste into a new migration rather than an
+-- archaeology exercise:
+--
+-- SELECT cron.schedule(
+--   'payroll-execute-due',
+--   '*/5 * * * *',
+--   $$
+--   SELECT net.http_post(
+--     url := 'https://xswlrzhtxrzugoxdonjc.supabase.co/functions/v1/payroll-execute',
+--     headers := jsonb_build_object(
+--       'Authorization', 'Bearer <anon key, see migration 043>',
+--       'Content-Type', 'application/json',
+--       'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret')
+--     ),
+--     body := '{}'::jsonb,
+--     timeout_milliseconds := 60000
+--   );
+--   $$
+-- );

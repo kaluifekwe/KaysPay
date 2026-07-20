@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { koboToNaira } from '../utils/formatCurrency';
+import { withTimeout, invokeWithRetry } from '../utils/network';
 
 export interface EsimCountry {
   code: string; // ISO alpha-2
@@ -85,9 +86,11 @@ export const esimService = {
 
   async browsePlans(countryCode: string): Promise<{ success: boolean; plans: EsimPlan[]; error?: string }> {
     try {
-      const { data, error } = await supabase.functions.invoke('esim-browse', {
-        body: { country: countryCode },
-      });
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('esim-browse', {
+          body: { country: countryCode },
+        }),
+      );
       if (error) {
         let msg = 'Could not load plans. Please try again.';
         try {
@@ -114,9 +117,16 @@ export const esimService = {
 
   async buyPlan(planId: string, countryCode: string, authToken: string): Promise<EsimPurchaseResult> {
     try {
-      const { data, error } = await supabase.functions.invoke('esim-purchase', {
-        body: { plan_id: planId, country: countryCode, auth_token: authToken, idempotency_key: newIdempotencyKey() },
-      });
+      const idempotencyKey = newIdempotencyKey();
+      const { data, error } = await invokeWithRetry<any>(
+        () =>
+          withTimeout(
+            supabase.functions.invoke('esim-purchase', {
+              body: { plan_id: planId, country: countryCode, auth_token: authToken, idempotency_key: idempotencyKey },
+            }),
+          ),
+        idempotencyKey,
+      );
       if (error) {
         let msg = 'Purchase failed. Please try again.';
         try {

@@ -17,6 +17,10 @@ export const StorageKeys = {
   BIOMETRIC_PIN_SET: 'biometric_pin_set',
   ONBOARDING_COMPLETED: 'onboarding_completed',
   LAST_CONTACT_REFRESH: 'last_contact_refresh',
+  // Android Storage Access Framework directory URI the user picked once for
+  // "Download PDF" — reused on every later download so the folder picker
+  // only ever appears the first time.
+  DOWNLOAD_FOLDER_URI: 'download_folder_uri',
 };
 
 // Helper functions using SecureStore (max 2KB per item)

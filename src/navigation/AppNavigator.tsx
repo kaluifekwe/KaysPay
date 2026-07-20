@@ -2,15 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import AuthNavigator from './AuthNavigator';
+import RequireEmailVerifyNavigator from './RequireEmailVerifyNavigator';
 import RequirePinNavigator from './RequirePinNavigator';
 import TabNavigator from './TabNavigator';
+import { Features } from '../constants/features';
 import AirtimeScreen from '../screens/AirtimeScreen';
 import DataScreen from '../screens/DataScreen';
 import BulkSendReviewScreen from '../screens/BulkSendReviewScreen';
 import BillsScreen from '../screens/BillsScreen';
+import ElectricityPayScreen from '../screens/ElectricityPayScreen';
 import ExamPinsScreen from '../screens/ExamPinsScreen';
 import TVScreen from '../screens/TVScreen';
 import BettingScreen from '../screens/BettingScreen';
+import BettingFundScreen from '../screens/BettingFundScreen';
+import NinServicesScreen from '../screens/NinServicesScreen';
 import TravelEsimScreen from '../screens/TravelEsimScreen';
 import WalletFundingScreen from '../screens/WalletFundingScreen';
 import PaystackCheckoutScreen from '../screens/PaystackCheckoutScreen';
@@ -23,7 +28,10 @@ import PayrollScreen from '../screens/PayrollScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import EditProfileScreen from '../screens/EditProfileScreen';
+import KycScreen from '../screens/KycScreen';
 import ChangePinScreen from '../screens/ChangePinScreen';
+import LegalDocumentScreen from '../screens/LegalDocumentScreen';
 import { authService } from '../services/auth.service';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { Colors } from '../constants/colors';
@@ -39,9 +47,16 @@ function MainStackScreen() {
       <MainStack.Screen name="Data" component={DataScreen} />
       <MainStack.Screen name="BulkSendReview" component={BulkSendReviewScreen} />
       <MainStack.Screen name="Bills" component={BillsScreen} />
+      <MainStack.Screen name="ElectricityPay" component={ElectricityPayScreen} />
       <MainStack.Screen name="ExamPins" component={ExamPinsScreen} />
       <MainStack.Screen name="TV" component={TVScreen} />
-      <MainStack.Screen name="Betting" component={BettingScreen} />
+      {Features.BETTING_ENABLED && (
+        <MainStack.Screen name="Betting" component={BettingScreen} />
+      )}
+      {Features.BETTING_ENABLED && (
+        <MainStack.Screen name="BettingFund" component={BettingFundScreen} />
+      )}
+      <MainStack.Screen name="NinServices" component={NinServicesScreen} />
       <MainStack.Screen name="TravelEsim" component={TravelEsimScreen} />
       <MainStack.Screen name="WalletFunding" component={WalletFundingScreen} />
       <MainStack.Screen name="PaystackCheckout" component={PaystackCheckoutScreen} />
@@ -50,11 +65,16 @@ function MainStackScreen() {
       <MainStack.Screen name="TransactionHistory" component={TransactionHistoryScreen} />
       <MainStack.Screen name="ForeignNumber" component={ForeignNumbersScreen} />
       <MainStack.Screen name="DollarCard" component={DollarCardsScreen} />
-      <MainStack.Screen name="Payroll" component={PayrollScreen} />
+      {Features.PAYROLL_ENABLED && (
+        <MainStack.Screen name="Payroll" component={PayrollScreen} />
+      )}
       <MainStack.Screen name="Notifications" component={NotificationsScreen} />
       <MainStack.Screen name="Profile" component={ProfileScreen} />
+      <MainStack.Screen name="EditProfile" component={EditProfileScreen} />
+      <MainStack.Screen name="Kyc" component={KycScreen} />
       <MainStack.Screen name="Settings" component={SettingsScreen} />
       <MainStack.Screen name="ChangePin" component={ChangePinScreen} />
+      <MainStack.Screen name="LegalDocument" component={LegalDocumentScreen} />
     </MainStack.Navigator>
   );
 }
@@ -62,6 +82,11 @@ function MainStackScreen() {
 export default function AppNavigator() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuth, setIsAuth] = useState(false);
+  // Whether the signed-in user's email has been verified via our own
+  // Resend-based code (replaces Supabase's link-based "Confirm email").
+  // Checked before hasPin so a brand-new signup verifies email first.
+  const [hasVerifiedEmail, setHasVerifiedEmail] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
   // Whether the signed-in user has created a transaction PIN yet. A session
   // existing is NOT enough to reach the Main app — this is what actually
   // gates it, checked fresh on every launch and every auth state change.
@@ -73,6 +98,8 @@ export default function AppNavigator() {
     const { data } = authService.onAuthStateChange(async (session) => {
       const authed = !!session;
       setIsAuth(authed);
+      setUserEmail(session?.user?.email || '');
+      setHasVerifiedEmail(authed ? session.user.user_metadata?.email_verified === true : false);
       setHasPin(authed ? await authService.hasPIN() : false);
     });
 
@@ -86,7 +113,11 @@ export default function AppNavigator() {
       const session = await authService.getCurrentSession();
       const authed = !!session;
       setIsAuth(authed);
-      if (authed) setHasPin(await authService.hasPIN());
+      if (authed) {
+        setUserEmail(session.user.email || '');
+        setHasVerifiedEmail(session.user.user_metadata?.email_verified === true);
+        setHasPin(await authService.hasPIN());
+      }
     } catch (error) {
       setIsAuth(false);
     } finally {
@@ -107,6 +138,15 @@ export default function AppNavigator() {
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuth ? (
           <RootStack.Screen name="Auth" component={AuthNavigator} />
+        ) : !hasVerifiedEmail ? (
+          <RootStack.Screen name="RequireEmailVerify">
+            {() => (
+              <RequireEmailVerifyNavigator
+                email={userEmail}
+                onComplete={() => setHasVerifiedEmail(true)}
+              />
+            )}
+          </RootStack.Screen>
         ) : !hasPin ? (
           <RootStack.Screen name="RequirePin">
             {() => <RequirePinNavigator onComplete={() => setHasPin(true)} />}

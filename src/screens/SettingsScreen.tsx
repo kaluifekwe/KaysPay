@@ -190,21 +190,6 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           label: 'App Version',
           value: '1.0.0',
         },
-        {
-          icon: '📄',
-          label: 'Terms of Service',
-          onPress: () => {},
-        },
-        {
-          icon: '🔒',
-          label: 'Privacy Policy',
-          onPress: () => {},
-        },
-        {
-          icon: '💬',
-          label: 'Support',
-          onPress: () => {},
-        },
       ],
     },
   ];

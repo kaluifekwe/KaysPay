@@ -28,7 +28,9 @@ export type TransactionType =
   | 'payroll'
   | 'wallet_fund'
   | 'refund'
-  | 'withdrawal';
+  | 'withdrawal'
+  | 'nin_verification'
+  | 'nin_validation';
 
 export type TransactionStatus = 'pending' | 'completed' | 'failed' | 'refunded';
 

@@ -1,0 +1,126 @@
+project_id = "xswlrzhtxrzugoxdonjc"
+
+# Per-function JWT verification, captured in version control instead of only
+# living in dashboard clicks. Found during a security audit (2026-07-06) that
+# this being unmanaged/invisible to code review is exactly how payroll-execute
+# and vtuafrica-reconcile ended up deployed with verify_jwt=false and no
+# in-code auth check — a gap that went unnoticed until the live deployment
+# was checked directly. This file is the source of truth going forward;
+# `supabase functions deploy` applies whatever's set here.
+#
+# Three groups, by actual security model:
+#   1. Webhooks (external providers call these) — verify_jwt = false,
+#      protected instead by their own HMAC/signature verification.
+#   2. Cron-only (only pg_cron ever calls these) — verify_jwt = true AND
+#      gated by a separate x-cron-secret header (see _shared/auth.ts,
+#      verifyCronSecret) sourced from Supabase Vault. The anon key alone
+#      isn't meaningful protection since it's public/bundled in the app, but
+#      keeping verify_jwt on too costs nothing and adds a layer.
+#   3. Everything else — real user-facing functions, verify_jwt = true,
+#      identity resolved server-side from the JWT via getAuthUser().
+
+# --- Webhooks: own signature verification, no JWT ---
+[functions.flutterwave-webhook]
+verify_jwt = false
+
+[functions.paystack-webhook]
+verify_jwt = false
+
+[functions.vtu-webhook]
+verify_jwt = false
+
+# --- Cron-only: JWT + separate x-cron-secret check ---
+[functions.vtu-reconcile]
+verify_jwt = true
+
+[functions.esim-reconcile]
+verify_jwt = true
+
+[functions.nin-reconcile]
+verify_jwt = true
+
+[functions.vtuafrica-reconcile]
+verify_jwt = true
+
+[functions.payroll-execute]
+verify_jwt = true
+
+# --- Public utility: no sensitive/user-specific data ---
+[functions.paystack-banks]
+verify_jwt = false
+
+# --- User-facing: identity from JWT via getAuthUser() ---
+[functions.bvn-verify]
+verify_jwt = true
+
+[functions.create-virtual-account]
+verify_jwt = true
+
+[functions.send-email-otp]
+verify_jwt = true
+
+[functions.verify-email-otp]
+verify_jwt = true
+
+[functions.kyc-verify-nin]
+verify_jwt = true
+
+[functions.esim-browse]
+verify_jwt = true
+
+[functions.esim-purchase]
+verify_jwt = true
+
+[functions.foreign-number-cancel]
+verify_jwt = true
+
+[functions.foreign-number-countries]
+verify_jwt = true
+
+[functions.foreign-number-price]
+verify_jwt = true
+
+[functions.foreign-number-purchase]
+verify_jwt = true
+
+[functions.foreign-number-services]
+verify_jwt = true
+
+[functions.foreign-number-status]
+verify_jwt = true
+
+[functions.nin-modify]
+verify_jwt = true
+
+[functions.nin-validate]
+verify_jwt = true
+
+[functions.nin-verify]
+verify_jwt = true
+
+[functions.payroll-cancel]
+verify_jwt = true
+
+[functions.payroll-schedule]
+verify_jwt = true
+
+[functions.payroll-update]
+verify_jwt = true
+
+[functions.paystack-init]
+verify_jwt = true
+
+[functions.paystack-resolve-account]
+verify_jwt = true
+
+[functions.paystack-transfer]
+verify_jwt = true
+
+[functions.paystack-verify]
+verify_jwt = true
+
+[functions.vtu-purchase]
+verify_jwt = true
+
+[functions.vtu-verify-customer]
+verify_jwt = true

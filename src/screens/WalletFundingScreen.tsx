@@ -19,43 +19,65 @@ import { formatNaira } from '../utils/formatCurrency';
 import { walletService } from '../services/wallet.service';
 import { virtualAccountService, VirtualAccount } from '../services/virtualAccount.service';
 import { supabase } from '../lib/supabase';
+import { useCachedData } from '../hooks/useCachedData';
 
 const QUICK_AMOUNTS = [500, 1000, 2000, 5000, 10000, 20000];
 
-// Dedicated Virtual Accounts are not yet approved for live mode on our
-// Paystack account. Flip this back on once live DVA is approved.
-const DVA_LIVE_ENABLED = false;
+// Bank-transfer funding now runs on Flutterwave Fixed Virtual Accounts
+// (Paystack's was never approved for live use). Account creation works,
+// but the real live transfer test (2026-07-04, via Opay to the assigned
+// Indulge MFB account) was REJECTED/REVERSED — a real transfer failed on
+// the banking rails, not just a display issue. `bank_code` is also
+// confirmed ignored by Flutterwave for real BVN-verified accounts (tried
+// both Wema "035" and Access "044", both silently overridden to Indulge).
+// DO NOT re-enable until Flutterwave explains/fixes the failed-transfer
+// issue, or a working alternative bank is confirmed.
+const BANK_TRANSFER_FUNDING_ENABLED = false;
 
 const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
   const [customAmount, setCustomAmount] = useState('');
   const [loading, setLoading] = useState(false);
-  const [balance, setBalance] = useState(0);
   const [account, setAccount] = useState<VirtualAccount | null>(null);
   const [accountLoading, setAccountLoading] = useState(false);
+  const [showBvnInput, setShowBvnInput] = useState(false);
+  const [bvnOrNin, setBvnOrNin] = useState('');
 
-  const fetchBalance = useCallback(async () => {
-    try {
-      const result = await walletService.getWallet();
-      setBalance(result.wallet?.balance ?? 0);
-    } catch (error) {
-      console.error('Failed to fetch balance', error);
+  // Shows the last-known balance immediately (even on a bad connection),
+  // then quietly refreshes in the background. A failed refresh never wipes
+  // out a real cached balance to show ₦0.00 — that's the "genuinely empty
+  // wallet" and "we couldn't check" cases looking identical, which is
+  // exactly the confusion this replaced.
+  const fetchBalanceOrThrow = useCallback(async () => {
+    const result = await walletService.getWallet();
+    if (!result.success) throw new Error(result.error || 'Could not load balance');
+    return result.wallet?.balance ?? 0;
+  }, []);
+  const {
+    data: balance,
+    loading: balanceLoading,
+    isStale: balanceStale,
+    error: balanceError,
+    refresh: fetchBalance,
+  } = useCachedData('wallet_balance', fetchBalanceOrThrow);
+
+  useEffect(() => {
+    if (BANK_TRANSFER_FUNDING_ENABLED) {
+      virtualAccountService.getMine().then(setAccount);
     }
   }, []);
 
-  useEffect(() => {
-    fetchBalance();
-    if (DVA_LIVE_ENABLED) {
-      virtualAccountService.getMine().then(setAccount);
-    }
-  }, [fetchBalance]);
-
   const handleGetAccount = async () => {
+    if (!/^\d{11}$/.test(bvnOrNin)) {
+      Alert.alert('Bank Transfer', 'Please enter a valid 11-digit BVN or NIN.');
+      return;
+    }
     setAccountLoading(true);
-    const res = await virtualAccountService.create();
+    const res = await virtualAccountService.create(bvnOrNin);
     setAccountLoading(false);
     if (res.success && res.account) {
       setAccount(res.account);
+      setShowBvnInput(false);
     } else {
       Alert.alert('Bank Transfer', res.error || 'Could not set up your account number.');
     }
@@ -124,10 +146,31 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           >
             <Text style={styles.title}>Fund Wallet</Text>
 
-            <View style={styles.balanceCard}>
+            <TouchableOpacity
+              style={styles.balanceCard}
+              onPress={fetchBalance}
+              activeOpacity={0.7}
+              disabled={balanceLoading && balance === null}
+            >
               <Text style={styles.balanceLabel}>Current Balance</Text>
-              <Text style={styles.balanceAmount}>{formatNaira(balance)}</Text>
-            </View>
+              {balanceLoading && balance === null ? (
+                <ActivityIndicator color={Colors.WHITE} />
+              ) : balanceError ? (
+                <>
+                  <Text style={styles.balanceErrorText}>Couldn't load balance</Text>
+                  <Text style={styles.balanceRetryText}>Tap to retry</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.balanceAmount}>{formatNaira(balance ?? 0)}</Text>
+                  {balanceStale && (
+                    <Text style={styles.balanceRetryText}>
+                      {balanceLoading ? 'Updating…' : 'May be outdated — tap to refresh'}
+                    </Text>
+                  )}
+                </>
+              )}
+            </TouchableOpacity>
 
             <Text style={styles.sectionTitle}>Quick Amounts</Text>
             <View style={styles.quickAmountsGrid}>
@@ -176,7 +219,7 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               <Text style={styles.fundButtonText}>Fund with Paystack</Text>
             </TouchableOpacity>
 
-            {DVA_LIVE_ENABLED && (
+            {BANK_TRANSFER_FUNDING_ENABLED && (
               <>
                 <View style={styles.dividerRow}>
                   <View style={styles.dividerLine} />
@@ -205,17 +248,43 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       <Text style={styles.transferValue}>{account.account_name}</Text>
                     </View>
                   </View>
+                ) : showBvnInput ? (
+                  <View style={styles.transferCard}>
+                    <Text style={styles.transferHint}>
+                      We need your BVN or NIN once to set up your dedicated account number, as required by our banking partner.
+                    </Text>
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        style={styles.input}
+                        value={bvnOrNin}
+                        onChangeText={(t) => setBvnOrNin(t.replace(/[^0-9]/g, '').slice(0, 11))}
+                        placeholder="Enter your BVN or NIN"
+                        placeholderTextColor={Colors.GRAY}
+                        keyboardType="number-pad"
+                        maxLength={11}
+                      />
+                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.transferButton,
+                        bvnOrNin.length !== 11 && styles.fundButtonDisabled,
+                      ]}
+                      onPress={handleGetAccount}
+                      disabled={accountLoading || bvnOrNin.length !== 11}
+                    >
+                      {accountLoading ? (
+                        <ActivityIndicator color={Colors.GREEN} />
+                      ) : (
+                        <Text style={styles.transferButtonText}>Continue</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 ) : (
                   <TouchableOpacity
                     style={styles.transferButton}
-                    onPress={handleGetAccount}
-                    disabled={accountLoading}
+                    onPress={() => setShowBvnInput(true)}
                   >
-                    {accountLoading ? (
-                      <ActivityIndicator color={Colors.GREEN} />
-                    ) : (
-                      <Text style={styles.transferButtonText}>Get my account number</Text>
-                    )}
+                    <Text style={styles.transferButtonText}>Get my account number</Text>
                   </TouchableOpacity>
                 )}
               </>
@@ -284,6 +353,16 @@ const styles = StyleSheet.create({
     fontFamily: 'Helvetica-Bold',
     fontSize: 32,
     color: Colors.WHITE,
+  },
+  balanceErrorText: {
+    ...Typography.BODY,
+    fontWeight: '700',
+    color: Colors.WHITE,
+  },
+  balanceRetryText: {
+    ...Typography.CAPTION,
+    color: Colors.WHITE_80,
+    marginTop: 2,
   },
   dividerRow: {
     flexDirection: 'row',

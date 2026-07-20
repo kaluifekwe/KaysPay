@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { withTimeout } from '../utils/network';
 
 export interface VirtualAccount {
   account_number: string;
@@ -29,12 +30,18 @@ export const virtualAccountService = {
     }
   },
 
-  /** Creates (or returns the existing) dedicated NUBAN via the Edge Function. */
-  async create(): Promise<VirtualAccountResult> {
+  /**
+   * Creates (or returns the existing) dedicated NUBAN via the Edge Function.
+   * `bvnOrNin` is required by Flutterwave the first time an account is
+   * created for a user; not needed on subsequent calls (already provisioned).
+   */
+  async create(bvnOrNin?: string): Promise<VirtualAccountResult> {
     try {
-      const { data, error } = await supabase.functions.invoke('create-virtual-account', {
-        body: {},
-      });
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('create-virtual-account', {
+          body: bvnOrNin ? { bvn_or_nin: bvnOrNin } : {},
+        }),
+      );
       if (error) {
         let msg = error.message || 'Could not set up your account';
         try {

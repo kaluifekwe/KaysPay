@@ -9,7 +9,7 @@ export const Strings = {
   ONBOARDING_SLIDE_2_TITLE: "Instant & Secure",
   ONBOARDING_SLIDE_2_DESC: "Lightning-fast transactions with bank-level security.",
   ONBOARDING_SLIDE_3_TITLE: "Smart Features",
-  ONBOARDING_SLIDE_3_DESC: "Bulk recharge, schedules, virtual dollar cards, and payroll.",
+  ONBOARDING_SLIDE_3_DESC: "Bulk recharge, schedules, and virtual dollar cards.",
   ONBOARDING_GET_STARTED: "Get Started",
   ONBOARDING_SKIP: "Skip",
 
@@ -58,6 +58,7 @@ export const Strings = {
   SERVICE_FOREIGN: "Foreign No.",
   SERVICE_DOLLAR_CARD: "Dollar Card",
   SERVICE_PAYROLL: "Payroll",
+  SERVICE_NIN: "NIN Services",
 
   // Airtime
   AIRTIME_TITLE: "Buy Airtime",

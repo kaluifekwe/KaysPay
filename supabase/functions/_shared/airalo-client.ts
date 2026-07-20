@@ -73,12 +73,18 @@ async function authedFetch(
   return result.data;
 }
 
-/** GET /v2/packages?filter[country]=US — live catalog, prices in USD. */
+/** GET /v2/packages?filter[country]=US — live catalog, prices in USD.
+ * `limit=1000` per Airalo's docs so a country's plans can't be truncated by
+ * the endpoint's default pagination. */
 export async function browseAiraloPackages(
   supabase: ReturnType<typeof adminClient>,
   countryCode: string,
 ): Promise<any> {
-  const query = new URLSearchParams({ "filter[country]": countryCode, "filter[type]": "local" });
+  const query = new URLSearchParams({
+    "filter[country]": countryCode,
+    "filter[type]": "local",
+    limit: "1000",
+  });
   return authedFetch(supabase, `/v2/packages?${query.toString()}`, { method: "GET" });
 }
 
@@ -86,11 +92,17 @@ export async function browseAiraloPackages(
  * POST /v2/orders — synchronous: the eSIM's QR code/activation details come
  * back in this same response, unlike eSIM Access's async order+query flow.
  *
- * Unlike eSIM Access's `transactionId`, Airalo's order endpoint has no
- * idempotency key — a retried request creates a genuinely new order. We
- * pass our own idempotency key through `description` purely so a duplicate
- * can be spotted by a human later; it does not prevent double-ordering on
- * our end, so the caller must not retry a timed-out request blindly.
+ * Airalo documents this endpoint as multipart/form-data (NOT JSON), with
+ * fields as strings — sending a JSON body makes the server treat quantity/
+ * package_id as missing and reject the order (422). We build a FormData and
+ * deliberately let fetch set the Content-Type (with its multipart boundary)
+ * itself rather than forcing a header.
+ *
+ * There is no idempotency key on Airalo's order endpoint — a retried request
+ * creates a genuinely new order. We pass our own idempotency key through
+ * `description` purely so a duplicate can be spotted by a human later; it
+ * does not prevent double-ordering, so the caller must not retry a timed-out
+ * request blindly.
  */
 export async function submitAiraloOrder(
   supabase: ReturnType<typeof adminClient>,
@@ -98,9 +110,9 @@ export async function submitAiraloOrder(
   quantity: number,
   description: string,
 ): Promise<any> {
-  return authedFetch(supabase, "/v2/orders", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ quantity, package_id: packageId, description }),
-  });
+  const form = new FormData();
+  form.append("quantity", String(quantity));
+  form.append("package_id", packageId);
+  form.append("description", description);
+  return authedFetch(supabase, "/v2/orders", { method: "POST", body: form });
 }

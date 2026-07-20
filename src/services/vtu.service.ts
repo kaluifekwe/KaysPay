@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { nairaToKobo } from '../utils/formatCurrency';
+import { withTimeout, invokeWithRetry } from '../utils/network';
 
 export type NetworkProvider = 'mtn' | 'airtel' | 'glo' | '9mobile';
 
@@ -291,22 +292,19 @@ const tvProviders: TVProvider[] = [
 // (those are the literal VTUAfrica `service` codes, confirmed live against
 // their docs 2026-07-02 — betting funding routes through VTUAfrica, not
 // VTU.ng, which never had a working betting integration).
+// Only platforms VTUAfrica can actually name-verify are offered — the 7 it
+// can't verify (BetKing, BetBiga, SportyBet, MelBet, LiveScoreBet, CloudBet,
+// Paripesa) were removed 2026-07-05 so users never fund an unverifiable
+// account. Confirmed live against /merchant-verify.
 const bettingProviders: BettingProvider[] = [
   { id: 'bet9ja', name: 'Bet9ja' },
-  { id: 'betking', name: 'BetKing' },
   { id: '1xbet', name: '1xBet' },
   { id: 'nairabet', name: 'NairaBet' },
-  { id: 'betbiga', name: 'BetBiga' },
   { id: 'merrybet', name: 'MerryBet' },
-  { id: 'sportybet', name: 'SportyBet' },
   { id: 'naijabet', name: 'NaijaBet' },
   { id: 'betway', name: 'BetWay' },
   { id: 'bangbet', name: 'BangBet' },
-  { id: 'melbet', name: 'MelBet' },
-  { id: 'livescorebet', name: 'LiveScoreBet' },
   { id: 'naira-million', name: 'Naira Million' },
-  { id: 'cloudbet', name: 'CloudBet' },
-  { id: 'paripesa', name: 'Paripesa' },
   { id: 'mylottohub', name: 'MyLottoHub' },
 ];
 
@@ -346,9 +344,22 @@ async function purchase(
   authToken: string,
 ): Promise<VTUResult & { token?: string; pins?: string[]; units?: string }> {
   try {
-    const { data, error } = await supabase.functions.invoke('vtu-purchase', {
-      body: { ...body, auth_token: authToken, idempotency_key: newIdempotencyKey() },
-    });
+    // Generated ONCE, before the call — invokeWithRetry uses this to check
+    // whether an earlier attempt already succeeded server-side before ever
+    // resubmitting (the PIN auth_token is single-use and gets consumed the
+    // moment a request reaches the server, so blindly resubmitting on an
+    // ambiguous network failure can hit "already used" even when the
+    // original attempt actually went through — see network.ts).
+    const idempotencyKey = newIdempotencyKey();
+    const { data, error } = await invokeWithRetry<any>(
+      () =>
+        withTimeout(
+          supabase.functions.invoke('vtu-purchase', {
+            body: { ...body, auth_token: authToken, idempotency_key: idempotencyKey },
+          }),
+        ),
+      idempotencyKey,
+    );
 
     if (error) {
       // supabase.functions.invoke hides the Edge Function's own JSON error
@@ -391,6 +402,11 @@ export const vtuService = {
     return electricityProviders;
   },
 
+  /** Maps a biller id (stored in a transaction's metadata) back to its display name. */
+  getElectricityProviderName(billerId: string): string {
+    return electricityProviders.find((p) => p.id === billerId)?.name || billerId;
+  },
+
   getTVProviders(): TVProvider[] {
     return tvProviders;
   },
@@ -413,9 +429,11 @@ export const vtuService = {
     customerId: string,
   ): Promise<{ success: boolean; customer_name?: string; unverifiable?: boolean; error?: string }> {
     try {
-      const { data, error } = await supabase.functions.invoke('vtu-verify-customer', {
-        body: { provider_id: providerId, customer_id: customerId },
-      });
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('vtu-verify-customer', {
+          body: { provider_id: providerId, customer_id: customerId },
+        }),
+      );
       if (error) {
         let msg = 'Could not verify this account.';
         try {

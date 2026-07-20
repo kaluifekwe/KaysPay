@@ -18,6 +18,7 @@ import {
   foreignNumberService,
   type ForeignNumberService as FNService,
   type ForeignNumberCountry,
+  type AvailableCountry,
 } from '../services/foreignNumber.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 
@@ -27,23 +28,36 @@ interface ForeignNumbersScreenProps {
   };
 }
 
-type Step = 'country' | 'confirm' | 'waiting' | 'done';
+type Step = 'service' | 'country' | 'confirm' | 'waiting' | 'done';
 
 const POLL_INTERVAL_MS = 4000;
 
 export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScreenProps) {
   const { authorize } = useTransactionAuth();
   const insets = useSafeAreaInsets();
-  const countries = useMemo(() => foreignNumberService.getCountries(), []);
+  const services = useMemo(() => foreignNumberService.getServices(), []);
 
-  const [step, setStep] = useState<Step>('country');
+  // Countries that actually have the chosen service in stock (fetched per
+  // service), so the user never picks an unavailable one.
+  const [availableCountries, setAvailableCountries] = useState<AvailableCountry[]>([]);
+  const [loadingCountries, setLoadingCountries] = useState(false);
+  const [countriesError, setCountriesError] = useState('');
+
+  const [step, setStep] = useState<Step>('service');
   const [selectedService, setSelectedService] = useState<FNService | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<ForeignNumberCountry | null>(null);
+  const [serviceSearch, setServiceSearch] = useState('');
   const [countrySearch, setCountrySearch] = useState('');
+
+  const [showAllServices, setShowAllServices] = useState(false);
+  const [allServices, setAllServices] = useState<FNService[]>([]);
+  const [loadingAllServices, setLoadingAllServices] = useState(false);
+  const [allServicesError, setAllServicesError] = useState('');
 
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [priceError, setPriceError] = useState('');
   const [priceKobo, setPriceKobo] = useState<number | null>(null);
+  const [available, setAvailable] = useState<number | null>(null);
 
   const [purchasing, setPurchasing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -58,9 +72,48 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
 
   const filteredCountries = useMemo(() => {
     const q = countrySearch.trim().toLowerCase();
-    if (!q) return countries;
-    return countries.filter((c) => c.name.toLowerCase().includes(q));
-  }, [countries, countrySearch]);
+    if (!q) return availableCountries;
+    return availableCountries.filter((c) => c.name.toLowerCase().includes(q));
+  }, [availableCountries, countrySearch]);
+
+  // Curated popular list, or (in "browse all" mode) the full ~2,400-service
+  // catalog filtered by search and capped so we never render thousands of
+  // rows at once.
+  const ALL_SERVICES_CAP = 80;
+  const filteredServices = useMemo(() => {
+    const source = showAllServices ? allServices : services;
+    const q = serviceSearch.trim().toLowerCase();
+    const filtered = q ? source.filter((s) => s.name.toLowerCase().includes(q)) : source;
+    return showAllServices ? filtered.slice(0, ALL_SERVICES_CAP) : filtered;
+  }, [showAllServices, allServices, services, serviceSearch]);
+
+  const allServicesTruncated = useMemo(() => {
+    if (!showAllServices) return false;
+    const q = serviceSearch.trim().toLowerCase();
+    const total = q ? allServices.filter((s) => s.name.toLowerCase().includes(q)).length : allServices.length;
+    return total > ALL_SERVICES_CAP;
+  }, [showAllServices, allServices, serviceSearch]);
+
+  const handleBrowseAll = useCallback(async () => {
+    setShowAllServices(true);
+    setServiceSearch('');
+    if (allServices.length > 0) return; // already loaded this session
+    setLoadingAllServices(true);
+    setAllServicesError('');
+    const result = await foreignNumberService.getAllServices();
+    setLoadingAllServices(false);
+    if (result.success && result.services) {
+      setAllServices(result.services);
+    } else {
+      setAllServicesError(result.error || 'Could not load services');
+    }
+  }, [allServices.length]);
+
+  const handleBackToPopular = useCallback(() => {
+    setShowAllServices(false);
+    setServiceSearch('');
+    setAllServicesError('');
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -68,27 +121,38 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
     };
   }, []);
 
-  // No service picker — a country pick goes straight to the cheapest
-  // available service for that destination. GrizzlySMS has no true "any
-  // service" number under the hood, so we still choose one; we just do it
-  // for the user instead of asking.
-  const handleCountrySelect = useCallback(async (country: ForeignNumberCountry) => {
-    setSelectedCountry(country);
-    setStep('confirm');
-    setSelectedService(null);
-    setPriceError('');
+  // Picking a service loads ONLY the countries that have it in stock (with
+  // live prices), so the next screen is a guaranteed-available list.
+  const handleServiceSelect = useCallback(async (service: FNService) => {
+    setSelectedService(service);
+    setStep('country');
+    setShowAllServices(false);
+    setCountrySearch('');
+    setSelectedCountry(null);
     setPriceKobo(null);
-    setLoadingPrice(true);
+    setAvailable(null);
+    setPriceError('');
+    setAvailableCountries([]);
+    setCountriesError('');
+    setLoadingCountries(true);
 
-    const result = await foreignNumberService.getPrice(null, country.id);
-
-    setLoadingPrice(false);
-    if (!result.success || !result.service) {
-      setPriceError(result.error || 'Could not find an available number for this country');
+    const result = await foreignNumberService.getCountriesForService(service.id);
+    setLoadingCountries(false);
+    if (!result.success) {
+      setCountriesError(result.error || 'Could not load countries. Please try again.');
       return;
     }
-    setSelectedService({ id: result.service, name: result.serviceName || result.service });
-    setPriceKobo(result.priceKobo ?? null);
+    setAvailableCountries(result.countries || []);
+  }, []);
+
+  // The country row already carries its live price, so we go straight to
+  // confirm — no extra price call needed.
+  const handleCountrySelect = useCallback((country: AvailableCountry) => {
+    setSelectedCountry({ id: country.id, name: country.name });
+    setPriceKobo(country.priceKobo);
+    setAvailable(country.available);
+    setPriceError('');
+    setStep('confirm');
   }, []);
 
   const startPolling = useCallback((id: string) => {
@@ -120,7 +184,7 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
     setPurchasing(true);
 
     try {
-      const result = await foreignNumberService.purchase(selectedService.id, selectedCountry.id, authResult.token);
+      const result = await foreignNumberService.purchase(selectedService.id, selectedCountry.id, authResult.token, selectedService.name);
 
       if (result.success && result.activation_id && result.phone_number) {
         setActivationId(result.activation_id);
@@ -168,11 +232,16 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
 
   const handleReset = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
-    setStep('country');
+    setStep('service');
     setSelectedService(null);
     setSelectedCountry(null);
+    setShowAllServices(false);
+    setServiceSearch('');
     setCountrySearch('');
+    setAvailableCountries([]);
+    setCountriesError('');
     setPriceKobo(null);
+    setAvailable(null);
     setPriceError('');
     setErrorMessage('');
     setActivationId(null);
@@ -182,9 +251,25 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
   }, []);
 
   const handleBack = useCallback(() => {
-    if (step === 'confirm') { setStep('country'); setSelectedCountry(null); setSelectedService(null); setPriceKobo(null); return; }
+    if (step === 'confirm') {
+      setStep('country');
+      setSelectedCountry(null);
+      setPriceKobo(null);
+      setAvailable(null);
+      setPriceError('');
+      return;
+    }
+    if (step === 'country') {
+      setStep('service');
+      setSelectedService(null);
+      return;
+    }
+    if (step === 'service' && showAllServices) {
+      handleBackToPopular();
+      return;
+    }
     navigation.goBack();
-  }, [step, navigation]);
+  }, [step, navigation, showAllServices, handleBackToPopular]);
 
   if (step === 'done') {
     return (
@@ -217,10 +302,10 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
           <Text style={styles.resultDetail}>{selectedService?.name} · {selectedCountry?.name}</Text>
           <View style={styles.phoneContainer}>
             <Text style={styles.codeLabel}>Your Temporary Number</Text>
-            <Text style={styles.phoneValue}>{phoneNumber}</Text>
+            <Text style={styles.phoneValue} selectable>{`+${phoneNumber}`}</Text>
           </View>
           <Text style={styles.waitHint}>
-            Use this number to request a verification code on {selectedService?.name}. It'll appear here automatically once it arrives.
+            Use this number to request a verification code on {selectedService?.name}. It'll appear here automatically once it arrives. If no code comes, wait about 2 minutes, then cancel for a refund.
           </Text>
           {waitMessage ? <Text style={styles.amountError}>{waitMessage}</Text> : null}
           <TouchableOpacity
@@ -253,29 +338,134 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
 
         <Text style={styles.title}>Foreign Number</Text>
 
-        {step === 'country' && (
+        {step === 'service' && (
           <View style={styles.section}>
-            <Text style={styles.label}>Which country's number?</Text>
+            <Text style={styles.label}>
+              {showAllServices ? 'Browse all services' : 'Which service do you need a number for?'}
+            </Text>
             <TextInput
               style={styles.searchInput}
-              value={countrySearch}
-              onChangeText={setCountrySearch}
-              placeholder="Search country..."
+              value={serviceSearch}
+              onChangeText={setServiceSearch}
+              placeholder={showAllServices ? 'Search all services...' : 'Search service (WhatsApp, Telegram...)'}
               placeholderTextColor={Colors.GRAY}
             />
-            <View style={styles.countryList}>
-              {filteredCountries.map((country) => (
-                <TouchableOpacity
-                  key={country.id}
-                  style={styles.countryRow}
-                  onPress={() => handleCountrySelect(country)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.countryName}>{country.name}</Text>
-                  <Text style={styles.countryArrow}>{'>'}</Text>
+
+            {showAllServices && loadingAllServices ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator color={Colors.GREEN} />
+                <Text style={styles.loadingText}>Loading all services...</Text>
+              </View>
+            ) : showAllServices && allServicesError ? (
+              <>
+                <Text style={styles.amountError}>{allServicesError}</Text>
+                <TouchableOpacity style={styles.secondaryButton} onPress={handleBrowseAll}>
+                  <Text style={styles.secondaryButtonText}>Retry</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
+              </>
+            ) : (
+              <View style={styles.countryList}>
+                {filteredServices.map((service) => (
+                  <TouchableOpacity
+                    key={service.id}
+                    style={styles.countryRow}
+                    onPress={() => handleServiceSelect(service)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.countryName}>{service.name}</Text>
+                    <Text style={styles.countryArrow}>{'>'}</Text>
+                  </TouchableOpacity>
+                ))}
+                {filteredServices.length === 0 && (
+                  <Text style={styles.loadingText}>
+                    {showAllServices ? 'No matching service. Try a different search.' : 'No matching service.'}
+                  </Text>
+                )}
+                {allServicesTruncated && (
+                  <Text style={styles.loadingText}>
+                    Showing the first {ALL_SERVICES_CAP} — type to narrow the search.
+                  </Text>
+                )}
+              </View>
+            )}
+
+            {!showAllServices ? (
+              <TouchableOpacity style={styles.browseAllButton} onPress={handleBrowseAll} activeOpacity={0.7}>
+                <Text style={styles.browseAllText}>
+                  Can't find it? Browse all services →
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.secondaryButton} onPress={handleBackToPopular}>
+                <Text style={styles.secondaryButtonText}>← Back to popular services</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {step === 'country' && (
+          <View style={styles.section}>
+            <Text style={styles.label}>
+              {selectedService?.name} — available countries
+            </Text>
+
+            {loadingCountries ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator color={Colors.GREEN} />
+                <Text style={styles.loadingText}>
+                  Finding countries with {selectedService?.name} in stock...
+                </Text>
+              </View>
+            ) : countriesError ? (
+              <>
+                <Text style={styles.amountError}>{countriesError}</Text>
+                <TouchableOpacity
+                  style={styles.secondaryButton}
+                  onPress={() => selectedService && handleServiceSelect(selectedService)}
+                >
+                  <Text style={styles.secondaryButtonText}>Retry</Text>
+                </TouchableOpacity>
+              </>
+            ) : availableCountries.length === 0 ? (
+              <View style={styles.loadingContainer}>
+                <Text style={styles.emptyTitle}>No country available</Text>
+                <Text style={styles.loadingText}>
+                  {selectedService?.name} has no numbers in stock in any country right now. Try another service.
+                </Text>
+                <TouchableOpacity style={styles.secondaryButton} onPress={handleBack}>
+                  <Text style={styles.secondaryButtonText}>Pick another service</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <TextInput
+                  style={styles.searchInput}
+                  value={countrySearch}
+                  onChangeText={setCountrySearch}
+                  placeholder="Search country..."
+                  placeholderTextColor={Colors.GRAY}
+                />
+                <View style={styles.countryList}>
+                  {filteredCountries.map((country) => (
+                    <TouchableOpacity
+                      key={country.id}
+                      style={styles.countryRow}
+                      onPress={() => handleCountrySelect(country)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.countryName}>{country.name}</Text>
+                      <View style={styles.countryRight}>
+                        <Text style={styles.countryPrice}>{formatNaira(country.priceKobo / 100)}</Text>
+                        <Text style={styles.countryArrow}>{'>'}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                  {filteredCountries.length === 0 && (
+                    <Text style={styles.loadingText}>No matching country.</Text>
+                  )}
+                </View>
+              </>
+            )}
           </View>
         )}
 
@@ -291,18 +481,30 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
             {loadingPrice ? (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator color={Colors.GREEN} />
-                <Text style={styles.loadingText}>Finding the cheapest available number in {selectedCountry?.name}...</Text>
+                <Text style={styles.loadingText}>
+                  Checking {selectedService?.name} availability in {selectedCountry?.name}...
+                </Text>
               </View>
             ) : priceError ? (
-              <Text style={styles.amountError}>{priceError}</Text>
+              <>
+                <Text style={styles.amountError}>{priceError}</Text>
+                <TouchableOpacity style={styles.secondaryButton} onPress={handleBack}>
+                  <Text style={styles.secondaryButtonText}>Pick another country</Text>
+                </TouchableOpacity>
+              </>
             ) : priceKobo !== null ? (
               <>
                 <View style={styles.priceCard}>
                   <Text style={styles.priceLabel}>Price</Text>
                   <Text style={styles.priceValue}>{formatNaira(priceKobo / 100)}</Text>
                 </View>
+                {available !== null && (
+                  <Text style={styles.stockText}>
+                    ✓ In stock{available > 0 ? ` · ${available.toLocaleString()} available` : ''}
+                  </Text>
+                )}
                 <Text style={styles.disclaimer}>
-                  Numbers are single-use and expire once assigned. This purchase may not be refundable if the code never arrives.
+                  Single-use number. If no code arrives, you can cancel for a refund (wait about 2 minutes before cancelling so the provider accepts it). Once a code is received, the purchase can't be refunded.
                 </Text>
               </>
             ) : null}
@@ -400,6 +602,23 @@ const styles = StyleSheet.create({
   countryName: {
     ...Typography.BODY,
     color: Colors.DARK,
+    flex: 1,
+  },
+  countryRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  countryPrice: {
+    ...Typography.BODY,
+    color: Colors.GREEN,
+    fontWeight: '600',
+    marginRight: Spacing.M,
+  },
+  emptyTitle: {
+    ...Typography.SECTION_HEADING,
+    color: Colors.DARK,
+    marginBottom: Spacing.S,
+    textAlign: 'center',
   },
   countryArrow: {
     ...Typography.BODY,
@@ -444,6 +663,36 @@ const styles = StyleSheet.create({
   priceValue: {
     ...Typography.AMOUNT_LARGE,
     color: Colors.GREEN,
+  },
+  stockText: {
+    ...Typography.CAPTION,
+    color: Colors.GREEN,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: Spacing.M,
+  },
+  secondaryButton: {
+    height: Spacing.BUTTON_HEIGHT_SECONDARY,
+    borderRadius: Spacing.BUTTON_RADIUS,
+    borderWidth: 1,
+    borderColor: Colors.GREEN,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: Spacing.M,
+  },
+  secondaryButtonText: {
+    ...Typography.BUTTON_TEXT,
+    color: Colors.GREEN,
+  },
+  browseAllButton: {
+    paddingVertical: Spacing.M,
+    alignItems: 'center',
+    marginTop: Spacing.S,
+  },
+  browseAllText: {
+    ...Typography.BODY,
+    color: Colors.GREEN,
+    fontWeight: '600',
   },
   disclaimer: {
     ...Typography.CAPTION,

@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { withTimeout, invokeWithRetry } from '../utils/network';
 
 export interface ForeignNumberService {
   id: string;
@@ -10,9 +11,19 @@ export interface ForeignNumberCountry {
   name: string;
 }
 
+// A country that currently has a chosen service in stock, with its live price.
+export interface AvailableCountry {
+  id: string;
+  name: string;
+  priceKobo: number;
+  available: number;
+}
+
 // Confirmed against GrizzlySMS's own getServicesList API response
 // (2026-07-02) — matches _shared/foreign-number-catalog.ts on the server exactly.
 export const FOREIGN_NUMBER_SERVICES: ForeignNumberService[] = [
+  // Catch-all for any service not specifically listed (GrizzlySMS "ot").
+  { id: 'ot', name: 'Any other service' },
   { id: 'wa', name: 'WhatsApp' },
   { id: 'tg', name: 'Telegram' },
   { id: 'go', name: 'Google / Gmail / YouTube' },
@@ -39,7 +50,6 @@ export const FOREIGN_NUMBER_SERVICES: ForeignNumberService[] = [
   { id: 're', name: 'Coinbase' },
   { id: 'aon', name: 'Binance' },
   { id: 'uk', name: 'Airbnb' },
-  { id: 'mb', name: 'Yahoo' },
   { id: 'pm', name: 'AOL' },
   { id: 'dp', name: 'ProtonMail' },
   { id: 'hb', name: 'Twitch' },
@@ -315,11 +325,44 @@ export const foreignNumberService = {
     return FOREIGN_NUMBER_COUNTRIES;
   },
 
+  /** Loads GrizzlySMS's full service catalog (~2,400 services) for the
+   * "Other / Browse all services" picker — everything beyond the curated
+   * popular list. */
+  async getAllServices(): Promise<{ success: boolean; services?: ForeignNumberService[]; error?: string }> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('foreign-number-services', { body: {} }),
+      );
+      if (error) return { success: false, error: await extractError(error, 'Could not load services.') };
+      if (!data?.success) return { success: false, error: data?.error || 'Could not load services' };
+      return { success: true, services: data.services as ForeignNumberService[] };
+    } catch {
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  },
+
+  /** Returns only the countries that currently have `service` in stock, each
+   * with its live price — powers the "pick from available countries" flow. */
+  async getCountriesForService(service: string): Promise<{ success: boolean; countries?: AvailableCountry[]; error?: string }> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('foreign-number-countries', { body: { service } }),
+      );
+      if (error) return { success: false, error: await extractError(error, 'Could not load countries.') };
+      if (!data?.success) return { success: false, error: data?.error || 'Could not load countries' };
+      return { success: true, countries: data.countries as AvailableCountry[] };
+    } catch {
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  },
+
   async getPrice(service: string | null, country: string): Promise<ForeignNumberPriceResult> {
     try {
-      const { data, error } = await supabase.functions.invoke('foreign-number-price', {
-        body: service ? { service, country } : { country },
-      });
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('foreign-number-price', {
+          body: service ? { service, country } : { country },
+        }),
+      );
       if (error) return { success: false, error: await extractError(error, 'Could not load price.') };
       if (!data?.success) return { success: false, error: data?.error || 'Could not load price' };
       return {
@@ -334,11 +377,18 @@ export const foreignNumberService = {
     }
   },
 
-  async purchase(service: string, country: string, authToken: string): Promise<ForeignNumberPurchaseResult> {
+  async purchase(service: string, country: string, authToken: string, serviceName?: string): Promise<ForeignNumberPurchaseResult> {
     try {
-      const { data, error } = await supabase.functions.invoke('foreign-number-purchase', {
-        body: { service, country, auth_token: authToken, idempotency_key: newIdempotencyKey() },
-      });
+      const idempotencyKey = newIdempotencyKey();
+      const { data, error } = await invokeWithRetry<any>(
+        () =>
+          withTimeout(
+            supabase.functions.invoke('foreign-number-purchase', {
+              body: { service, country, service_name: serviceName, auth_token: authToken, idempotency_key: idempotencyKey },
+            }),
+          ),
+        idempotencyKey,
+      );
       if (error) return { success: false, error: await extractError(error, 'Purchase failed. Please try again.') };
       if (!data?.success) return { success: false, error: data?.error || 'Purchase failed' };
       return {
@@ -355,9 +405,11 @@ export const foreignNumberService = {
 
   async checkStatus(activationId: string): Promise<ForeignNumberStatusResult> {
     try {
-      const { data, error } = await supabase.functions.invoke('foreign-number-status', {
-        body: { activation_id: activationId },
-      });
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('foreign-number-status', {
+          body: { activation_id: activationId },
+        }),
+      );
       if (error) return { success: false, error: await extractError(error, 'Could not check status.') };
       if (!data?.success) return { success: false, error: data?.error || 'Could not check status' };
       return { success: true, done: data.done, cancelled: data.cancelled, code: data.code };
@@ -368,9 +420,11 @@ export const foreignNumberService = {
 
   async cancel(activationId: string): Promise<ForeignNumberCancelResult> {
     try {
-      const { data, error } = await supabase.functions.invoke('foreign-number-cancel', {
-        body: { activation_id: activationId },
-      });
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('foreign-number-cancel', {
+          body: { activation_id: activationId },
+        }),
+      );
       if (error) return { success: false, error: await extractError(error, 'Could not cancel.') };
       if (!data?.success) return { success: false, error: data?.error || 'Could not cancel' };
       return { success: true, refunded: data.refunded, message: data.message };

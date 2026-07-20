@@ -45,35 +45,39 @@ export default function ContactPickerModal({
   onSelectMultiple,
 }: Props) {
   const { contacts, loading, permission, query, setQuery } = useContacts();
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Store the FULL selected contact objects (not just ids), keyed by id, so a
+  // selection survives even after the search query changes and filters that
+  // contact out of the visible `contacts` list. Filtering the visible list at
+  // "Done" time was dropping everything picked under an earlier search.
+  const [selected, setSelected] = useState<Map<string, PickedContact>>(new Map());
 
   const handleClose = useCallback(() => {
-    setSelectedIds(new Set());
+    setSelected(new Map());
     onClose();
   }, [onClose]);
 
-  const toggleSelect = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+  const toggleSelect = useCallback((item: PickedContact) => {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      if (next.has(item.id)) next.delete(item.id);
+      else next.set(item.id, item);
       return next;
     });
   }, []);
 
   const handleDone = useCallback(() => {
-    const chosen = contacts.filter((c) => selectedIds.has(c.id));
-    setSelectedIds(new Set());
+    const chosen = Array.from(selected.values());
+    setSelected(new Map());
     onSelectMultiple?.(chosen);
-  }, [contacts, selectedIds, onSelectMultiple]);
+  }, [selected, onSelectMultiple]);
 
   const renderItem = ({ item }: { item: PickedContact }) => {
-    const isChecked = selectedIds.has(item.id);
+    const isChecked = selected.has(item.id);
     return (
       <TouchableOpacity
         style={styles.row}
         activeOpacity={0.6}
-        onPress={() => (multiSelect ? toggleSelect(item.id) : onSelect?.(item))}
+        onPress={() => (multiSelect ? toggleSelect(item) : onSelect?.(item))}
       >
         {multiSelect && (
           <View style={[styles.checkbox, isChecked && styles.checkboxChecked]}>
@@ -173,13 +177,13 @@ export default function ContactPickerModal({
         {multiSelect && (
           <View style={styles.footer}>
             <TouchableOpacity
-              style={[styles.doneBtn, selectedIds.size === 0 && styles.doneBtnDisabled]}
+              style={[styles.doneBtn, selected.size === 0 && styles.doneBtnDisabled]}
               onPress={handleDone}
-              disabled={selectedIds.size === 0}
+              disabled={selected.size === 0}
               activeOpacity={0.8}
             >
               <Text style={styles.doneBtnText}>
-                Done{selectedIds.size > 0 ? ` (${selectedIds.size} selected)` : ''}
+                Done{selected.size > 0 ? ` (${selected.size} selected)` : ''}
               </Text>
             </TouchableOpacity>
           </View>

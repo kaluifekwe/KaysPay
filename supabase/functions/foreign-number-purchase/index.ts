@@ -3,7 +3,7 @@ import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient, consumeAuthToken } from "../_shared/auth.ts";
 import { getPrices, getNumber, isGrizzlySMSConfigured, GrizzlySMSError } from "../_shared/grizzlysms-client.ts";
 import {
-  isValidServiceCode,
+  isPlausibleServiceCode,
   usdToNgnKobo,
   FOREIGN_NUMBER_SERVICES,
 } from "../_shared/foreign-number-catalog.ts";
@@ -38,7 +38,7 @@ serve(async (req: Request) => {
   const service = String(body?.service || "");
   const country = String(body?.country || "");
 
-  if (!isValidServiceCode(service)) return json({ success: false, error: "Unknown service" }, 400);
+  if (!isPlausibleServiceCode(service)) return json({ success: false, error: "Unknown service" }, 400);
   if (!/^\d+$/.test(country)) return json({ success: false, error: "Invalid country" }, 400);
 
   const supabase = adminClient();
@@ -63,7 +63,11 @@ serve(async (req: Request) => {
 
   const amountKobo = usdToNgnKobo(priceUSD);
   const requestId = String(body.idempotency_key || newIdempotencyKey());
-  const serviceName = FOREIGN_NUMBER_SERVICES.find((s) => s.id === service)?.name || service;
+  // Prefer the curated name; for an "Other"-list service, trust the display
+  // name the client passed (came from GrizzlySMS's own list) — it's only used
+  // for display/receipt, never for pricing or the provider call.
+  const clientName = typeof body.service_name === "string" ? body.service_name.trim().slice(0, 60) : "";
+  const serviceName = FOREIGN_NUMBER_SERVICES.find((s) => s.id === service)?.name || clientName || service;
 
   const { data: txId, error: debitError } = await supabase.rpc("debit_for_service", {
     p_user_id: user.id,

@@ -102,6 +102,15 @@ export default function ExamPinsScreen({ navigation }: ExamPinsScreenProps) {
       if (result.success && result.pins) {
         setResultPins(result.pins);
         setResultExamName(selectedExam.name);
+      } else if (result.success && result.pending) {
+        // Order accepted but not settled yet — money is held, not lost.
+        // The PIN(s) will finalize server-side; the user checks back rather
+        // than seeing a false "failed".
+        Alert.alert(
+          'Order Processing',
+          "Your order is still processing. Your PIN(s) will be available shortly — please check your transaction history in a few minutes.",
+          [{ text: 'OK', onPress: handleNewPurchase }],
+        );
       } else {
         Alert.alert(
           'Purchase Failed',

@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { koboToNaira, nairaToKobo } from '../utils/formatCurrency';
+import { withTimeout, invokeWithRetry } from '../utils/network';
 
 // supabase-js hides an Edge Function's JSON error body behind a generic
 // "Edge Function returned a non-2xx status code" message on any FunctionsError.
@@ -10,25 +11,6 @@ async function extractFunctionError(error: any, fallback: string): Promise<strin
     if (body?.error) return body.error;
   } catch {}
   return error?.message || fallback;
-}
-
-// A dropped/stalled mobile connection can leave a fetch() pending forever with
-// no error and no response — the UI would spin indefinitely with no way out.
-// Race it against a timeout so the user always gets a result. Note this
-// doesn't cancel the in-flight request: if it does eventually succeed on the
-// server after we've given up waiting, that's fine — withdrawals are
-// idempotency-keyed, so a manual retry afterward can't double-debit.
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error('Request timed out. Please check your connection and try again.')),
-      ms,
-    );
-    promise.then(
-      (value) => { clearTimeout(timer); resolve(value); },
-      (err) => { clearTimeout(timer); reject(err); },
-    );
-  });
 }
 
 export interface PaystackInitResult {
@@ -89,14 +71,16 @@ export const paystackService = {
     callbackUrl?: string,
   ): Promise<PaystackInitResult> {
     try {
-      const { data, error } = await supabase.functions.invoke('paystack-init', {
-        body: {
-          email,
-          amount: nairaToKobo(amountInNaira), // server + Paystack work in kobo
-          reference,
-          callback_url: callbackUrl,
-        },
-      });
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('paystack-init', {
+          body: {
+            email,
+            amount: nairaToKobo(amountInNaira), // server + Paystack work in kobo
+            reference,
+            callback_url: callbackUrl,
+          },
+        }),
+      );
 
       if (error) throw error;
 
@@ -146,7 +130,7 @@ export const paystackService = {
 
   async listBanks(): Promise<{ success: boolean; banks?: Bank[]; error?: string }> {
     try {
-      const { data, error } = await supabase.functions.invoke('paystack-banks', {});
+      const { data, error } = await withTimeout(supabase.functions.invoke('paystack-banks', {}));
 
       if (error) {
         return { success: false, error: await extractFunctionError(error, 'Failed to fetch banks') };
@@ -167,9 +151,11 @@ export const paystackService = {
     bankCode: string
   ): Promise<ResolveAccountResult> {
     try {
-      const { data, error } = await supabase.functions.invoke('paystack-resolve-account', {
-        body: { account_number: accountNumber, bank_code: bankCode },
-      });
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('paystack-resolve-account', {
+          body: { account_number: accountNumber, bank_code: bankCode },
+        }),
+      );
 
       if (error) {
         return { success: false, error: await extractFunctionError(error, 'Account resolution failed') };
@@ -197,11 +183,31 @@ export const paystackService = {
   }): Promise<TransferResult> {
     try {
       const { authToken, ...rest } = params;
-      const { data, error } = await withTimeout(
-        supabase.functions.invoke('paystack-transfer', {
-          body: { ...rest, amount: nairaToKobo(params.amount), auth_token: authToken },
-        }),
-        30000,
+      // Always guaranteed even though the type marks it optional — needed
+      // to safely recover from an ambiguous network failure below.
+      const idempotencyKey = params.idempotency_key || `kpwd_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      const { data, error } = await invokeWithRetry<any>(
+        () =>
+          withTimeout(
+            supabase.functions.invoke('paystack-transfer', {
+              body: { ...rest, idempotency_key: idempotencyKey, amount: nairaToKobo(params.amount), auth_token: authToken },
+            }),
+            30000,
+          ),
+        idempotencyKey,
+        {
+          table: 'withdrawals',
+          keyColumn: 'idempotency_key',
+          // paystack-transfer's real success shape is { status: true, data:
+          // {...} } (mirrors Paystack's own API), not { success: true } like
+          // the other purchase-type functions — match it so the downstream
+          // `if (!data.status)` check below reads a recovered outcome
+          // correctly instead of misreading it as a failure.
+          buildRecovered: (outcome) => ({
+            status: true,
+            data: { status: outcome === 'pending' ? 'processing' : 'success' },
+          }),
+        },
       );
 
       if (error) {

@@ -31,6 +31,51 @@ export function adminClient() {
   });
 }
 
+const CRON_SECRET = Deno.env.get("CRON_SECRET");
+
+/**
+ * Gate for Edge Functions that should ONLY ever be called by our own
+ * pg_cron schedule, never by a user or the public internet — reconcile
+ * sweeps and payroll-execute (see migration 034). `verify_jwt` isn't enough
+ * here: the anon key that satisfies it is meant to be public (it ships
+ * inside the app bundle), so it doesn't actually restrict who can trigger
+ * these. This checks a separate secret that pg_cron sends via a custom
+ * header, sourced from Supabase Vault so it's never committed to git.
+ */
+export function verifyCronSecret(req: Request): boolean {
+  const provided = req.headers.get("x-cron-secret");
+  if (!provided || !CRON_SECRET || provided.length !== CRON_SECRET.length) return false;
+  let diff = 0;
+  for (let i = 0; i < CRON_SECRET.length; i++) diff |= provided.charCodeAt(i) ^ CRON_SECRET.charCodeAt(i);
+  return diff === 0;
+}
+
+/**
+ * Wraps a cron sweep's body so two overlapping runs of the SAME job never
+ * execute at once (see migration 038). Uses a plain table row, not a
+ * Postgres session advisory lock — Edge Functions reach Postgres through
+ * PostgREST's pooled connections, so an "acquire" and "release" call minutes
+ * apart could land on different underlying connections, and a session lock
+ * can only be released by the session that took it. A stuck advisory lock
+ * would silently block every future run forever; this self-expires instead.
+ *
+ * Returns `{ skipped: true }` if another run currently holds the lock —
+ * callers should treat that as a normal, healthy outcome, not an error.
+ */
+export async function withJobLock<T>(
+  supabase: ReturnType<typeof adminClient>,
+  jobName: string,
+  fn: () => Promise<T>,
+): Promise<T | { skipped: true; reason: "already_running" }> {
+  const { data: acquired } = await supabase.rpc("try_acquire_job_lock", { p_job_name: jobName });
+  if (!acquired) return { skipped: true, reason: "already_running" };
+  try {
+    return await fn();
+  } finally {
+    await supabase.rpc("release_job_lock", { p_job_name: jobName });
+  }
+}
+
 /**
  * Verifies that this specific request was just authorized by the PIN/
  * biometric step-up flow (see migration 021). A valid JWT alone is NOT

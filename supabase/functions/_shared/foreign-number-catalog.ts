@@ -13,6 +13,8 @@ export interface ForeignNumberService {
 // not guessed. Services with no confirmed match in that list (e.g. Tinder,
 // Jumia, OPay, PalmPay, Moniepoint, Kuda) are deliberately left out.
 export const FOREIGN_NUMBER_SERVICES: ForeignNumberService[] = [
+  // Catch-all for any service not specifically listed (GrizzlySMS "ot").
+  { id: "ot", name: "Any other service" },
   { id: "wa", name: "WhatsApp" },
   { id: "tg", name: "Telegram" },
   { id: "go", name: "Google / Gmail / YouTube" },
@@ -39,7 +41,6 @@ export const FOREIGN_NUMBER_SERVICES: ForeignNumberService[] = [
   { id: "re", name: "Coinbase" },
   { id: "aon", name: "Binance" },
   { id: "uk", name: "Airbnb" },
-  { id: "mb", name: "Yahoo" },
   { id: "pm", name: "AOL" },
   { id: "dp", name: "ProtonMail" },
   { id: "hb", name: "Twitch" },
@@ -280,4 +281,12 @@ export function usdToNgnKobo(usd: number): number {
 
 export function isValidServiceCode(code: string): boolean {
   return FOREIGN_NUMBER_SERVICES.some((s) => s.id === code);
+}
+
+// Accepts any GrizzlySMS-style service code — curated OR one the user browsed
+// from the full live service list ("Other" flow). GrizzlySMS is the source of
+// truth: an unknown code just returns no price / no number and the purchase
+// refunds, so a format check is sufficient and money-safe here.
+export function isPlausibleServiceCode(code: string): boolean {
+  return /^[a-zA-Z0-9_]{1,15}$/.test(code);
 }

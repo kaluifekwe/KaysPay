@@ -19,12 +19,38 @@ async function call(params: Record<string, string>): Promise<string> {
   return res.text();
 }
 
+/** Full catalog of every service GrizzlySMS supports — JSON:
+ * { services: [{ code, name }, ...] } (~2,400 entries with friendly names). */
+export async function getServicesList(): Promise<{ code: string; name: string }[]> {
+  const text = await call({ action: "getServicesList" });
+  const parsed = JSON.parse(text);
+  return Array.isArray(parsed?.services) ? parsed.services : [];
+}
+
 /** GET current prices for a specific country — JSON: { [serviceCode]: { count, cost, retry } }. */
 export async function getPrices(countryId: string): Promise<Record<string, { count: number; cost: number }>> {
   const text = await call({ action: "getPrices", country: countryId });
   const parsed = JSON.parse(text);
   // Response is nested one level under the country id even when filtered.
   return parsed?.[countryId] || {};
+}
+
+/**
+ * GET, in one call, every country that has a given service IN STOCK.
+ * getPrices(service, no country) returns { [countryId]: { [service]: { count, cost } } }
+ * across all countries — we flatten to only the in-stock ones.
+ */
+export async function getServiceCountries(service: string): Promise<Record<string, { count: number; cost: number }>> {
+  const text = await call({ action: "getPrices", service });
+  const parsed = JSON.parse(text);
+  const out: Record<string, { count: number; cost: number }> = {};
+  for (const [countryId, svcs] of Object.entries(parsed || {})) {
+    const entry = (svcs as any)?.[service];
+    if (entry && Number.isFinite(entry.cost) && entry.count > 0) {
+      out[countryId] = { count: entry.count, cost: entry.cost };
+    }
+  }
+  return out;
 }
 
 /**

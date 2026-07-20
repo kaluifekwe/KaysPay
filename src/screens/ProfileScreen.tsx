@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,9 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../constants/colors';
 import { Spacing } from '../constants/spacing';
@@ -18,6 +20,8 @@ import { Typography } from '../constants/typography';
 import { formatNaira } from '../utils/formatCurrency';
 import { supabase } from '../lib/supabase';
 import { walletService } from '../services/wallet.service';
+import { kycService } from '../services/kyc.service';
+import { SUPPORT_EMAIL } from './LegalDocumentScreen';
 
 const BRAND_GREEN = '#1A5C3A';
 const DARK_TEXT = '#0F1A14';
@@ -32,11 +36,23 @@ const ProfileScreen = ({ navigation }: any) => {
   const [uploading, setUploading] = useState(false);
   const [totalTransactions, setTotalTransactions] = useState(0);
   const [totalSpent, setTotalSpent] = useState(0);
+  const [kycVerified, setKycVerified] = useState(false);
 
-  useEffect(() => {
-    loadUserInfo();
-    loadStats();
-  }, []);
+  // Re-fetches every time this screen regains focus (not just on first
+  // mount) — otherwise returning here after changing your email/phone in
+  // Edit Profile still shows the stale value from when Profile first loaded.
+  useFocusEffect(
+    useCallback(() => {
+      loadUserInfo();
+      loadStats();
+      loadKycStatus();
+    }, []),
+  );
+
+  const loadKycStatus = async () => {
+    const status = await kycService.getStatus();
+    setKycVerified(status.verified);
+  };
 
   const loadUserInfo = async () => {
     try {
@@ -161,11 +177,33 @@ const ProfileScreen = ({ navigation }: any) => {
     );
   };
 
-  const links = [
-    { label: 'Edit Profile', icon: '👤', screen: null },
+  // wa.me works whether or not WhatsApp is installed (falls back to the
+  // Play Store / WhatsApp Web), so no need to check canOpenURL first.
+  const WHATSAPP_SUPPORT_NUMBER = '2348028387709';
+  const handleOpenSupport = () => {
+    Linking.openURL(`https://wa.me/${WHATSAPP_SUPPORT_NUMBER}`).catch(() =>
+      Alert.alert('Could not open WhatsApp', 'Please make sure WhatsApp is installed.'),
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      `To delete your account, please contact us with your registered email and phone number and we'll process your request promptly.\n\nWhatsApp: +${WHATSAPP_SUPPORT_NUMBER}\nEmail: ${SUPPORT_EMAIL}`,
+      [
+        { text: 'Contact via WhatsApp', onPress: handleOpenSupport },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  };
+
+  const links: { label: string; icon: string; screen: string | null; params?: object; onPress?: () => void; badge?: string }[] = [
+    { label: 'Edit Profile', icon: '👤', screen: 'EditProfile' },
+    { label: 'Identity Verification (KYC)', icon: '🪪', screen: 'Kyc', badge: kycVerified ? 'Verified' : 'Not Verified' },
     { label: 'Transaction History', icon: '📋', screen: 'TransactionHistory' },
-    { label: 'Favourite Contacts', icon: '⭐', screen: null },
-    { label: 'Help & Support', icon: '❓', screen: null },
+    { label: 'Help & Support', icon: '❓', screen: null, onPress: handleOpenSupport },
+    { label: 'Privacy Policy', icon: '🔒', screen: 'LegalDocument', params: { type: 'privacy' } },
+    { label: 'Terms of Service', icon: '📄', screen: 'LegalDocument', params: { type: 'terms' } },
     { label: 'Settings', icon: '⚙️', screen: 'Settings' },
   ];
 
@@ -249,8 +287,10 @@ const ProfileScreen = ({ navigation }: any) => {
                   index < links.length - 1 && styles.linkItemBorder,
                 ]}
                 onPress={() => {
-                  if (link.screen) {
-                    navigation.navigate(link.screen);
+                  if (link.onPress) {
+                    link.onPress();
+                  } else if (link.screen) {
+                    navigation.navigate(link.screen, link.params);
                   }
                 }}
                 activeOpacity={0.7}
@@ -259,7 +299,16 @@ const ProfileScreen = ({ navigation }: any) => {
                   <Text style={styles.linkIcon}>{link.icon}</Text>
                   <Text style={styles.linkLabel}>{link.label}</Text>
                 </View>
-                <Text style={styles.linkChevron}>{'>'}</Text>
+                <View style={styles.linkRight}>
+                  {link.badge && (
+                    <View style={[styles.kycBadge, link.badge === 'Verified' && styles.kycBadgeVerified]}>
+                      <Text style={[styles.kycBadgeText, link.badge === 'Verified' && styles.kycBadgeTextVerified]}>
+                        {link.badge}
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={styles.linkChevron}>{'>'}</Text>
+                </View>
               </TouchableOpacity>
             ))}
           </View>
@@ -278,6 +327,11 @@ const ProfileScreen = ({ navigation }: any) => {
             <Text style={styles.referralCode}>KAYSPAY-XXXX</Text>
           </View>
         </View>
+
+        {/* Danger Zone */}
+        <TouchableOpacity style={styles.deleteAccountButton} onPress={handleDeleteAccount} activeOpacity={0.7}>
+          <Text style={styles.deleteAccountText}>Delete Account</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -444,6 +498,28 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: GRAY_TEXT,
   },
+  linkRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  kycBadge: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginRight: 8,
+  },
+  kycBadgeVerified: {
+    backgroundColor: '#D6F0E3',
+  },
+  kycBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  kycBadgeTextVerified: {
+    color: BRAND_GREEN,
+  },
   referralSection: {
     alignItems: 'center',
     marginTop: 8,
@@ -476,6 +552,16 @@ const styles = StyleSheet.create({
     fontFamily: 'Helvetica-Bold',
     fontSize: 15,
     color: DARK_TEXT,
+  },
+  deleteAccountButton: {
+    alignItems: 'center',
+    paddingVertical: Spacing.M,
+    marginTop: Spacing.S,
+  },
+  deleteAccountText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#DC2626',
   },
 });
 

@@ -2,12 +2,6 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient, consumeAuthToken } from "../_shared/auth.ts";
 import { browseAiraloPackages, submitAiraloOrder, isAiraloConfigured, AiraloAuthError } from "../_shared/airalo-client.ts";
-import {
-  listESIMAccessPackages,
-  orderESIMAccessProfile,
-  isESIMAccessConfigured,
-  ESIMAccessError,
-} from "../_shared/esimaccess-client.ts";
 import { usdToNgnKobo } from "../_shared/esim-catalog.ts";
 
 function json(body: unknown, status = 200) {
@@ -31,30 +25,18 @@ function newIdempotencyKey() {
  */
 async function resolveCurrentPrice(
   supabase: ReturnType<typeof adminClient>,
-  provider: "airalo" | "esimaccess",
   providerPackageId: string,
   country: string,
 ): Promise<{ priceUSD: number; raw: any } | null> {
-  if (provider === "airalo") {
-    const raw = await browseAiraloPackages(supabase, country);
-    for (const c of raw?.data || []) {
-      for (const op of c?.operators || []) {
-        for (const pkg of op?.packages || []) {
-          if (pkg?.id === providerPackageId) {
-            const priceUSD = Number(pkg?.prices?.net_price?.USD ?? pkg?.net_price ?? pkg?.price);
-            if (Number.isFinite(priceUSD)) return { priceUSD, raw: pkg };
-          }
+  const raw = await browseAiraloPackages(supabase, country);
+  for (const c of raw?.data || []) {
+    for (const op of c?.operators || []) {
+      for (const pkg of op?.packages || []) {
+        if (pkg?.id === providerPackageId) {
+          const priceUSD = Number(pkg?.prices?.net_price?.USD ?? pkg?.net_price ?? pkg?.price);
+          if (Number.isFinite(priceUSD)) return { priceUSD, raw: pkg };
         }
       }
-    }
-    return null;
-  }
-
-  const raw = await listESIMAccessPackages(country);
-  for (const pkg of raw?.obj?.packageList || []) {
-    if (pkg?.packageCode === providerPackageId) {
-      const priceUSD = Number(pkg?.price) / 10000;
-      if (Number.isFinite(priceUSD)) return { priceUSD, raw: pkg };
     }
   }
   return null;
@@ -79,10 +61,9 @@ serve(async (req: Request) => {
   const [provider, providerPackageId] = planId.split(/:(.+)/);
 
   if (!/^[A-Z]{2}$/.test(country)) return json({ success: false, error: "Invalid country code" }, 400);
-  if (provider !== "airalo" && provider !== "esimaccess") return json({ success: false, error: "Invalid plan" }, 400);
+  if (provider !== "airalo") return json({ success: false, error: "Invalid plan" }, 400);
   if (!providerPackageId) return json({ success: false, error: "Invalid plan" }, 400);
-  if (provider === "airalo" && !isAiraloConfigured()) return json({ error: "Airalo not configured" }, 500);
-  if (provider === "esimaccess" && !isESIMAccessConfigured()) return json({ error: "eSIM Access not configured" }, 500);
+  if (!isAiraloConfigured()) return json({ error: "Airalo not configured" }, 500);
 
   const supabase = adminClient();
 
@@ -93,7 +74,7 @@ serve(async (req: Request) => {
 
   let current;
   try {
-    current = await resolveCurrentPrice(supabase, provider, providerPackageId, country);
+    current = await resolveCurrentPrice(supabase, providerPackageId, country);
   } catch {
     return json({ success: false, error: "Could not verify current plan price. Please try again." });
   }
@@ -119,82 +100,32 @@ serve(async (req: Request) => {
     return json({ success: false, error: "Could not start transaction" }, 500);
   }
 
-  if (provider === "airalo") {
-    try {
-      const result = await submitAiraloOrder(supabase, providerPackageId, 1, requestId);
-      const sim = result?.data?.sims?.[0];
-      if (!sim?.qrcode) {
-        await supabase.rpc("refund_service_transaction", { p_tx_id: txId, p_reason: result?.meta?.message || "provider_rejected" });
-        return json({ success: false, error: result?.meta?.message || "Purchase failed. You were not charged." });
-      }
-      await supabase.rpc("complete_service_transaction", { p_tx_id: txId, p_order_id: String(result?.data?.id ?? "") });
-      return json({
-        success: true,
-        transaction_id: txId,
-        iccid: sim.iccid,
-        qrcode: sim.qrcode,
-        qrcode_url: sim.qrcode_url,
-        direct_apple_installation_url: sim.direct_apple_installation_url,
-        amount: amountKobo,
-      });
-    } catch (e) {
-      const isAuthError = e instanceof AiraloAuthError;
-      await supabase.rpc("refund_service_transaction", {
-        p_tx_id: txId,
-        p_reason: isAuthError ? `airalo_auth_failed: ${e.message}` : "provider_unreachable",
-      });
-      return json({
-        success: false,
-        error: isAuthError ? "Provider login failed. Please try again later." : "Network error. Please try again. You were not charged.",
-      });
-    }
-  }
-
-  // eSIM Access — async. Order now, respond immediately (same speed lesson
-  // learned from VTU.ng: don't block the user on a polling loop), and let
-  // the reconcile sweep finish it once the profile is actually allocated.
   try {
-    const result = await orderESIMAccessProfile(requestId, providerPackageId, Math.round(current.priceUSD * 10000));
-    const orderNo = result?.obj?.orderNo;
-    if ((result?.code !== "success" && result?.success !== true) || !orderNo) {
-      await supabase.rpc("refund_service_transaction", {
-        p_tx_id: txId,
-        p_reason: result?.errorMessage || result?.errorMsg || "provider_rejected",
-      });
-      return json({ success: false, error: result?.errorMessage || result?.errorMsg || "Purchase failed. You were not charged." });
+    const result = await submitAiraloOrder(supabase, providerPackageId, 1, requestId);
+    const sim = result?.data?.sims?.[0];
+    if (!sim?.qrcode) {
+      await supabase.rpc("refund_service_transaction", { p_tx_id: txId, p_reason: result?.meta?.message || "provider_rejected" });
+      return json({ success: false, error: result?.meta?.message || "Purchase failed. You were not charged." });
     }
-
-    // Reconcile needs orderNo to query the provider later — store it now.
-    await supabase
-      .from("transactions")
-      .update({
-        metadata: {
-          service: "esim",
-          provider,
-          provider_package_id: providerPackageId,
-          country,
-          price_usd: current.priceUSD,
-          idempotency_key: requestId,
-          order_no: orderNo,
-        },
-      })
-      .eq("id", txId);
-
+    await supabase.rpc("complete_service_transaction", { p_tx_id: txId, p_order_id: String(result?.data?.id ?? "") });
     return json({
       success: true,
-      pending: true,
       transaction_id: txId,
-      message: "Your eSIM is being prepared. You'll be notified once it's ready.",
+      iccid: sim.iccid,
+      qrcode: sim.qrcode,
+      qrcode_url: sim.qrcode_url,
+      direct_apple_installation_url: sim.direct_apple_installation_url,
+      amount: amountKobo,
     });
   } catch (e) {
-    const isAuthError = e instanceof ESIMAccessError;
+    const isAuthError = e instanceof AiraloAuthError;
     await supabase.rpc("refund_service_transaction", {
       p_tx_id: txId,
-      p_reason: isAuthError ? `esimaccess_config: ${e.message}` : "provider_unreachable",
+      p_reason: isAuthError ? `airalo_auth_failed: ${e.message}` : "provider_unreachable",
     });
     return json({
       success: false,
-      error: isAuthError ? "Provider not configured. Please try again later." : "Network error. Please try again. You were not charged.",
+      error: isAuthError ? "Provider login failed. Please try again later." : "Network error. Please try again. You were not charged.",
     });
   }
 });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,24 +17,38 @@ import { Spacing } from '../constants/spacing';
 import { walletService } from '../services/wallet.service';
 import { formatNaira } from '../utils/formatCurrency';
 import { Transaction } from '../types/app.types';
+import { useCachedData } from '../hooks/useCachedData';
+import TransactionDetailModal, { TransactionDetailItem } from '../components/TransactionDetailModal';
 
-interface TransactionItem {
-  id: string;
-  type: 'credit' | 'debit';
-  label: string;
-  recipientPhone?: string;
-  amount: number;
-  status: 'successful' | 'pending' | 'failed' | 'refunded';
-  timestamp: string;
-}
+type TransactionItem = TransactionDetailItem;
 
 interface DateGroup {
   title: string;
   data: TransactionItem[];
 }
 
-const getTransactionIcon = (type: 'credit' | 'debit') => {
-  return type === 'credit' ? '↓' : '↑';
+const TRANSACTION_LABELS: Record<string, string> = {
+  wallet_fund: 'Wallet Funding',
+  refund: 'Refund',
+  airtime: 'Airtime',
+  data: 'Data Bundle',
+  bill: 'Bill Payment',
+  exam_pin: 'Exam Pin',
+  foreign_number: 'Foreign Number',
+  card_fund: 'Card Funding',
+  payroll: 'Payroll',
+  withdrawal: 'Withdrawal',
+  esim: 'eSIM',
+  nin_verification: 'NIN Verification',
+  nin_validation: 'NIN Validation',
+  bvn_verification: 'BVN Verification',
+  nin_name_modification: 'NIN Name Update',
+  nin_phone_modification: 'NIN Phone Update',
+  nin_address_modification: 'NIN Address Update',
+};
+
+const getTransactionIcon = (direction: 'credit' | 'debit') => {
+  return direction === 'credit' ? '↓' : '↑';
 };
 
 const getStatusColor = (status: string) => {
@@ -99,42 +113,39 @@ const formatTimestamp = (timestamp: string): string => {
 
 const TransactionHistoryScreen: React.FC = () => {
   const navigation = useNavigation();
-  const [transactions, setTransactions] = useState<TransactionItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const fetchTransactions = useCallback(async () => {
-    try {
-      setError(null);
-      const response = await walletService.getRecentTransactions(50);
-
-      if (response.success && response.transactions) {
-        const formattedTransactions: TransactionItem[] = response.transactions.map(
-          (txn: Transaction) => ({
-            id: txn.id,
-            type: (txn.type === 'wallet_fund' || txn.type === 'refund') ? 'credit' : 'debit',
-            label: txn.type === 'wallet_fund' ? 'Wallet Funding' : txn.type === 'refund' ? 'Refund' : txn.type,
-            recipientPhone: txn.recipient_phone || undefined,
-            amount: txn.amount_ngn,
-            status: txn.status === 'completed' ? 'successful' : txn.status,
-            timestamp: txn.created_at,
-          })
-        );
-        setTransactions(formattedTransactions);
-      } else {
-        setError('Failed to load transactions');
-      }
-    } catch (err) {
-      setError('An error occurred while loading transactions');
-    } finally {
-      setLoading(false);
+  // Shows the last-known transaction list immediately (even on a bad
+  // connection) while refreshing in the background, instead of a blank
+  // "Loading transactions..." screen every single time this opens.
+  const fetchTransactionsOrThrow = useCallback(async (): Promise<TransactionItem[]> => {
+    const response = await walletService.getRecentTransactions(50);
+    if (!response.success || !response.transactions) {
+      throw new Error('Failed to load transactions');
     }
+    return response.transactions.map((txn: Transaction) => ({
+      id: txn.id,
+      direction: (txn.type === 'wallet_fund' || txn.type === 'refund') ? 'credit' : 'debit',
+      rawType: txn.type,
+      label: TRANSACTION_LABELS[txn.type] || txn.type,
+      recipientPhone: txn.recipient_phone || undefined,
+      network: txn.network || undefined,
+      amount: txn.amount_ngn,
+      status: txn.status === 'completed' ? 'successful' : txn.status,
+      timestamp: txn.created_at,
+      orderId: txn.vtu_order_id,
+      metadata: txn.metadata,
+    }));
   }, []);
 
-  useEffect(() => {
-    fetchTransactions();
-  }, [fetchTransactions]);
+  const {
+    data: transactionsData,
+    loading,
+    isStale,
+    error,
+    refresh: fetchTransactions,
+  } = useCachedData<TransactionItem[]>('transaction_history', fetchTransactionsOrThrow);
+  const transactions = transactionsData ?? [];
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -142,82 +153,32 @@ const TransactionHistoryScreen: React.FC = () => {
     setRefreshing(false);
   }, [fetchTransactions]);
 
-  const renderTransactionItem = ({ item }: { item: TransactionItem }) => (
-    <View style={styles.transactionItem}>
-      <View
-        style={[
-          styles.iconContainer,
-          { backgroundColor: item.type === 'credit' ? Colors.GREEN_LIGHT : Colors.LIGHT_GRAY },
-        ]}
-      >
-        <Text
-          style={[
-            styles.icon,
-            { color: item.type === 'credit' ? Colors.GREEN : Colors.DARK },
-          ]}
-        >
-          {getTransactionIcon(item.type)}
-        </Text>
-      </View>
-
-      <View style={styles.transactionDetails}>
-        <Text style={styles.transactionType}>{item.label}</Text>
-        {item.recipientPhone && (
-          <Text style={styles.recipientPhone}>{item.recipientPhone}</Text>
-        )}
-      </View>
-
-      <View style={styles.amountContainer}>
-        <Text
-          style={[
-            styles.amount,
-            { color: item.type === 'credit' ? Colors.GREEN : Colors.RED },
-          ]}
-        >
-          {item.type === 'credit' ? '+' : '-'}{formatNaira(item.amount)}
-        </Text>
-        <Text style={styles.timestamp}>{formatTimestamp(item.timestamp)}</Text>
-      </View>
-
-      <View
-        style={[
-          styles.statusBadge,
-          { backgroundColor: getStatusColor(item.status) + '20' },
-        ]}
-      >
-        <Text
-          style={[styles.statusText, { color: getStatusColor(item.status) }]}
-        >
-          {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-        </Text>
-      </View>
-    </View>
-  );
+  const [selectedTransaction, setSelectedTransaction] = useState<TransactionItem | null>(null);
 
   const renderDateGroup = ({ item }: { item: DateGroup }) => (
     <View style={styles.dateGroup}>
       <Text style={styles.dateGroupTitle}>{item.title}</Text>
       {item.data.map((transaction) => (
-        <TransactionItemComponent key={transaction.id} item={transaction} />
+        <TransactionItemComponent key={transaction.id} item={transaction} onPress={() => setSelectedTransaction(transaction)} />
       ))}
     </View>
   );
 
-  const TransactionItemComponent = ({ item }: { item: TransactionItem }) => (
-    <View style={styles.transactionItem}>
+  const TransactionItemComponent = ({ item, onPress }: { item: TransactionItem; onPress: () => void }) => (
+    <TouchableOpacity style={styles.transactionItem} onPress={onPress} activeOpacity={0.7}>
       <View
         style={[
           styles.iconContainer,
-          { backgroundColor: item.type === 'credit' ? Colors.GREEN_LIGHT : Colors.LIGHT_GRAY },
+          { backgroundColor: item.direction === 'credit' ? Colors.GREEN_LIGHT : Colors.LIGHT_GRAY },
         ]}
       >
         <Text
           style={[
             styles.icon,
-            { color: item.type === 'credit' ? Colors.GREEN : Colors.DARK },
+            { color: item.direction === 'credit' ? Colors.GREEN : Colors.DARK },
           ]}
         >
-          {getTransactionIcon(item.type)}
+          {getTransactionIcon(item.direction)}
         </Text>
       </View>
 
@@ -232,10 +193,10 @@ const TransactionHistoryScreen: React.FC = () => {
         <Text
           style={[
             styles.amount,
-            { color: item.type === 'credit' ? Colors.GREEN : Colors.RED },
+            { color: item.direction === 'credit' ? Colors.GREEN : Colors.RED },
           ]}
         >
-          {item.type === 'credit' ? '+' : '-'}{formatNaira(item.amount)}
+          {item.direction === 'credit' ? '+' : '-'}{formatNaira(item.amount)}
         </Text>
         <Text style={styles.timestamp}>{formatTimestamp(item.timestamp)}</Text>
       </View>
@@ -252,7 +213,7 @@ const TransactionHistoryScreen: React.FC = () => {
           {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
         </Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderEmptyState = () => (
@@ -313,6 +274,12 @@ const TransactionHistoryScreen: React.FC = () => {
         <Text style={styles.title}>Transaction History</Text>
       </View>
 
+      {isStale && !loading && (
+        <View style={styles.staleBanner}>
+          <Text style={styles.staleBannerText}>Showing saved data — pull down to refresh</Text>
+        </View>
+      )}
+
       {error ? (
         renderErrorState()
       ) : transactions.length === 0 ? (
@@ -334,6 +301,12 @@ const TransactionHistoryScreen: React.FC = () => {
           showsVerticalScrollIndicator={false}
         />
       )}
+
+      <TransactionDetailModal
+        visible={selectedTransaction !== null}
+        transaction={selectedTransaction}
+        onClose={() => setSelectedTransaction(null)}
+      />
     </SafeAreaView>
   );
 };
@@ -350,6 +323,15 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.M,
     borderBottomWidth: 1,
     borderBottomColor: Colors.BORDER,
+  },
+  staleBanner: {
+    backgroundColor: Colors.LIGHT_GRAY,
+    paddingVertical: Spacing.S,
+    alignItems: 'center',
+  },
+  staleBannerText: {
+    ...Typography.CAPTION,
+    color: Colors.GRAY,
   },
   backButton: {
     width: 48,

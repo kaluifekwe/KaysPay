@@ -133,6 +133,14 @@ export default function DollarCardsScreen({ navigation }: DollarCardsScreenProps
     );
   }, []);
 
+  const handleConvertUsdt = useCallback(() => {
+    Alert.alert(
+      'Coming Soon',
+      'Converting USDT to Naira, and receiving USDT directly, will be available here soon.',
+      [{ text: 'OK' }],
+    );
+  }, []);
+
   const renderTransaction = ({ item }: { item: CardTransaction }) => (
     <View style={styles.transactionItem}>
       <View style={styles.transactionLeft}>
@@ -276,6 +284,20 @@ export default function DollarCardsScreen({ navigation }: DollarCardsScreenProps
               <Text style={[styles.quickActionIconText, { color: Colors.DARK }]}>i</Text>
             </View>
             <Text style={styles.quickActionLabel}>Details</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.quickAction}
+            activeOpacity={0.7}
+            onPress={handleConvertUsdt}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#EDE9FE' }]}>
+              <Text style={[styles.quickActionIconText, { color: Colors.PURPLE }]}>₮</Text>
+              <View style={styles.comingSoonBadge}>
+                <Text style={styles.comingSoonBadgeText}>Soon</Text>
+              </View>
+            </View>
+            <Text style={styles.quickActionLabel}>USDT</Text>
           </TouchableOpacity>
         </View>
 
@@ -477,6 +499,20 @@ const styles = StyleSheet.create({
     fontFamily: 'Helvetica-Bold',
     fontSize: 22,
     fontWeight: '600',
+  },
+  comingSoonBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -10,
+    backgroundColor: Colors.AMBER,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  comingSoonBadgeText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: Colors.WHITE,
   },
   quickActionLabel: {
     ...Typography.CAPTION,

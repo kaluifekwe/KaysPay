@@ -20,6 +20,7 @@ import { walletService } from '../services/wallet.service';
 import { paystackService, Bank } from '../services/paystack.service';
 import { supabase } from '../lib/supabase';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
+import { safeErrorMessage } from '../utils/errorMessages';
 
 interface WithdrawScreenProps {
   navigation: any;
@@ -222,7 +223,7 @@ export default function WithdrawScreen({ navigation, route }: WithdrawScreenProp
         ]
       );
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Something went wrong');
+      Alert.alert('Error', safeErrorMessage(error, 'Something went wrong. Please try again.'));
     } finally {
       setLoading(false);
       submittingRef.current = false;

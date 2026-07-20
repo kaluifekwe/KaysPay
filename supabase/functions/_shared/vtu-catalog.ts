@@ -321,27 +321,36 @@ export const VALID_NETWORKS: NetworkProvider[] = ["mtn", "airtel", "glo", "9mobi
 export const BETTING_MIN = 100 * KOBO;
 export const BETTING_MAX = 100000 * KOBO;
 
+// Service fee added to every bet funding, charged to the user on top of the
+// funding amount. VTUAfrica charges US a flat ₦20 per bet funding (our
+// account is Portal-Owner tier — confirmed live 2026-07-04), so ₦30 covers
+// that ₦20 cost + a ₦10 margin. Flat, not a percentage, matching VTUAfrica's
+// own flat fee. If VTUAfrica ever changes their tier fee, bump this.
+export const BETTING_SERVICE_FEE = 30 * KOBO;
+
 interface BettingProvider {
   id: string;
   name: string;
 }
 
+// Only VTUAfrica-verifiable platforms are offered. Removed 2026-07-05 (their
+// /merchant-verify returns a stub for these, so the account can't be checked):
+// BetKing, BetBiga, SportyBet, MelBet, LiveScoreBet, CloudBet, Paripesa.
+// Must stay in sync with client `bettingProviders` (vtu.service.ts).
 export const BETTING_PROVIDERS: BettingProvider[] = [
   { id: "bet9ja", name: "Bet9ja" },
-  { id: "betking", name: "BetKing" },
+  // 1xbet's /merchant-verify rejects even confirmed-correct account ids
+  // (confirmed live 2026-07-06) — vtu-verify-customer skips the call
+  // entirely for this id and always returns "unverifiable" instead of a
+  // hard block. Kept in the list (unlike the stub platforms above) since
+  // funding itself still works fine; only the pre-check is broken.
   { id: "1xbet", name: "1xBet" },
   { id: "nairabet", name: "NairaBet" },
-  { id: "betbiga", name: "BetBiga" },
   { id: "merrybet", name: "MerryBet" },
-  { id: "sportybet", name: "SportyBet" },
   { id: "naijabet", name: "NaijaBet" },
   { id: "betway", name: "BetWay" },
   { id: "bangbet", name: "BangBet" },
-  { id: "melbet", name: "MelBet" },
-  { id: "livescorebet", name: "LiveScoreBet" },
   { id: "naira-million", name: "Naira Million" },
-  { id: "cloudbet", name: "CloudBet" },
-  { id: "paripesa", name: "Paripesa" },
   { id: "mylottohub", name: "MyLottoHub" },
 ];
 

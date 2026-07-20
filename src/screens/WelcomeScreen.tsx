@@ -11,6 +11,8 @@ import {
   StatusBar,
 } from 'react-native';
 
+import { Features } from '../constants/features';
+
 const { width } = Dimensions.get('window');
 const BRAND_GREEN = '#1A5C3A';
 const DARK_BG = '#0F1A14';
@@ -199,12 +201,16 @@ const slides = [
     subtitle: 'US, UK & Canada numbers for WhatsApp, PayPal, Fiverr and more.',
     Component: ForeignNumbersSlide,
   },
-  {
-    id: '4',
-    title: 'Airtime Payroll',
-    subtitle: 'Schedule bulk recharge for staff, family or anyone. Auto-sends every time.',
-    Component: PayrollSlide,
-  },
+  ...(Features.PAYROLL_ENABLED
+    ? [
+        {
+          id: '4',
+          title: 'Airtime Payroll',
+          subtitle: 'Schedule bulk recharge for staff, family or anyone. Auto-sends every time.',
+          Component: PayrollSlide,
+        },
+      ]
+    : []),
 ];
 
 export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {

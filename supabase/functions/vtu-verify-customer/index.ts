@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser } from "../_shared/auth.ts";
 import { VALID_BETTING_IDS } from "../_shared/vtu-catalog.ts";
+import { Features, SERVICE_DISABLED_MESSAGE } from "../_shared/features.ts";
 import { callVTUAfrica, isVtuAfricaConfigured, VTUAfricaError } from "../_shared/vtuafrica-client.ts";
 
 function json(body: unknown, status = 200) {
@@ -25,6 +26,12 @@ serve(async (req: Request) => {
   const user = await getAuthUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
 
+  // Betting switched off 2026-07-18 — this function only ever serves betting
+  // name lookups. Flip Features.BETTING_ENABLED to restore.
+  if (!Features.BETTING_ENABLED) {
+    return json({ success: false, error: SERVICE_DISABLED_MESSAGE }, 503);
+  }
+
   let body: any;
   try {
     body = await req.json();
@@ -37,6 +44,18 @@ serve(async (req: Request) => {
 
   if (!VALID_BETTING_IDS.includes(providerId)) return json({ success: false, error: "Unknown betting platform" }, 400);
   if (!customerId) return json({ success: false, error: "Enter your betting account ID" }, 400);
+
+  // 1xbet's /merchant-verify rejects even confirmed-correct account ids —
+  // confirmed live 2026-07-06 with the owner's own real 1xBet account
+  // (id 1728785375, VTUAfrica returned "Verification Failed. Invalid
+  // Userid"). This is the opposite failure mode from the stub platforms
+  // below (a false rejection instead of a false "Completed"), but the fix is
+  // the same: don't let a broken provider-side check hard-block funding a
+  // real account. Skip the call entirely and let the user proceed with a
+  // "double-check this ID" warning instead.
+  if (providerId === "1xbet") {
+    return json({ success: true, unverifiable: true });
+  }
 
   try {
     const result = await callVTUAfrica("/merchant-verify", {

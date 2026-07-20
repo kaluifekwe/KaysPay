@@ -13,6 +13,7 @@ import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { paystackService } from '../services/paystack.service';
+import { safeErrorMessage } from '../utils/errorMessages';
 
 // Sentinel URL Paystack redirects the WebView to after payment. It doesn't need
 // to resolve — we intercept the navigation to it and never actually load it.
@@ -49,7 +50,7 @@ export default function PaystackCheckoutScreen(props: any) {
       );
 
       if (!result.success || !result.authorization_url) {
-        setError(result.error || 'Failed to initialize payment');
+        setError(safeErrorMessage(result.error, 'Failed to initialize payment. Please try again.'));
         setLoading(false);
         return;
       }
@@ -57,7 +58,7 @@ export default function PaystackCheckoutScreen(props: any) {
       setAuthorizationUrl(result.authorization_url);
       setLoading(false);
     } catch (err: any) {
-      setError(err.message || 'Failed to initialize payment');
+      setError(safeErrorMessage(err, 'Failed to initialize payment. Please try again.'));
       setLoading(false);
     }
   };

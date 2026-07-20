@@ -9,6 +9,7 @@ import {
   RefreshControl,
   StatusBar,
   Image,
+  Alert,
 } from 'react-native';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
@@ -29,6 +30,7 @@ interface QuickAction {
   icon: string;
   label: string;
   screen: string;
+  comingSoon?: boolean;
 }
 
 const quickActions: QuickAction[] = [
@@ -37,11 +39,10 @@ const quickActions: QuickAction[] = [
   { id: '3', icon: '📝', label: Strings.SERVICE_EXAMS, screen: 'ExamPins' },
   { id: '4', icon: '💡', label: Strings.SERVICE_BILLS, screen: 'Bills' },
   { id: '5', icon: '📺', label: Strings.SERVICE_TV, screen: 'TV' },
-  { id: '6', icon: '⚽', label: Strings.SERVICE_BETTING, screen: 'Betting' },
   { id: '7', icon: '📡', label: Strings.SERVICE_ESIM, screen: 'TravelEsim' },
   { id: '8', icon: '🌍', label: Strings.SERVICE_FOREIGN, screen: 'ForeignNumber' },
-  { id: '9', icon: '💳', label: Strings.SERVICE_DOLLAR_CARD, screen: 'DollarCard' },
-  { id: '10', icon: '👥', label: Strings.SERVICE_PAYROLL, screen: 'Payroll' },
+  { id: '9', icon: '💳', label: Strings.SERVICE_DOLLAR_CARD, screen: 'DollarCard', comingSoon: true },
+  { id: '11', icon: '🪪', label: Strings.SERVICE_NIN, screen: 'NinServices' },
 ];
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
@@ -208,10 +209,19 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               <TouchableOpacity
                 key={action.id}
                 style={styles.quickActionItem}
-                onPress={() => navigation.navigate(action.screen)}
+                onPress={() =>
+                  action.comingSoon
+                    ? Alert.alert('Coming Soon', `${action.label} is on its way — we'll let you know when it's ready.`)
+                    : navigation.navigate(action.screen)
+                }
               >
                 <View style={styles.quickActionIcon}>
                   <Text style={styles.quickActionEmoji}>{action.icon}</Text>
+                  {action.comingSoon && (
+                    <View style={styles.comingSoonBadge}>
+                      <Text style={styles.comingSoonBadgeText}>Soon</Text>
+                    </View>
+                  )}
                 </View>
                 <Text style={styles.quickActionLabel}>{action.label}</Text>
               </TouchableOpacity>
@@ -422,9 +432,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 4,
+    position: 'relative',
   },
   quickActionEmoji: {
     fontSize: 24,
+  },
+  comingSoonBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -10,
+    backgroundColor: Colors.AMBER,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  comingSoonBadgeText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: Colors.WHITE,
   },
   quickActionLabel: {
     ...Typography.CAPTION,
