@@ -13,12 +13,16 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { Colors } from '../constants/colors';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
 import { authService } from '../services/auth.service';
+import { walletService } from '../services/wallet.service';
+import { withTimeout } from '../utils/network';
+import { navigationRef } from '../navigation/navigationRef';
 import { formatNaira } from '../utils/formatCurrency';
 
 interface AuthorizeOptions {
@@ -34,6 +38,13 @@ interface AuthorizeOptions {
    * this unset.
    */
   maxUses?: number;
+  /**
+   * Skip the pre-PIN wallet-balance check. Set for actions that don't spend
+   * FROM the wallet in the "fund to proceed" sense — e.g. a withdrawal, which
+   * runs its own balance validation and where a "Fund Wallet" prompt would be
+   * nonsensical.
+   */
+  skipBalanceCheck?: boolean;
 }
 
 export interface AuthorizeResult {
@@ -137,27 +148,72 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
     }
   }, [finish]);
 
-  const authorize = useCallback(
-    (opts?: AuthorizeOptions) => {
-      return new Promise<AuthorizeResult | null>((resolve) => {
-        resolverRef.current = resolve;
-        maxUsesRef.current = opts?.maxUses && opts.maxUses > 1 ? opts.maxUses : 1;
-        checkingRef.current = false;
-        setOptions(opts || {});
-        setPin('');
-        setError(null);
-        setLocked(false);
-        setChecking(false);
-        setVisible(true);
+  const showPinModal = useCallback(
+    (opts: AuthorizeOptions, resolve: (value: AuthorizeResult | null) => void) => {
+      resolverRef.current = resolve;
+      maxUsesRef.current = opts?.maxUses && opts.maxUses > 1 ? opts.maxUses : 1;
+      checkingRef.current = false;
+      setOptions(opts || {});
+      setPin('');
+      setError(null);
+      setLocked(false);
+      setChecking(false);
+      setVisible(true);
 
-        // Offer biometric immediately if it is set up on this device.
-        biometricUsable().then((usable) => {
-          setBiometricAvailable(usable);
-          if (usable) tryBiometric();
-        });
+      // Offer biometric immediately if it is set up on this device.
+      biometricUsable().then((usable) => {
+        setBiometricAvailable(usable);
+        if (usable) tryBiometric();
       });
     },
     [biometricUsable, tryBiometric],
+  );
+
+  const authorize = useCallback(
+    (opts?: AuthorizeOptions) => {
+      return new Promise<AuthorizeResult | null>((resolve) => {
+        const amount = opts?.amount;
+
+        // Pre-PIN balance check: if the wallet can't cover this, tell the user
+        // up front and offer to fund — instead of making them enter their PIN
+        // only to hit a generic "insufficient balance" after the fact. If the
+        // balance can't be read (offline/timeout), fall through to the PIN and
+        // let the server's atomic debit stay the authority.
+        if (amount && amount > 0 && !opts?.skipBalanceCheck) {
+          (async () => {
+            try {
+              const r = await withTimeout(walletService.getWallet());
+              if (r.success && r.wallet && r.wallet.available_balance < amount) {
+                const shortfall = amount - r.wallet.available_balance;
+                Alert.alert(
+                  'Insufficient Balance',
+                  `You need ${formatNaira(shortfall)} more to complete this. Fund your wallet to continue.`,
+                  [
+                    { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+                    {
+                      text: 'Fund Wallet',
+                      onPress: () => {
+                        resolve(null);
+                        if (navigationRef.isReady()) navigationRef.navigate('WalletFunding' as never);
+                      },
+                    },
+                  ],
+                  { cancelable: true, onDismiss: () => resolve(null) },
+                );
+                return;
+              }
+            } catch {
+              // balance unreadable — proceed; the server still enforces it
+            }
+            showPinModal(opts || {}, resolve);
+          })();
+          return;
+        }
+
+        showPinModal(opts || {}, resolve);
+      });
+    },
+    [showPinModal],
   );
 
   // Verify automatically once the PIN is fully entered. Guarded by a ref,

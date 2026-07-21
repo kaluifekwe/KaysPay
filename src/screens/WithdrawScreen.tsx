@@ -177,7 +177,7 @@ export default function WithdrawScreen({ navigation, route }: WithdrawScreenProp
     submittingRef.current = true;
 
     try {
-      const authResult = await authorize({ title: 'Confirm Withdrawal', amount: withdrawAmount });
+      const authResult = await authorize({ title: 'Confirm Withdrawal', amount: withdrawAmount, skipBalanceCheck: true });
       if (!authResult) return;
 
       // Stable key for this withdrawal intent — reused if the request is

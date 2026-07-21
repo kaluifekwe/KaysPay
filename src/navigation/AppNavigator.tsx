@@ -5,6 +5,7 @@ import AuthNavigator from './AuthNavigator';
 import RequireEmailVerifyNavigator from './RequireEmailVerifyNavigator';
 import RequirePinNavigator from './RequirePinNavigator';
 import TabNavigator from './TabNavigator';
+import { navigationRef } from './navigationRef';
 import AirtimeScreen from '../screens/AirtimeScreen';
 import DataScreen from '../screens/DataScreen';
 import BulkSendReviewScreen from '../screens/BulkSendReviewScreen';
@@ -121,7 +122,7 @@ export default function AppNavigator() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuth ? (
           <RootStack.Screen name="Auth" component={AuthNavigator} />
