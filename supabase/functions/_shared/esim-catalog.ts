@@ -10,12 +10,15 @@ import { adminClient } from "./auth.ts";
 // checkout. Keep it roughly current.
 export const DEFAULT_USD_TO_NGN_RATE = 1450;
 
-// Buffer added on top of the raw interbank rate. The feed gives the official/
-// interbank rate (~₦1,380); we actually buy USD nearer the parallel-market
-// rate (~₦1,420), and the naira can move between daily updates. This buffer
-// closes that gap plus a volatility cushion. Separate from ESIM_MARGIN_PERCENT
-// (our profit) — this one only makes the conversion reflect real USD cost.
-export const FX_BUFFER_PERCENT = 8;
+// Buffer on top of the raw interbank rate, to cover the gap up to the
+// parallel-market rate we actually buy USD at (~₦1,420 vs ~₦1,380 interbank)
+// plus naira volatility between daily updates. Separate from
+// ESIM_MARGIN_PERCENT (profit) — this only makes the conversion reflect real
+// USD cost. Set to 0 by owner (2026-07-20): pricing is now the plain interbank
+// rate + margin. NOTE: while the parallel premium stays under the 15% margin
+// this is still profitable, but a sharp naira drop could erode it — raise this
+// again to re-add a cushion.
+export const FX_BUFFER_PERCENT = 0;
 
 // Our profit margin on top of the provider's own cost (Airalo's net price),
 // applied when quoting the customer.
