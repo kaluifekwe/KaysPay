@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient } from "../_shared/auth.ts";
 import { browseAiraloPackages, isAiraloConfigured } from "../_shared/airalo-client.ts";
-import { usdToNgnKobo, NormalizedEsimPlan } from "../_shared/esim-catalog.ts";
+import { usdToNgnKobo, getUsdNgnRate, NormalizedEsimPlan } from "../_shared/esim-catalog.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -11,7 +11,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function fromAiralo(raw: any): NormalizedEsimPlan[] {
+function fromAiralo(raw: any, rate: number): NormalizedEsimPlan[] {
   const plans: NormalizedEsimPlan[] = [];
   for (const country of raw?.data || []) {
     for (const operator of country?.operators || []) {
@@ -26,7 +26,7 @@ function fromAiralo(raw: any): NormalizedEsimPlan[] {
           dataMB: pkg.is_unlimited ? null : Number(pkg.amount) || null,
           days: Number(pkg.day) || 0,
           priceUSD,
-          priceKobo: usdToNgnKobo(priceUSD),
+          priceKobo: usdToNgnKobo(priceUSD, rate),
         });
       }
     }
@@ -56,7 +56,8 @@ serve(async (req: Request) => {
   const supabase = adminClient();
   let plans: NormalizedEsimPlan[] = [];
   try {
-    plans = fromAiralo(await browseAiraloPackages(supabase, country));
+    const rate = await getUsdNgnRate(supabase);
+    plans = fromAiralo(await browseAiraloPackages(supabase, country), rate);
   } catch {
     return json({ success: false, error: "Could not load eSIM plans. Please try again." });
   }

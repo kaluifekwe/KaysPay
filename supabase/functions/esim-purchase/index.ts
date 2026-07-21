@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient, consumeAuthToken } from "../_shared/auth.ts";
 import { browseAiraloPackages, submitAiraloOrder, isAiraloConfigured, AiraloAuthError } from "../_shared/airalo-client.ts";
-import { usdToNgnKobo } from "../_shared/esim-catalog.ts";
+import { usdToNgnKobo, getUsdNgnRate } from "../_shared/esim-catalog.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -80,7 +80,8 @@ serve(async (req: Request) => {
   }
   if (!current) return json({ success: false, error: "This plan is no longer available. Please pick another." });
 
-  const amountKobo = usdToNgnKobo(current.priceUSD);
+  const fxRate = await getUsdNgnRate(supabase);
+  const amountKobo = usdToNgnKobo(current.priceUSD, fxRate);
   const requestId = String(body.idempotency_key || newIdempotencyKey());
 
   const { data: txId, error: debitError } = await supabase.rpc("debit_for_service", {
@@ -89,7 +90,7 @@ serve(async (req: Request) => {
     p_type: "esim",
     p_network: "N/A",
     p_recipient: country,
-    p_metadata: { service: "esim", provider, provider_package_id: providerPackageId, country, price_usd: current.priceUSD },
+    p_metadata: { service: "esim", provider, provider_package_id: providerPackageId, country, price_usd: current.priceUSD, fx_rate: fxRate },
     p_idempotency_key: requestId,
   });
 
