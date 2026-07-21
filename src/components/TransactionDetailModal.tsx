@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform, Image, Linking } from 'react-native';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -240,6 +240,36 @@ export default function TransactionDetailModal({
               </View>
             )}
 
+            {transaction.rawType === 'esim' && transaction.metadata?.qrcode_url && (
+              <View style={styles.esimSection}>
+                <Text style={styles.sectionTitle}>Your eSIM</Text>
+                <View style={styles.qrWrap}>
+                  <Image
+                    source={{ uri: transaction.metadata.qrcode_url }}
+                    style={styles.qrImage}
+                    resizeMode="contain"
+                  />
+                </View>
+                {transaction.metadata?.iccid && (
+                  <View style={styles.row}>
+                    <Text style={styles.rowLabel}>ICCID</Text>
+                    <Text style={styles.rowValue}>{transaction.metadata.iccid}</Text>
+                  </View>
+                )}
+                <Text style={styles.esimHint}>
+                  Scan this QR on the phone you want the eSIM on: Settings → Cellular / Mobile → Add eSIM. You can reopen it here anytime.
+                </Text>
+                {Platform.OS === 'ios' && !!transaction.metadata?.apple_install_url && (
+                  <TouchableOpacity
+                    style={styles.receiptButton}
+                    onPress={() => Linking.openURL(String(transaction.metadata!.apple_install_url))}
+                  >
+                    <Text style={styles.receiptButtonText}>Install on this iPhone</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
             {failureReason && (
               <View style={styles.reasonBox}>
                 <Text style={styles.reasonLabel}>Why this didn't go through</Text>
@@ -377,6 +407,25 @@ const styles = StyleSheet.create({
   },
   detailSection: {
     marginTop: Spacing.L,
+  },
+  esimSection: {
+    marginTop: Spacing.L,
+  },
+  qrWrap: {
+    alignItems: 'center',
+    backgroundColor: Colors.WHITE,
+    paddingVertical: Spacing.M,
+    marginBottom: Spacing.S,
+  },
+  qrImage: {
+    width: 220,
+    height: 220,
+  },
+  esimHint: {
+    ...Typography.CAPTION,
+    color: Colors.GRAY,
+    marginTop: Spacing.S,
+    marginBottom: Spacing.M,
   },
   sectionTitle: {
     ...Typography.SECTION_HEADING,

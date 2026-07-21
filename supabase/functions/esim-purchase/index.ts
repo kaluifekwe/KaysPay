@@ -103,12 +103,44 @@ serve(async (req: Request) => {
 
   try {
     const result = await submitAiraloOrder(supabase, providerPackageId, 1, requestId);
-    const sim = result?.data?.sims?.[0];
+    const orderData = result?.data;
+    const sim = orderData?.sims?.[0];
     if (!sim?.qrcode) {
       await supabase.rpc("refund_service_transaction", { p_tx_id: txId, p_reason: result?.meta?.message || "provider_rejected" });
       return json({ success: false, error: result?.meta?.message || "Purchase failed. You were not charged." });
     }
-    await supabase.rpc("complete_service_transaction", { p_tx_id: txId, p_order_id: String(result?.data?.id ?? "") });
+    await supabase.rpc("complete_service_transaction", { p_tx_id: txId, p_order_id: String(orderData?.id ?? "") });
+
+    // Enrich the transaction metadata (service role, metadata only — no money
+    // columns touched). Two purposes: (a) persist the delivered eSIM so the
+    // customer can re-open its QR any time from Transaction History — the
+    // order response is the ONLY place these appear; (b) record our REAL
+    // Airalo cost (after the 20% reseller discount) for postpaid-invoice
+    // reconciliation and true-margin reporting.
+    await supabase
+      .from("transactions")
+      .update({
+        metadata: {
+          service: "esim",
+          provider,
+          provider_package_id: providerPackageId,
+          country,
+          price_usd: current.priceUSD,
+          fx_rate: fxRate,
+          // The eSIM itself (for later retrieval):
+          iccid: sim.iccid ?? null,
+          qrcode: sim.qrcode ?? null,
+          qrcode_url: sim.qrcode_url ?? null,
+          apple_install_url: sim.direct_apple_installation_url ?? null,
+          // Our true cost from Airalo (postpaid reconciliation):
+          airalo_order_code: orderData?.code ?? null,
+          airalo_total_paid_usd: orderData?.total_amount_paid ?? null,
+          airalo_unit_paid_usd: orderData?.unit_paid_price ?? null,
+          airalo_discount_percent: orderData?.discount_percentage ?? null,
+        },
+      })
+      .eq("id", txId);
+
     return json({
       success: true,
       transaction_id: txId,

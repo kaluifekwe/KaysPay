@@ -124,3 +124,19 @@ export async function submitAiraloOrder(
   form.append("description", description);
   return authedFetch(supabase, "/v2/orders", { method: "POST", body: form });
 }
+
+/**
+ * GET /v2/balance — the partner's available postpaid credit. Airalo bills
+ * postpaid up to a fixed credit limit; when the available balance hits 0, new
+ * orders fail, so this powers a low-credit alert. Returns the available amount
+ * in USD, or null if it can't be read.
+ */
+export async function getAiraloBalance(
+  supabase: ReturnType<typeof adminClient>,
+): Promise<{ available: number; currency: string } | null> {
+  const data = await authedFetch(supabase, "/v2/balance", { method: "GET" });
+  const bal = data?.data?.balances?.availableBalance;
+  const available = Number(bal?.amount);
+  if (!Number.isFinite(available)) return null;
+  return { available, currency: String(bal?.currency ?? "USD") };
+}
