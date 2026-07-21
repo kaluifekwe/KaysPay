@@ -13,6 +13,10 @@ export interface EsimCountry {
 export interface MyEsim {
   id: string;
   countryCode: string; // ISO code (or region slug for legacy regional buys)
+  planName: string | null;
+  dataMB: number | null; // null = unlimited or unknown
+  days: number | null;
+  unlimited: boolean;
   iccid: string | null;
   qrcodeUrl: string | null;
   appleInstallUrl: string | null;
@@ -92,6 +96,10 @@ export const esimService = {
       .map((t: any) => ({
         id: String(t.id),
         countryCode: String(t.metadata?.country || ''),
+        planName: t.metadata?.plan_name ?? null,
+        dataMB: t.metadata?.plan_unlimited ? null : (t.metadata?.plan_data_mb ?? null),
+        days: t.metadata?.plan_days ?? null,
+        unlimited: !!t.metadata?.plan_unlimited,
         iccid: t.metadata?.iccid ?? null,
         qrcodeUrl: t.metadata?.qrcode_url ?? null,
         appleInstallUrl: t.metadata?.apple_install_url ?? null,

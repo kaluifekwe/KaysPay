@@ -134,6 +134,11 @@ serve(async (req: Request) => {
           region: region || null,
           price_usd: current.priceUSD,
           fx_rate: fxRate,
+          // What the customer bought (shown in "My eSIMs"):
+          plan_name: current.raw?.title ?? null,
+          plan_days: current.raw?.day ?? null,
+          plan_data_mb: current.raw?.is_unlimited ? null : (current.raw?.amount ?? null),
+          plan_unlimited: !!current.raw?.is_unlimited,
           // The eSIM itself (for later retrieval):
           iccid: sim.iccid ?? null,
           qrcode: sim.qrcode ?? null,
