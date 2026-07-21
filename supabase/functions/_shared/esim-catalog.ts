@@ -20,9 +20,12 @@ export const DEFAULT_USD_TO_NGN_RATE = 1450;
 // again to re-add a cushion.
 export const FX_BUFFER_PERCENT = 0;
 
-// Our profit margin on top of the provider's own cost (Airalo's net price),
-// applied when quoting the customer.
-export const ESIM_MARGIN_PERCENT = 15;
+// Profit margin on top of the provider's net price. Set to 0 by owner
+// (2026-07-20). Combined with FX_BUFFER_PERCENT = 0, eSIMs now sell at the raw
+// interbank rate — which is BELOW the parallel-market rate USD is actually
+// bought at — so each sale currently runs at a small loss. This is a
+// deliberate owner decision, NOT a bug; raise this value to restore profit.
+export const ESIM_MARGIN_PERCENT = 0;
 
 /**
  * Reads the live USD→NGN interbank rate from `fx_rates`. Falls back to
