@@ -18,6 +18,7 @@ import { Strings } from '../constants/strings';
 import { StorageKeys, storageHelpers } from '../lib/mmkv';
 import { formatNaira } from '../utils/formatCurrency';
 import { walletService } from '../services/wallet.service';
+import { notificationService } from '../services/notification.service';
 import { supabase } from '../lib/supabase';
 import type { Transaction } from '../types/app.types';
 
@@ -52,23 +53,33 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [userName, setUserName] = useState('User');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     loadBalanceVisibility();
     loadData();
     loadUserInfo();
+    loadUnread();
     const sub = walletService.subscribeToBalance((newBalance) => {
       setBalance(newBalance);
     });
-    // Refresh whenever Home regains focus (e.g. returning from funding) so the
-    // balance reflects immediately without a manual app refresh.
-    const unsubscribeFocus = navigation.addListener('focus', loadData);
+    // Refresh whenever Home regains focus (e.g. returning from funding or the
+    // notifications tab) so the balance and unread count stay current without a
+    // manual app refresh.
+    const unsubscribeFocus = navigation.addListener('focus', () => {
+      loadData();
+      loadUnread();
+    });
 
     return () => {
       sub.unsubscribe();
       unsubscribeFocus();
     };
   }, []);
+
+  const loadUnread = async () => {
+    setUnreadCount(await notificationService.getUnreadCount());
+  };
 
   const loadUserInfo = async () => {
     try {
@@ -159,6 +170,11 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             onPress={() => navigation.navigate('Notifications')}
           >
             <Text style={styles.iconEmoji}>🔔</Text>
+            {unreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+              </View>
+            )}
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerIcon}
@@ -311,6 +327,23 @@ const styles = StyleSheet.create({
   },
   iconEmoji: {
     fontSize: 20,
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: Colors.RED,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 3,
+  },
+  badgeText: {
+    color: Colors.WHITE,
+    fontSize: 10,
+    fontWeight: '700',
   },
   avatarCircle: {
     width: 36,

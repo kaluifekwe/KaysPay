@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,123 +8,88 @@ import {
   StyleSheet,
   SafeAreaView,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import { Colors } from '../constants/colors';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
-
-type NotificationType = 'transaction' | 'security' | 'promo';
-
-interface Notification {
-  id: string;
-  type: NotificationType;
-  title: string;
-  body: string;
-  timestamp: string;
-  read: boolean;
-}
+import { useCachedData } from '../hooks/useCachedData';
+import {
+  notificationService,
+  type AppNotification,
+  type NotificationType,
+} from '../services/notification.service';
 
 const ICONS: Record<NotificationType, string> = {
-  transaction: '💰',
-  security: '🔒',
-  promo: '🎉',
+  funding: '💰',
+  withdrawal: '🏦',
+  transaction: '🧾',
+  system: '🔔',
 };
 
-const mockNotifications: Notification[] = [
-  {
-    id: '1',
-    type: 'transaction',
-    title: 'Airtime Purchased',
-    body: 'You purchased ₦500 MTN airtime successfully.',
-    timestamp: '2 mins ago',
-    read: false,
-  },
-  {
-    id: '2',
-    type: 'transaction',
-    title: 'Wallet Funded',
-    body: 'Your wallet has been funded with ₦10,000 via bank transfer.',
-    timestamp: '15 mins ago',
-    read: false,
-  },
-  {
-    id: '3',
-    type: 'security',
-    title: 'New Login Detected',
-    body: 'A new login was detected from Lagos, Nigeria. If this wasn\'t you, change your password immediately.',
-    timestamp: '1 hour ago',
-    read: false,
-  },
-  {
-    id: '4',
-    type: 'security',
-    title: 'Password Changed',
-    body: 'Your password was changed successfully. If you didn\'t make this change, contact support.',
-    timestamp: '3 hours ago',
-    read: true,
-  },
-  {
-    id: '5',
-    type: 'promo',
-    title: 'New Feature: Data Bundles',
-    body: 'Buy data bundles at the cheapest rates! Tap to explore available plans.',
-    timestamp: '1 day ago',
-    read: true,
-  },
-  {
-    id: '6',
-    type: 'promo',
-    title: 'Weekend Offer',
-    body: 'Get 10% bonus on all airtime purchases this weekend. Use code WEEKEND10.',
-    timestamp: '2 days ago',
-    read: true,
-  },
-];
+function timeAgo(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '';
+  const s = Math.max(1, Math.floor((Date.now() - t) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min${m > 1 ? 's' : ''} ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d} day${d > 1 ? 's' : ''} ago`;
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
 
 export default function NotificationsScreen() {
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
-  const [refreshing, setRefreshing] = useState(false);
-
+  const { data, loading, refresh } = useCachedData<AppNotification[]>('notifications', () =>
+    notificationService.getNotifications(),
+  );
+  const notifications = data || [];
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1500);
-  }, []);
+  const markAsRead = useCallback(
+    async (id: string) => {
+      try {
+        await notificationService.markRead(id);
+        refresh();
+      } catch {
+        /* best-effort */
+      }
+    },
+    [refresh],
+  );
 
-  const markAsRead = useCallback((id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
-  }, []);
-
-  const markAllAsRead = useCallback(() => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-  }, []);
+  const markAllAsRead = useCallback(async () => {
+    try {
+      await notificationService.markAllRead();
+      refresh();
+    } catch {
+      /* best-effort */
+    }
+  }, [refresh]);
 
   const getIconBg = (type: NotificationType): string => {
     switch (type) {
-      case 'transaction':
+      case 'funding':
         return Colors.GREEN_LIGHT;
-      case 'security':
-        return Colors.AMBER;
-      case 'promo':
+      case 'withdrawal':
         return Colors.GREEN_MID;
+      case 'system':
+        return Colors.AMBER;
       default:
-        return Colors.LIGHT_GRAY;
+        return Colors.GREEN_LIGHT;
     }
   };
 
-  const renderNotification = ({ item }: { item: Notification }) => (
+  const renderNotification = ({ item }: { item: AppNotification }) => (
     <TouchableOpacity
       style={[styles.notificationCard, !item.read && styles.unreadCard]}
-      onPress={() => markAsRead(item.id)}
+      onPress={() => !item.read && markAsRead(item.id)}
       activeOpacity={0.7}
     >
       <View style={[styles.iconContainer, { backgroundColor: getIconBg(item.type) }]}>
-        <Text style={styles.iconText}>{ICONS[item.type]}</Text>
+        <Text style={styles.iconText}>{ICONS[item.type] || '🔔'}</Text>
       </View>
       <View style={styles.notificationContent}>
         <View style={styles.titleRow}>
@@ -136,28 +101,28 @@ export default function NotificationsScreen() {
         <Text style={styles.notificationBody} numberOfLines={2}>
           {item.body}
         </Text>
-        <Text style={styles.timestamp}>{item.timestamp}</Text>
+        <Text style={styles.timestamp}>{timeAgo(item.createdAt)}</Text>
       </View>
     </TouchableOpacity>
   );
 
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyIcon}>🔔</Text>
-      <Text style={styles.emptyTitle}>No Notifications</Text>
-      <Text style={styles.emptyBody}>
-        You're all caught up! New notifications will appear here.
-      </Text>
-    </View>
-  );
+  const renderEmpty = () =>
+    loading ? (
+      <View style={styles.emptyContainer}>
+        <ActivityIndicator color={Colors.GREEN} />
+      </View>
+    ) : (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyIcon}>🔔</Text>
+        <Text style={styles.emptyTitle}>No Notifications</Text>
+        <Text style={styles.emptyBody}>You're all caught up! New notifications will appear here.</Text>
+      </View>
+    );
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.WHITE} />
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => {}}>
-          <Text style={styles.backText}>{'<'}</Text>
-        </TouchableOpacity>
         <Text style={styles.screenTitle}>Notifications</Text>
         {unreadCount > 0 && (
           <TouchableOpacity style={styles.markAllButton} onPress={markAllAsRead}>
@@ -172,12 +137,7 @@ export default function NotificationsScreen() {
         contentContainerStyle={notifications.length === 0 ? styles.listEmpty : styles.listContent}
         ListEmptyComponent={renderEmpty}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[Colors.GREEN]}
-            tintColor={Colors.GREEN}
-          />
+          <RefreshControl refreshing={loading && notifications.length > 0} onRefresh={refresh} colors={[Colors.GREEN]} tintColor={Colors.GREEN} />
         }
         showsVerticalScrollIndicator={false}
       />
@@ -194,21 +154,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.S,
+    paddingHorizontal: Spacing.L,
     paddingVertical: Spacing.M,
     borderBottomWidth: 1,
     borderBottomColor: Colors.BORDER,
-  },
-  backButton: {
-    width: 48,
-    height: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  backText: {
-    fontSize: 28,
-    fontWeight: '600',
-    color: Colors.DARK,
   },
   screenTitle: {
     ...Typography.SCREEN_TITLE,

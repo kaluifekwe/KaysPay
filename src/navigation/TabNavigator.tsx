@@ -4,10 +4,9 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
-import { Strings } from '../constants/strings';
 import HomeScreen from '../screens/HomeScreen';
-import PayScreen from '../screens/PayScreen';
-import CardsScreen from '../screens/CardsScreen';
+import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
 import MoreScreen from '../screens/MoreScreen';
 
 const Tab = createBottomTabNavigator();
@@ -33,38 +32,22 @@ export default function TabNavigator() {
       <Tab.Screen
         name="Home"
         component={HomeScreen}
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon icon="🏠" label={Strings.SERVICE_AIRTIME} focused={focused} />
-          ),
-        }}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon icon="🏠" label="Home" focused={focused} /> }}
       />
       <Tab.Screen
-        name="Pay"
-        component={PayScreen}
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon icon="💳" label="Pay" focused={focused} />
-          ),
-        }}
+        name="History"
+        component={TransactionHistoryScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon icon="🧾" label="History" focused={focused} /> }}
       />
       <Tab.Screen
-        name="Cards"
-        component={CardsScreen}
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon icon="🃏" label="Cards" focused={focused} />
-          ),
-        }}
+        name="Alerts"
+        component={NotificationsScreen}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon icon="🔔" label="Alerts" focused={focused} /> }}
       />
       <Tab.Screen
-        name="More"
+        name="Account"
         component={MoreScreen}
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon icon="☰" label="More" focused={focused} />
-          ),
-        }}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon icon="👤" label="Account" focused={focused} /> }}
       />
     </Tab.Navigator>
   );
