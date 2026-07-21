@@ -45,6 +45,9 @@ verify_jwt = true
 [functions.airalo-balance-check]
 verify_jwt = true
 
+[functions.notifications-push]
+verify_jwt = true
+
 # --- Public utility: no sensitive/user-specific data ---
 [functions.paystack-banks]
 verify_jwt = false

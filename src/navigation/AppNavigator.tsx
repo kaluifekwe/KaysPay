@@ -30,6 +30,7 @@ import KycScreen from '../screens/KycScreen';
 import ChangePinScreen from '../screens/ChangePinScreen';
 import LegalDocumentScreen from '../screens/LegalDocumentScreen';
 import { authService } from '../services/auth.service';
+import { pushService } from '../services/push.service';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { Colors } from '../constants/colors';
 
@@ -95,6 +96,14 @@ export default function AppNavigator() {
       data.subscription.unsubscribe();
     };
   }, []);
+
+  // Once the user is fully signed in (email verified + PIN set), register this
+  // device for push. Idempotent + best-effort — safe to run on every change.
+  useEffect(() => {
+    if (isAuth && hasVerifiedEmail && hasPin) {
+      pushService.registerForPush();
+    }
+  }, [isAuth, hasVerifiedEmail, hasPin]);
 
   const checkAuth = async () => {
     try {
