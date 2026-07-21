@@ -12,7 +12,7 @@ import { Spacing } from '../constants/spacing';
 // the Play Store — a support/contact email that doesn't actually work is a
 // real problem for privacy-rights requests (data access/deletion), not
 // just a formality.
-export const SUPPORT_EMAIL = 'support@kayspay.app';
+export const SUPPORT_EMAIL = 'support@kayspay.com.ng';
 
 const LAST_UPDATED = '6 July 2026';
 
