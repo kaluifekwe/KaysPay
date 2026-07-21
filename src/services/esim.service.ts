@@ -8,6 +8,21 @@ export interface EsimCountry {
   name: string;
 }
 
+export interface EsimRegion {
+  slug: string;
+  name: string;
+  worldwide: boolean;
+}
+
+// A pickable eSIM destination — either a single country or a multi-country
+// region / worldwide plan. Unified so the UI renders one list.
+export interface EsimDestination {
+  kind: 'country' | 'region';
+  id: string; // ISO code (country) or region slug
+  name: string;
+  flag: string;
+}
+
 // Flag emoji is derived from the ISO code itself (regional indicator
 // symbols), rather than hand-listing 150+ flags one by one.
 function flagFromCode(code: string): string {
@@ -84,11 +99,40 @@ export const esimService = {
     return ESIM_COUNTRIES;
   },
 
-  async browsePlans(countryCode: string): Promise<{ success: boolean; plans: EsimPlan[]; error?: string }> {
+  // Full, self-updating destination list from the server (every Airalo country
+  // + regional/worldwide plans). Falls back to the built-in country list if the
+  // catalog can't be reached, so browsing never breaks.
+  async loadDestinations(): Promise<EsimDestination[]> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('esim-catalog', { body: {} }),
+      );
+      if (!error && data?.success && Array.isArray(data.countries) && data.countries.length > 0) {
+        const regions: EsimDestination[] = (data.regions || []).map((r: any) => ({
+          kind: 'region' as const,
+          id: String(r.slug),
+          name: String(r.name),
+          flag: r.worldwide ? '🌍' : '🌐',
+        }));
+        const countries: EsimDestination[] = data.countries.map((c: any) => ({
+          kind: 'country' as const,
+          id: String(c.code),
+          name: String(c.name),
+          flag: flagFromCode(String(c.code)),
+        }));
+        return [...regions, ...countries];
+      }
+    } catch {
+      // fall through to the built-in list
+    }
+    return ESIM_COUNTRIES.map((c) => ({ kind: 'country' as const, id: c.code, name: c.name, flag: c.flag }));
+  },
+
+  async browsePlans(scope: { country?: string; region?: string }): Promise<{ success: boolean; plans: EsimPlan[]; error?: string }> {
     try {
       const { data, error } = await withTimeout(
         supabase.functions.invoke('esim-browse', {
-          body: { country: countryCode },
+          body: scope,
         }),
       );
       if (error) {
@@ -115,14 +159,14 @@ export const esimService = {
     }
   },
 
-  async buyPlan(planId: string, countryCode: string, authToken: string): Promise<EsimPurchaseResult> {
+  async buyPlan(planId: string, scope: { country?: string; region?: string }, authToken: string): Promise<EsimPurchaseResult> {
     try {
       const idempotencyKey = newIdempotencyKey();
       const { data, error } = await invokeWithRetry<any>(
         () =>
           withTimeout(
             supabase.functions.invoke('esim-purchase', {
-              body: { plan_id: planId, country: countryCode, auth_token: authToken, idempotency_key: idempotencyKey },
+              body: { plan_id: planId, ...scope, auth_token: authToken, idempotency_key: idempotencyKey },
             }),
           ),
         idempotencyKey,

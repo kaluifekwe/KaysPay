@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient, consumeAuthToken } from "../_shared/auth.ts";
-import { browseAiraloPackages, submitAiraloOrder, isAiraloConfigured, AiraloAuthError } from "../_shared/airalo-client.ts";
+import { browseAiraloPackages, fetchAiraloCatalog, submitAiraloOrder, isAiraloConfigured, AiraloAuthError } from "../_shared/airalo-client.ts";
 import { usdToNgnKobo, getUsdNgnRate } from "../_shared/esim-catalog.ts";
 
 function json(body: unknown, status = 200) {
@@ -26,9 +26,13 @@ function newIdempotencyKey() {
 async function resolveCurrentPrice(
   supabase: ReturnType<typeof adminClient>,
   providerPackageId: string,
-  country: string,
+  scope: { country: string | null; region: string | null },
 ): Promise<{ priceUSD: number; raw: any } | null> {
-  const raw = await browseAiraloPackages(supabase, country);
+  // A local package is re-priced from its country's catalogue; a regional /
+  // worldwide package from the global catalogue.
+  const raw = scope.region
+    ? await fetchAiraloCatalog(supabase, "global")
+    : await browseAiraloPackages(supabase, scope.country as string);
   for (const c of raw?.data || []) {
     for (const op of c?.operators || []) {
       for (const pkg of op?.packages || []) {
@@ -57,10 +61,12 @@ serve(async (req: Request) => {
   }
 
   const planId = String(body?.plan_id || "");
+  const region = String(body?.region || "").trim();
   const country = String(body?.country || "").toUpperCase();
+  const destination = region || country;
   const [provider, providerPackageId] = planId.split(/:(.+)/);
 
-  if (!/^[A-Z]{2}$/.test(country)) return json({ success: false, error: "Invalid country code" }, 400);
+  if (!region && !/^[A-Z]{2}$/.test(country)) return json({ success: false, error: "Invalid destination" }, 400);
   if (provider !== "airalo") return json({ success: false, error: "Invalid plan" }, 400);
   if (!providerPackageId) return json({ success: false, error: "Invalid plan" }, 400);
   if (!isAiraloConfigured()) return json({ error: "Airalo not configured" }, 500);
@@ -74,7 +80,7 @@ serve(async (req: Request) => {
 
   let current;
   try {
-    current = await resolveCurrentPrice(supabase, providerPackageId, country);
+    current = await resolveCurrentPrice(supabase, providerPackageId, { country: region ? null : country, region: region || null });
   } catch {
     return json({ success: false, error: "Could not verify current plan price. Please try again." });
   }
@@ -89,8 +95,8 @@ serve(async (req: Request) => {
     p_amount: amountKobo,
     p_type: "esim",
     p_network: "N/A",
-    p_recipient: country,
-    p_metadata: { service: "esim", provider, provider_package_id: providerPackageId, country, price_usd: current.priceUSD, fx_rate: fxRate },
+    p_recipient: destination,
+    p_metadata: { service: "esim", provider, provider_package_id: providerPackageId, country: destination, region: region || null, price_usd: current.priceUSD, fx_rate: fxRate },
     p_idempotency_key: requestId,
   });
 
@@ -124,7 +130,8 @@ serve(async (req: Request) => {
           service: "esim",
           provider,
           provider_package_id: providerPackageId,
-          country,
+          country: destination,
+          region: region || null,
           price_usd: current.priceUSD,
           fx_rate: fxRate,
           // The eSIM itself (for later retrieval):

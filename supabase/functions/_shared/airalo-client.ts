@@ -96,6 +96,23 @@ export async function browseAiraloPackages(
   return authedFetch(supabase, `/v2/packages?${query.toString()}`, { method: "GET" });
 }
 
+/** GET /v2/packages filtered by type only. With NO limit param Airalo returns
+ * the FULL catalogue for that type in a single response (per their docs):
+ * `local` = every single-country package (used to list all countries),
+ * `global` = every regional + worldwide package (used to list regions and to
+ * browse a region's plans). */
+export async function fetchAiraloCatalog(
+  supabase: ReturnType<typeof adminClient>,
+  type: "local" | "global",
+): Promise<any> {
+  // A high `limit` returns the whole catalogue on page 1 (the endpoint
+  // otherwise paginates ~25 countries/page — the docs' "no limit = full
+  // response" claim is wrong in practice). limit caps PACKAGES, and the full
+  // local catalogue is ~3,200 packages, so 20000 comfortably covers it.
+  const query = new URLSearchParams({ "filter[type]": type, limit: "20000" });
+  return authedFetch(supabase, `/v2/packages?${query.toString()}`, { method: "GET" });
+}
+
 /**
  * POST /v2/orders — synchronous: the eSIM's QR code/activation details come
  * back in this same response (no separate async order + query step).

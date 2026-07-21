@@ -68,6 +68,9 @@ verify_jwt = true
 [functions.esim-browse]
 verify_jwt = true
 
+[functions.esim-catalog]
+verify_jwt = true
+
 [functions.esim-purchase]
 verify_jwt = true
 

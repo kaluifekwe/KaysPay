@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient } from "../_shared/auth.ts";
-import { browseAiraloPackages, isAiraloConfigured } from "../_shared/airalo-client.ts";
+import { browseAiraloPackages, fetchAiraloCatalog, isAiraloConfigured } from "../_shared/airalo-client.ts";
 import { usdToNgnKobo, getUsdNgnRate, NormalizedEsimPlan } from "../_shared/esim-catalog.ts";
 
 function json(body: unknown, status = 200) {
@@ -48,8 +48,11 @@ serve(async (req: Request) => {
     return json({ error: "Invalid request body" }, 400);
   }
 
+  const region = String(body?.region || "").trim();
   const country = String(body?.country || "").toUpperCase();
-  if (!/^[A-Z]{2}$/.test(country)) return json({ success: false, error: "Invalid country code" }, 400);
+  if (!region && !/^[A-Z]{2}$/.test(country)) {
+    return json({ success: false, error: "Invalid destination" }, 400);
+  }
 
   if (!isAiraloConfigured()) return json({ success: false, error: "eSIM provider not configured" }, 500);
 
@@ -57,7 +60,15 @@ serve(async (req: Request) => {
   let plans: NormalizedEsimPlan[] = [];
   try {
     const rate = await getUsdNgnRate(supabase);
-    plans = fromAiralo(await browseAiraloPackages(supabase, country), rate);
+    if (region) {
+      // Regional / worldwide plans live in the "global" catalogue; keep only
+      // the entry whose slug matches the requested region.
+      const raw = await fetchAiraloCatalog(supabase, "global");
+      const entry = (raw?.data || []).find((c: any) => String(c?.slug || "") === region);
+      plans = fromAiralo({ data: entry ? [entry] : [] }, rate);
+    } else {
+      plans = fromAiralo(await browseAiraloPackages(supabase, country), rate);
+    }
   } catch {
     return json({ success: false, error: "Could not load eSIM plans. Please try again." });
   }

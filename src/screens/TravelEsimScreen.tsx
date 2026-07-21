@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -14,7 +14,7 @@ import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { formatNaira } from '../utils/formatCurrency';
-import { esimService, type EsimCountry, type EsimPlan } from '../services/esim.service';
+import { esimService, type EsimDestination, type EsimPlan } from '../services/esim.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 
 interface TravelEsimScreenProps {
@@ -28,15 +28,26 @@ type BuyState = 'idle' | 'processing' | 'success' | 'error';
 export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) {
   const { authorize } = useTransactionAuth();
   const insets = useSafeAreaInsets();
-  const countries = useMemo(() => esimService.getCountries(), []);
+  const [destinations, setDestinations] = useState<EsimDestination[]>([]);
   const [countrySearch, setCountrySearch] = useState('');
-  const filteredCountries = useMemo(() => {
-    const q = countrySearch.trim().toLowerCase();
-    if (!q) return countries;
-    return countries.filter((c) => c.name.toLowerCase().includes(q));
-  }, [countries, countrySearch]);
 
-  const [selectedCountry, setSelectedCountry] = useState<EsimCountry | null>(null);
+  useEffect(() => {
+    let active = true;
+    esimService.loadDestinations().then((d) => {
+      if (active) setDestinations(d);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const filteredDestinations = useMemo(() => {
+    const q = countrySearch.trim().toLowerCase();
+    if (!q) return destinations;
+    return destinations.filter((d) => d.name.toLowerCase().includes(q));
+  }, [destinations, countrySearch]);
+
+  const [selectedDest, setSelectedDest] = useState<EsimDestination | null>(null);
   const [plans, setPlans] = useState<EsimPlan[]>([]);
   const [loadingPlans, setLoadingPlans] = useState(false);
   const [plansError, setPlansError] = useState('');
@@ -48,14 +59,16 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
   const [resultMessage, setResultMessage] = useState('');
   const [resultQrUrl, setResultQrUrl] = useState<string | null>(null);
 
-  const handleCountrySelect = useCallback(async (country: EsimCountry) => {
-    setSelectedCountry(country);
+  const handleDestSelect = useCallback(async (dest: EsimDestination) => {
+    setSelectedDest(dest);
     setSelectedPlan(null);
     setPlans([]);
     setPlansError('');
     setLoadingPlans(true);
 
-    const result = await esimService.browsePlans(country.code);
+    const result = await esimService.browsePlans(
+      dest.kind === 'region' ? { region: dest.id } : { country: dest.id },
+    );
 
     setLoadingPlans(false);
     if (!result.success) {
@@ -69,7 +82,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
   }, []);
 
   const handlePay = useCallback(async () => {
-    if (!selectedPlan || !selectedCountry || buyState === 'processing') return;
+    if (!selectedPlan || !selectedDest || buyState === 'processing') return;
 
     const authResult = await authorize({
       title: 'Confirm eSIM Purchase',
@@ -81,7 +94,11 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
     setBuyState('processing');
 
     try {
-      const result = await esimService.buyPlan(selectedPlan.id, selectedCountry.code, authResult.token);
+      const result = await esimService.buyPlan(
+        selectedPlan.id,
+        selectedDest.kind === 'region' ? { region: selectedDest.id } : { country: selectedDest.id },
+        authResult.token,
+      );
 
       if (result.success) {
         setResultPending(!!result.pending);
@@ -96,12 +113,12 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
       setErrorMessage('An unexpected error occurred. Please check your connection and try again.');
       setBuyState('error');
     }
-  }, [selectedPlan, selectedCountry, buyState, authorize]);
+  }, [selectedPlan, selectedDest, buyState, authorize]);
 
   const handleDismissResult = useCallback(() => {
     setBuyState('idle');
     setErrorMessage('');
-    setSelectedCountry(null);
+    setSelectedDest(null);
     setSelectedPlan(null);
     setPlans([]);
     setCountrySearch('');
@@ -125,7 +142,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
             </Text>
           ) : (
             <>
-              <Text style={styles.resultDetail}>{selectedCountry?.name}</Text>
+              <Text style={styles.resultDetail}>{selectedDest?.name}</Text>
               <Text style={styles.resultDetail}>{selectedPlan?.name}</Text>
               {resultQrUrl && (
                 <View style={styles.qrContainer}>
@@ -153,36 +170,41 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
         <TouchableOpacity
           style={styles.backButton}
           activeOpacity={0.6}
-          onPress={() => (selectedCountry ? handleDismissResult() : navigation.goBack())}
+          onPress={() => (selectedDest ? handleDismissResult() : navigation.goBack())}
         >
           <Text style={styles.backText}>{'<'}</Text>
         </TouchableOpacity>
 
         <Text style={styles.title}>Travel eSIM</Text>
 
-        {!selectedCountry ? (
+        {!selectedDest ? (
           <View style={styles.section}>
             <Text style={styles.label}>Where are you traveling?</Text>
             <TextInput
               style={styles.searchInput}
               value={countrySearch}
               onChangeText={setCountrySearch}
-              placeholder="Search country..."
+              placeholder="Search country or region..."
               placeholderTextColor={Colors.GRAY}
             />
-            {filteredCountries.length === 0 ? (
-              <Text style={styles.amountError}>No countries match "{countrySearch}"</Text>
+            {destinations.length === 0 ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator color={Colors.GREEN} />
+                <Text style={styles.loadingText}>Loading destinations...</Text>
+              </View>
+            ) : filteredDestinations.length === 0 ? (
+              <Text style={styles.amountError}>No destinations match "{countrySearch}"</Text>
             ) : (
               <View style={styles.countryGrid}>
-                {filteredCountries.map((country) => (
+                {filteredDestinations.map((dest) => (
                   <TouchableOpacity
-                    key={country.code}
+                    key={`${dest.kind}-${dest.id}`}
                     style={styles.countryCard}
-                    onPress={() => handleCountrySelect(country)}
+                    onPress={() => handleDestSelect(dest)}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.countryFlag}>{country.flag}</Text>
-                    <Text style={styles.countryName} numberOfLines={1}>{country.name}</Text>
+                    <Text style={styles.countryFlag}>{dest.flag}</Text>
+                    <Text style={styles.countryName} numberOfLines={1}>{dest.name}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -191,8 +213,8 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
         ) : (
           <View style={styles.section}>
             <View style={styles.selectedCountryChip}>
-              <Text style={styles.countryFlag}>{selectedCountry.flag}</Text>
-              <Text style={styles.selectedCountryName}>{selectedCountry.name}</Text>
+              <Text style={styles.countryFlag}>{selectedDest.flag}</Text>
+              <Text style={styles.selectedCountryName}>{selectedDest.name}</Text>
             </View>
 
             {loadingPlans ? (
@@ -241,7 +263,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
         <View style={[styles.bottomBar, { paddingBottom: insets.bottom + Spacing.L }]}>
           <View style={styles.summary}>
             <Text style={styles.summaryText} numberOfLines={1}>
-              {selectedCountry?.name} · {esimService.formatDataAmount(selectedPlan.dataMB)} / {selectedPlan.days}d
+              {selectedDest?.name} · {esimService.formatDataAmount(selectedPlan.dataMB)} / {selectedPlan.days}d
             </Text>
             <Text style={styles.summaryAmount}>{formatNaira(selectedPlan.priceKobo / 100)}</Text>
           </View>
