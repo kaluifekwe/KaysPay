@@ -42,7 +42,8 @@ const quickActions: QuickAction[] = [
   { id: '5', icon: '📺', label: Strings.SERVICE_TV, screen: 'TV' },
   { id: '7', icon: '📡', label: Strings.SERVICE_ESIM, screen: 'TravelEsim' },
   { id: '8', icon: '🌍', label: Strings.SERVICE_FOREIGN, screen: 'ForeignNumber' },
-  { id: '9', icon: '💳', label: Strings.SERVICE_DOLLAR_CARD, screen: 'DollarCard', comingSoon: true },
+  // Dollar Card hidden for v1 — screen is a mock and BridgeCard live access is
+  // blocked (see kayspay-bridgecard memory). Re-add this entry to restore.
   { id: '11', icon: '🪪', label: Strings.SERVICE_NIN, screen: 'NinServices' },
 ];
 
