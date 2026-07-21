@@ -88,7 +88,7 @@ function PrivacyPolicyContent() {
           specific product you purchased to the recipient number you provide.</Bullet>
         <Bullet>Identity verification providers (Prembly, CheckMyNINBVN) — only when you use NIN/BVN
           verification or update services, to check your NIN/BVN against official records.</Bullet>
-        <Bullet>Foreign number and eSIM providers (GrizzlySMS, Airalo/eSIM Access) — to deliver those
+        <Bullet>Foreign number and eSIM providers (GrizzlySMS, Airalo) — to deliver those
           specific services.</Bullet>
         <Bullet>Regulators or law enforcement, only where legally required to do so.</Bullet>
         <Para>

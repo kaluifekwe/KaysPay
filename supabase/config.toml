@@ -33,9 +33,6 @@ verify_jwt = false
 [functions.vtu-reconcile]
 verify_jwt = true
 
-[functions.esim-reconcile]
-verify_jwt = true
-
 [functions.nin-reconcile]
 verify_jwt = true
 

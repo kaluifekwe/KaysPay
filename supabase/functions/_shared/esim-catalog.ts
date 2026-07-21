@@ -58,7 +58,7 @@ export function usdToNgnKobo(usd: number, rate: number = DEFAULT_USD_TO_NGN_RATE
 
 export interface NormalizedEsimPlan {
   id: string; // opaque `${provider}:${providerPackageId}` — echoed back for purchase
-  provider: "airalo" | "esimaccess";
+  provider: "airalo";
   providerPackageId: string;
   name: string;
   dataMB: number | null; // null = unlimited

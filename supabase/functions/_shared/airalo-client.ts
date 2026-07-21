@@ -98,7 +98,7 @@ export async function browseAiraloPackages(
 
 /**
  * POST /v2/orders — synchronous: the eSIM's QR code/activation details come
- * back in this same response, unlike eSIM Access's async order+query flow.
+ * back in this same response (no separate async order + query step).
  *
  * Airalo documents this endpoint as multipart/form-data (NOT JSON), with
  * fields as strings — sending a JSON body makes the server treat quantity/

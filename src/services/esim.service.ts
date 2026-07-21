@@ -18,10 +18,10 @@ function flagFromCode(code: string): string {
     .join('');
 }
 
-// Both eSIM Access and Airalo cover 100+ countries each — this is a broad
-// ISO 3166-1 list (not exhaustive of every micro-territory) rather than a
-// small curated subset, since narrowing it down further would just hide
-// destinations customers actually want.
+// Airalo covers 100+ countries — this is a broad ISO 3166-1 list (not
+// exhaustive of every micro-territory) rather than a small curated subset,
+// since narrowing it down further would just hide destinations customers
+// actually want.
 const COUNTRY_NAMES: [string, string][] = [
   ['US', 'United States'], ['GB', 'United Kingdom'], ['CA', 'Canada'], ['AE', 'United Arab Emirates'],
   ['DE', 'Germany'], ['FR', 'France'], ['IT', 'Italy'], ['ES', 'Spain'], ['TR', 'Turkey'],
