@@ -17,10 +17,9 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.KaysPay",
+      "package": "com.kayspay.app",
       "permissions": [
-        "android.permission.READ_CONTACTS",
-        "android.permission.WRITE_CONTACTS"
+        "android.permission.READ_CONTACTS"
       ]
     },
     "web": {
