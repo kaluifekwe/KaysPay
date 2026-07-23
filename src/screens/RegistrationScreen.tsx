@@ -54,6 +54,21 @@ function detectNetwork(phone: string): string | null {
   return NETWORK_MAP[prefix] || null;
 }
 
+// Lightweight strength signal — rewards length + character variety. Purely
+// advisory (we still only *require* 6+ chars); it nudges users toward a
+// stronger password without blocking a valid one.
+function passwordStrength(pw: string): { label: string; color: string; pct: number } {
+  let score = 0;
+  if (pw.length >= 8) score++;
+  if (pw.length >= 12) score++;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score++;
+  if (/\d/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  if (score <= 1) return { label: 'Weak', color: '#DC2626', pct: 33 };
+  if (score <= 3) return { label: 'Fair', color: '#F59E0B', pct: 66 };
+  return { label: 'Strong', color: '#16A34A', pct: 100 };
+}
+
 const Icons = {
   user: '👤',
   mail: '✉',
@@ -492,6 +507,21 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                   {renderStatusIcon(!!passwordError, password.length >= 6)}
                 </View>
                 {renderError(passwordError)}
+                {password.length > 0 && (
+                  <View style={styles.strengthRow}>
+                    <View style={styles.strengthTrack}>
+                      <View
+                        style={[
+                          styles.strengthFill,
+                          { width: `${passwordStrength(password).pct}%`, backgroundColor: passwordStrength(password).color },
+                        ]}
+                      />
+                    </View>
+                    <Text style={[styles.strengthLabel, { color: passwordStrength(password).color }]}>
+                      {passwordStrength(password).label}
+                    </Text>
+                  </View>
+                )}
               </View>
 
               <View style={styles.fieldContainer}>
@@ -602,6 +632,10 @@ const styles = StyleSheet.create({
   errorIcon: { fontSize: 18, color: ERROR_RED, fontWeight: '700', marginLeft: 8 },
   errorText: { fontSize: 11, color: ERROR_RED, marginTop: 6, marginLeft: 4 },
   hintText: { fontSize: 11, color: '#9CA3AF', marginTop: 6, marginLeft: 4 },
+  strengthRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, marginLeft: 4 },
+  strengthTrack: { flex: 1, height: 5, borderRadius: 3, backgroundColor: '#E5E7EB', overflow: 'hidden', marginRight: 10 },
+  strengthFill: { height: '100%', borderRadius: 3 },
+  strengthLabel: { fontSize: 11, fontWeight: '700', width: 54, textAlign: 'right' },
   networkBadge: {
     flexDirection: 'row', alignItems: 'center', marginTop: 8, marginLeft: 4,
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, alignSelf: 'flex-start',
