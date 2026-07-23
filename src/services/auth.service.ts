@@ -46,6 +46,50 @@ export const authService = {
     }
   },
 
+  /**
+   * Forgot-password step 1: ask the server to email a 6-digit reset code.
+   * Always resolves success for a well-formed email (the server never reveals
+   * whether the account exists — anti-enumeration), so the UI can move to the
+   * code screen unconditionally.
+   */
+  async requestPasswordReset(email: string): Promise<AuthResult & { message?: string }> {
+    try {
+      const { data, error } = await supabase.functions.invoke('send-password-reset', {
+        body: { email: email.trim().toLowerCase() },
+      });
+      if (error && !data) throw error;
+      if (data?.success === false) {
+        return { success: false, error: data.error || 'Could not send a reset code. Please try again.' };
+      }
+      return { success: true, message: data?.message };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Network error. Please check your connection and try again.' };
+    }
+  },
+
+  /**
+   * Forgot-password step 2: verify the emailed code and set the new password.
+   * The code is the only credential required (the user has no session).
+   */
+  async confirmPasswordReset(
+    email: string,
+    code: string,
+    newPassword: string,
+  ): Promise<AuthResult & { attemptsRemaining?: number | null }> {
+    try {
+      const { data, error } = await supabase.functions.invoke('verify-password-reset', {
+        body: { email: email.trim().toLowerCase(), code: code.trim(), newPassword },
+      });
+      if (error && !data) throw error;
+      if (data?.success === false) {
+        return { success: false, error: data.error || 'Could not reset your password.', attemptsRemaining: data.attempts_remaining };
+      }
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Network error. Please check your connection and try again.' };
+    }
+  },
+
   async signInWithEmail(email: string, password: string): Promise<AuthResult> {
     try {
       const { error } = await supabase.auth.signInWithPassword({

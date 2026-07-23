@@ -10,17 +10,40 @@ export function isResendConfigured(): boolean {
   return !!RESEND_API_KEY && !!RESEND_FROM_EMAIL;
 }
 
-export async function sendEmail(to: string, subject: string, html: string): Promise<{ ok: boolean; error?: string }> {
+export interface SendEmailOptions {
+  /** Override the default From. Use for the founder welcome, e.g.
+   *  "Kalu Ifekwe <no-reply@kayspay.com.ng>". The address MUST be on the
+   *  verified sending domain or Resend rejects it. */
+  from?: string;
+  /** Where replies go (the From can be no-reply while replies still reach a
+   *  real inbox). */
+  replyTo?: string;
+}
+
+export async function sendEmail(
+  to: string,
+  subject: string,
+  html: string,
+  opts: SendEmailOptions = {},
+): Promise<{ ok: boolean; error?: string }> {
   if (!RESEND_API_KEY || !RESEND_FROM_EMAIL) return { ok: false, error: "Resend not configured" };
 
   try {
+    const payload: Record<string, unknown> = {
+      from: opts.from || RESEND_FROM_EMAIL,
+      to: [to],
+      subject,
+      html,
+    };
+    if (opts.replyTo) payload.reply_to = opts.replyTo;
+
     const res = await fetch(RESEND_API_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${RESEND_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ from: RESEND_FROM_EMAIL, to: [to], subject, html }),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {

@@ -48,6 +48,9 @@ verify_jwt = true
 [functions.notifications-push]
 verify_jwt = true
 
+[functions.welcome-email]
+verify_jwt = true
+
 # --- Public utility: no sensitive/user-specific data ---
 [functions.paystack-banks]
 verify_jwt = false
@@ -63,6 +66,15 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.verify-email-otp]
+verify_jwt = true
+
+# Forgot-password: called by a logged-OUT user with the app's anon key
+# (satisfies verify_jwt). Identity is the email in the body, proven only by
+# the emailed reset code — see send-/verify-password-reset.
+[functions.send-password-reset]
+verify_jwt = true
+
+[functions.verify-password-reset]
 verify_jwt = true
 
 [functions.kyc-verify-nin]
