@@ -4,13 +4,13 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
-  SafeAreaView,
+  TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { emailVerificationService } from '../services/emailVerification.service';
 import { safeErrorMessage } from '../utils/errorMessages';
 
@@ -150,7 +150,7 @@ export default function EmailCodeScreen(props: any) {
   const subtitle = `We sent a 6-digit code to ${maskedEmail}`;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

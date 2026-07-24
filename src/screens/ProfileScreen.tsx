@@ -2,8 +2,7 @@ import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
-  SafeAreaView,
+  StyleSheet,
   ScrollView,
   TouchableOpacity,
   StatusBar,
@@ -12,6 +11,7 @@ import {
   ActivityIndicator,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../constants/colors';
@@ -219,7 +219,7 @@ const ProfileScreen = ({ navigation }: any) => {
     : '';
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={WHITE} />
 
       <ScrollView

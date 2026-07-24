@@ -6,10 +6,10 @@ import {
   TouchableOpacity,
   Text,
   Animated,
-  FlatList,
-  SafeAreaView,
+  FlatList,
   StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 const BRAND_GREEN = '#1A5C3A';
@@ -239,7 +239,7 @@ export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={WHITE} />
 
       <View style={styles.header}>

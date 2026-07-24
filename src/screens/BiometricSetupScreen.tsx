@@ -4,9 +4,9 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  SafeAreaView,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
@@ -77,7 +77,7 @@ export default function BiometricSetupScreen({ route, onComplete }: BiometricSet
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <View style={styles.content}>
         <View style={styles.iconContainer}>
           <Text style={styles.icon}>🔐</Text>

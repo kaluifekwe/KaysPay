@@ -4,14 +4,14 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
-  SafeAreaView,
+  TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   Animated,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { authService } from '../services/auth.service';
 
 const BRAND_GREEN = '#1A5C3A';
@@ -362,7 +362,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={styles.header}>
           <TouchableOpacity

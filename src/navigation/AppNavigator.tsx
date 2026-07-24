@@ -140,7 +140,16 @@ export default function AppNavigator() {
             {() => (
               <RequireEmailVerifyNavigator
                 email={userEmail}
-                onComplete={() => setHasVerifiedEmail(true)}
+                onComplete={async () => {
+                  // Signup already saved the PIN (see RegistrationScreen), but
+                  // the auth-state-change check above ran a moment before that
+                  // save landed, so hasPin can be stale-false here. Re-check the
+                  // real server state now so a user who set their PIN during
+                  // signup skips the redundant "Create Transaction PIN" gate.
+                  // It still shows only if the PIN genuinely didn't save.
+                  setHasPin(await authService.hasPIN());
+                  setHasVerifiedEmail(true);
+                }}
               />
             )}
           </RootStack.Screen>

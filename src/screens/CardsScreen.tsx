@@ -1,12 +1,13 @@
 import React from 'react';
-import { View, StyleSheet, Text, SafeAreaView } from 'react-native';
+import { View, StyleSheet, Text } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Strings } from '../constants/strings';
 
 export default function CardsScreen() {
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.title}>{Strings.SERVICE_DOLLAR_CARD}</Text>
         <Text style={styles.placeholder}>Coming in Phase 4</Text>

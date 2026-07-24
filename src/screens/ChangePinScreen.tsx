@@ -4,10 +4,10 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
@@ -111,7 +111,7 @@ export default function ChangePinScreen({ navigation }: ChangePinScreenProps) {
 
   if (step === 'verifying') {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView edges={['top']} style={styles.container}>
         <View style={styles.center}>
           <ActivityIndicator size="large" color={Colors.GREEN} />
         </View>
@@ -122,7 +122,7 @@ export default function ChangePinScreen({ navigation }: ChangePinScreenProps) {
   const keypad = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} activeOpacity={0.7}>
           <Text style={styles.backButtonText}>‹</Text>

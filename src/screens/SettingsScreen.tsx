@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
-  Text,
-  SafeAreaView,
+  Text,
   ScrollView,
   TouchableOpacity,
   Switch,
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
@@ -240,7 +240,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}

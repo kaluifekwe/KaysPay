@@ -6,10 +6,10 @@ import {
   TouchableOpacity,
   TextInput,
   FlatList,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -96,7 +96,7 @@ export default function BankListScreen({ navigation, route }: BankListScreenProp
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView edges={['top']} style={styles.safeArea}>
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
@@ -117,7 +117,7 @@ export default function BankListScreen({ navigation, route }: BankListScreenProp
 
   if (error) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView edges={['top']} style={styles.safeArea}>
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
@@ -139,7 +139,7 @@ export default function BankListScreen({ navigation, route }: BankListScreenProp
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['top']} style={styles.safeArea}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}

@@ -3,12 +3,12 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
-  SafeAreaView,
+  ScrollView,
   Alert,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -194,7 +194,7 @@ export default function DollarCardsScreen({ navigation }: DollarCardsScreenProps
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
