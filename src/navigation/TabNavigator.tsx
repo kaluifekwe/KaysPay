@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import HomeScreen from '../screens/HomeScreen';
@@ -10,11 +11,14 @@ import MoreScreen from '../screens/MoreScreen';
 
 const Tab = createBottomTabNavigator();
 
-const TAB_ICONS: Record<string, string> = {
-  Home: '🏠',
-  History: '🧾',
-  Alerts: '🔔',
-  Account: '👤',
+// Outline when inactive, solid when active — the standard bottom-tab pattern.
+// Ionicons are monochrome so they tint with the active/inactive color (emoji
+// couldn't), giving a proper green highlight on the selected tab.
+const TAB_ICONS: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
+  Home: { active: 'home', inactive: 'home-outline' },
+  History: { active: 'receipt', inactive: 'receipt-outline' },
+  Alerts: { active: 'notifications', inactive: 'notifications-outline' },
+  Account: { active: 'person', inactive: 'person-outline' },
 };
 
 export default function TabNavigator() {
@@ -38,10 +42,12 @@ export default function TabNavigator() {
           styles.tabBar,
           { height: 58 + bottomInset, paddingBottom: bottomInset },
         ],
-        tabBarIcon: ({ focused }) => (
-          <Text style={[styles.icon, focused && styles.iconActive]} allowFontScaling={false}>
-            {TAB_ICONS[route.name]}
-          </Text>
+        tabBarIcon: ({ focused, color }) => (
+          <Ionicons
+            name={focused ? TAB_ICONS[route.name].active : TAB_ICONS[route.name].inactive}
+            size={24}
+            color={color}
+          />
         ),
       })}
     >
@@ -64,13 +70,6 @@ const styles = StyleSheet.create({
   },
   iconWrap: {
     marginTop: 2,
-  },
-  icon: {
-    fontSize: 22,
-    lineHeight: 26,
-  },
-  iconActive: {
-    transform: [{ scale: 1.12 }],
   },
   label: {
     fontSize: 11,

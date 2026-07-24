@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
@@ -20,11 +21,11 @@ import {
   type NotificationType,
 } from '../services/notification.service';
 
-const ICONS: Record<NotificationType, string> = {
-  funding: '💰',
-  withdrawal: '🏦',
-  transaction: '🧾',
-  system: '🔔',
+const ICONS: Record<NotificationType, keyof typeof Ionicons.glyphMap> = {
+  funding: 'cash-outline',
+  withdrawal: 'arrow-up-circle-outline',
+  transaction: 'receipt-outline',
+  system: 'notifications-outline',
 };
 
 function timeAgo(iso: string): string {
@@ -69,27 +70,14 @@ export default function NotificationsScreen() {
     }
   }, [refresh]);
 
-  const getIconBg = (type: NotificationType): string => {
-    switch (type) {
-      case 'funding':
-        return Colors.GREEN_LIGHT;
-      case 'withdrawal':
-        return Colors.GREEN_MID;
-      case 'system':
-        return Colors.AMBER;
-      default:
-        return Colors.GREEN_LIGHT;
-    }
-  };
-
   const renderNotification = ({ item }: { item: AppNotification }) => (
     <TouchableOpacity
       style={[styles.notificationCard, !item.read && styles.unreadCard]}
       onPress={() => !item.read && markAsRead(item.id)}
       activeOpacity={0.7}
     >
-      <View style={[styles.iconContainer, { backgroundColor: getIconBg(item.type) }]}>
-        <Text style={styles.iconText}>{ICONS[item.type] || '🔔'}</Text>
+      <View style={styles.iconContainer}>
+        <Ionicons name={ICONS[item.type] || 'notifications-outline'} size={22} color={Colors.GREEN} />
       </View>
       <View style={styles.notificationContent}>
         <View style={styles.titleRow}>
@@ -113,7 +101,7 @@ export default function NotificationsScreen() {
       </View>
     ) : (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyIcon}>🔔</Text>
+        <Ionicons name="notifications-outline" size={56} color={Colors.GRAY} style={styles.emptyIcon} />
         <Text style={styles.emptyTitle}>No Notifications</Text>
         <Text style={styles.emptyBody}>You're all caught up! New notifications will appear here.</Text>
       </View>
@@ -199,6 +187,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
+    backgroundColor: '#EAF4EE',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: Spacing.M,

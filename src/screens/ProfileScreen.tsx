@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
+  StyleSheet,
   ScrollView,
   TouchableOpacity,
   StatusBar,
@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
@@ -197,14 +198,14 @@ const ProfileScreen = ({ navigation }: any) => {
     );
   };
 
-  const links: { label: string; icon: string; screen: string | null; params?: object; onPress?: () => void; badge?: string }[] = [
-    { label: 'Edit Profile', icon: '👤', screen: 'EditProfile' },
-    { label: 'Identity Verification (KYC)', icon: '🪪', screen: 'Kyc', badge: kycVerified ? 'Verified' : 'Not Verified' },
-    { label: 'Transaction History', icon: '📋', screen: 'TransactionHistory' },
-    { label: 'Help & Support', icon: '❓', screen: null, onPress: handleOpenSupport },
-    { label: 'Privacy Policy', icon: '🔒', screen: 'LegalDocument', params: { type: 'privacy' } },
-    { label: 'Terms of Service', icon: '📄', screen: 'LegalDocument', params: { type: 'terms' } },
-    { label: 'Settings', icon: '⚙️', screen: 'Settings' },
+  const links: { label: string; icon: keyof typeof Ionicons.glyphMap; screen: string | null; params?: object; onPress?: () => void; badge?: string }[] = [
+    { label: 'Edit Profile', icon: 'create-outline', screen: 'EditProfile' },
+    { label: 'Identity Verification (KYC)', icon: 'shield-checkmark-outline', screen: 'Kyc', badge: kycVerified ? 'Verified' : 'Not Verified' },
+    { label: 'Transaction History', icon: 'receipt-outline', screen: 'TransactionHistory' },
+    { label: 'Help & Support', icon: 'help-circle-outline', screen: null, onPress: handleOpenSupport },
+    { label: 'Privacy Policy', icon: 'lock-closed-outline', screen: 'LegalDocument', params: { type: 'privacy' } },
+    { label: 'Terms of Service', icon: 'document-text-outline', screen: 'LegalDocument', params: { type: 'terms' } },
+    { label: 'Settings', icon: 'settings-outline', screen: 'Settings' },
   ];
 
   const formatJoinDate = () => {
@@ -296,7 +297,7 @@ const ProfileScreen = ({ navigation }: any) => {
                 activeOpacity={0.7}
               >
                 <View style={styles.linkLeft}>
-                  <Text style={styles.linkIcon}>{link.icon}</Text>
+                  <Ionicons name={link.icon} size={20} color={Colors.GREEN} style={styles.linkIcon} />
                   <Text style={styles.linkLabel}>{link.label}</Text>
                 </View>
                 <View style={styles.linkRight}>

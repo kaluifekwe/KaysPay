@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
-  Text,
+  Text,
   ScrollView,
   TouchableOpacity,
   Switch,
@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
@@ -23,7 +24,7 @@ interface SettingsScreenProps {
 }
 
 interface SettingsItem {
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value?: string;
   hasToggle?: boolean;
@@ -122,19 +123,19 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       title: 'Account',
       items: [
         {
-          icon: '📱',
+          icon: 'call-outline',
           label: 'Phone Number',
           value: '0803 *** 4567',
           onPress: () => {},
         },
         {
-          icon: '📧',
+          icon: 'mail-outline',
           label: 'Email',
           value: 'user@email.com',
           onPress: () => {},
         },
         {
-          icon: '🔐',
+          icon: 'key-outline',
           label: 'Change PIN',
           onPress: () => navigation.navigate('ChangePin'),
         },
@@ -144,14 +145,14 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       title: 'Security',
       items: [
         {
-          icon: '👆',
+          icon: 'finger-print-outline',
           label: 'Biometric Login',
           hasToggle: true,
           toggleValue: biometricEnabled,
           onToggle: handleBiometricToggle,
         },
         {
-          icon: '🛡️',
+          icon: 'shield-checkmark-outline',
           label: 'Two-Factor Authentication',
           hasToggle: true,
           toggleValue: twoFactorEnabled,
@@ -163,19 +164,19 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       title: 'Preferences',
       items: [
         {
-          icon: '💰',
+          icon: 'cash-outline',
           label: 'Currency',
           value: 'NGN',
           onPress: () => {},
         },
         {
-          icon: '🌍',
+          icon: 'globe-outline',
           label: 'Language',
           value: 'English',
           onPress: () => {},
         },
         {
-          icon: '🎨',
+          icon: 'color-palette-outline',
           label: 'Theme',
           value: 'Light',
           onPress: () => {},
@@ -186,7 +187,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       title: 'About',
       items: [
         {
-          icon: 'ℹ️',
+          icon: 'information-circle-outline',
           label: 'App Version',
           value: '1.0.0',
         },
@@ -206,7 +207,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       activeOpacity={item.hasToggle ? 1 : 0.7}
     >
       <View style={styles.settingsItemLeft}>
-        <Text style={styles.settingsItemIcon}>{item.icon}</Text>
+        <Ionicons name={item.icon} size={20} color={Colors.GREEN} style={styles.settingsItemIcon} />
         <Text
           style={[
             styles.settingsItemLabel,

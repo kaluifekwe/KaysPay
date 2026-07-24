@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { View, StyleSheet, Text, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
@@ -9,7 +10,7 @@ import { authService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
 
 interface Row {
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   label: string;
   screen?: string;
   params?: any;
@@ -22,24 +23,24 @@ const SECTIONS: { title: string; rows: Row[] }[] = [
   {
     title: 'Account',
     rows: [
-      { icon: '👤', label: 'Profile', screen: 'Profile' },
-      { icon: '🪪', label: 'Verification (KYC)', screen: 'Kyc' },
-      { icon: '🔑', label: 'Change PIN', screen: 'ChangePin' },
-      { icon: '⚙️', label: 'Settings', screen: 'Settings' },
+      { icon: 'person-outline', label: 'Profile', screen: 'Profile' },
+      { icon: 'shield-checkmark-outline', label: 'Verification (KYC)', screen: 'Kyc' },
+      { icon: 'key-outline', label: 'Change PIN', screen: 'ChangePin' },
+      { icon: 'settings-outline', label: 'Settings', screen: 'Settings' },
     ],
   },
   {
     title: 'Activity',
     rows: [
-      { icon: '🧾', label: 'Transaction History', screen: 'TransactionHistory' },
-      { icon: '🔔', label: 'Notifications', screen: 'Notifications' },
+      { icon: 'receipt-outline', label: 'Transaction History', screen: 'TransactionHistory' },
+      { icon: 'notifications-outline', label: 'Notifications', screen: 'Notifications' },
     ],
   },
   {
     title: 'Legal',
     rows: [
-      { icon: '🔒', label: 'Privacy Policy', screen: 'LegalDocument', params: { type: 'privacy' } },
-      { icon: '📄', label: 'Terms of Service', screen: 'LegalDocument', params: { type: 'terms' } },
+      { icon: 'lock-closed-outline', label: 'Privacy Policy', screen: 'LegalDocument', params: { type: 'privacy' } },
+      { icon: 'document-text-outline', label: 'Terms of Service', screen: 'LegalDocument', params: { type: 'terms' } },
     ],
   },
 ];
@@ -119,7 +120,7 @@ export default function MoreScreen({ navigation }: any) {
               </Text>
             ) : null}
           </View>
-          <Text style={styles.rowChevron}>{'›'}</Text>
+          <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.8)" />
         </TouchableOpacity>
 
         {SECTIONS.map((section) => (
@@ -133,9 +134,9 @@ export default function MoreScreen({ navigation }: any) {
                   activeOpacity={0.6}
                   onPress={() => row.screen && navigation.navigate(row.screen, row.params)}
                 >
-                  <Text style={styles.rowIcon}>{row.icon}</Text>
+                  <Ionicons name={row.icon} size={20} color={Colors.GREEN} style={styles.rowIcon} />
                   <Text style={styles.rowLabel}>{row.label}</Text>
-                  <Text style={styles.rowChevron}>{'›'}</Text>
+                  <Ionicons name="chevron-forward" size={18} color={Colors.GRAY} />
                 </TouchableOpacity>
               ))}
             </View>
