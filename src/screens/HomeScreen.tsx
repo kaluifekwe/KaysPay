@@ -11,6 +11,7 @@ import {
   Image,
   Alert,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -28,23 +29,25 @@ interface HomeScreenProps {
 
 interface QuickAction {
   id: string;
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   label: string;
   screen: string;
   comingSoon?: boolean;
 }
 
+// One unified icon family (Ionicons outline) in brand green — replaces the
+// mixed emoji set so every tile reads as part of the same system.
 const quickActions: QuickAction[] = [
-  { id: '1', icon: '📱', label: Strings.SERVICE_AIRTIME, screen: 'Airtime' },
-  { id: '2', icon: '📶', label: Strings.SERVICE_DATA, screen: 'Data' },
-  { id: '3', icon: '📝', label: Strings.SERVICE_EXAMS, screen: 'ExamPins' },
-  { id: '4', icon: '💡', label: Strings.SERVICE_BILLS, screen: 'Bills' },
-  { id: '5', icon: '📺', label: Strings.SERVICE_TV, screen: 'TV' },
-  { id: '7', icon: '📡', label: Strings.SERVICE_ESIM, screen: 'TravelEsim' },
-  { id: '8', icon: '🌍', label: Strings.SERVICE_FOREIGN, screen: 'ForeignNumber' },
+  { id: '1', icon: 'phone-portrait-outline', label: Strings.SERVICE_AIRTIME, screen: 'Airtime' },
+  { id: '2', icon: 'cellular-outline', label: Strings.SERVICE_DATA, screen: 'Data' },
+  { id: '3', icon: 'school-outline', label: Strings.SERVICE_EXAMS, screen: 'ExamPins' },
+  { id: '4', icon: 'receipt-outline', label: Strings.SERVICE_BILLS, screen: 'Bills' },
+  { id: '5', icon: 'tv-outline', label: Strings.SERVICE_TV, screen: 'TV' },
+  { id: '7', icon: 'globe-outline', label: Strings.SERVICE_ESIM, screen: 'TravelEsim' },
+  { id: '8', icon: 'call-outline', label: Strings.SERVICE_FOREIGN, screen: 'ForeignNumber' },
   // Dollar Card hidden for v1 — screen is a mock and BridgeCard live access is
   // blocked (see kayspay-bridgecard memory). Re-add this entry to restore.
-  { id: '11', icon: '🪪', label: Strings.SERVICE_NIN, screen: 'NinServices' },
+  { id: '11', icon: 'id-card-outline', label: Strings.SERVICE_NIN, screen: 'NinServices' },
 ];
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
@@ -233,14 +236,14 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                 }
               >
                 <View style={styles.quickActionIcon}>
-                  <Text style={styles.quickActionEmoji}>{action.icon}</Text>
+                  <Ionicons name={action.icon} size={26} color={Colors.GREEN} />
                   {action.comingSoon && (
                     <View style={styles.comingSoonBadge}>
                       <Text style={styles.comingSoonBadgeText}>Soon</Text>
                     </View>
                   )}
                 </View>
-                <Text style={styles.quickActionLabel}>{action.label}</Text>
+                <Text style={styles.quickActionLabel} numberOfLines={2}>{action.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -459,17 +462,12 @@ const styles = StyleSheet.create({
   quickActionIcon: {
     width: 60,
     height: 60,
-    borderRadius: 12,
-    backgroundColor: Colors.WHITE,
-    borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderRadius: 16,
+    backgroundColor: '#EAF4EE',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 6,
     position: 'relative',
-  },
-  quickActionEmoji: {
-    fontSize: 24,
   },
   comingSoonBadge: {
     position: 'absolute',
@@ -487,6 +485,9 @@ const styles = StyleSheet.create({
   },
   quickActionLabel: {
     ...Typography.CAPTION,
+    fontSize: 11,
+    lineHeight: 14,
+    minHeight: 28,
     textAlign: 'center',
   },
   emptyState: {
