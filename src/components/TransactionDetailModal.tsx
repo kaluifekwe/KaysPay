@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform, Image, Linking } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -121,6 +122,7 @@ export default function TransactionDetailModal({
   onClose: () => void;
 }) {
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const insets = useSafeAreaInsets();
 
   if (!transaction) return null;
 
@@ -174,7 +176,7 @@ export default function TransactionDetailModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.M }]}>
           <View style={styles.handle} />
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -311,8 +313,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     paddingHorizontal: Spacing.L,
     paddingTop: Spacing.S,
-    paddingBottom: Spacing.XL,
-    maxHeight: '85%',
+    maxHeight: '88%',
   },
   handle: {
     width: 40,

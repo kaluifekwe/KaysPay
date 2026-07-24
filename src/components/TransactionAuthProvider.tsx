@@ -6,6 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
   Text,
@@ -85,6 +86,7 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
   const [error, setError] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const resolverRef = useRef<((value: AuthorizeResult | null) => void) | null>(null);
   const maxUsesRef = useRef(1);
@@ -289,7 +291,7 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
 
       <Modal visible={visible} transparent animationType="fade" onRequestClose={() => finish(null)}>
         <View style={styles.overlay}>
-          <View style={styles.card}>
+          <View style={[styles.card, { paddingBottom: insets.bottom + Spacing.L }]}>
             <Text style={styles.title}>{options.title || 'Confirm Transaction'}</Text>
             {typeof options.amount === 'number' && (
               <Text style={styles.amount}>{formatNaira(options.amount)}</Text>
@@ -381,7 +383,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     paddingHorizontal: Spacing.XL,
     paddingTop: Spacing.XL,
-    paddingBottom: Spacing.XL + 12,
     alignItems: 'center',
   },
   title: {
