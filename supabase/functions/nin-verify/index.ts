@@ -59,6 +59,10 @@ interface ProviderOutcome {
   record?: any;
   errorMessage?: string;
   isTestData?: boolean;
+  // The provider was reached and answered cleanly, but has no record for this
+  // number — a definitive miss, not an outage. Callers skip the fallback on
+  // this so an invalid number doesn't cost a second lookup.
+  notFound?: boolean;
 }
 
 // Both providers wrap the person's record at DIFFERENT depths and their live
@@ -92,7 +96,9 @@ async function tryPrembly(nin: string): Promise<ProviderOutcome> {
   const record = extractRecord(data);
   const isTestData = typeof data?.message === "string" && /test data/i.test(data.message);
   const ok = status < 400 && !!record && !isTestData;
-  return { ok, record, errorMessage: data?.message, isTestData };
+  // 2xx + no record + not test data = the number genuinely isn't on file.
+  const notFound = status >= 200 && status < 300 && !record && !isTestData;
+  return { ok, record, errorMessage: data?.message, isTestData, notFound };
 }
 
 serve(async (req: Request) => {
@@ -186,7 +192,9 @@ serve(async (req: Request) => {
       providerUsed = "prembly";
       if (!outcome.ok && !outcome.isTestData) {
         primaryError = outcome.errorMessage;
-        lastError = outcome.errorMessage;
+        lastError = outcome.notFound
+          ? "No record found for this NIN. Please check the number and try again."
+          : outcome.errorMessage;
       } else if (!outcome.ok && outcome.isTestData) {
         primaryError = "prembly_test_data";
         lastError = "Verification is temporarily unavailable. Please try again shortly.";
@@ -197,7 +205,9 @@ serve(async (req: Request) => {
     }
   }
 
-  if (!outcome.ok && isNinBvnConfigured()) {
+  // Fall back ONLY on a real provider failure (outage / timeout / error) — not
+  // on a definitive "not found", so an invalid NIN doesn't cost a second lookup.
+  if (!outcome.ok && !outcome.notFound && isNinBvnConfigured()) {
     try {
       const fallback = await tryNinBvn(nin);
       if (fallback.ok) {

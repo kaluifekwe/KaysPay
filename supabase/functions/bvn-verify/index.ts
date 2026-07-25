@@ -25,6 +25,9 @@ interface ProviderOutcome {
   ok: boolean;
   record?: any;
   errorMessage?: string;
+  // Provider reached and answered cleanly but has no record for this number —
+  // a definitive miss, not an outage. Callers skip the fallback on this.
+  notFound?: boolean;
 }
 
 // Providers use different field names/casing for the same BVN record. Prembly
@@ -77,7 +80,9 @@ async function tryPrembly(bvn: string): Promise<ProviderOutcome> {
   const { status, data } = await verifyBvnPremblyFull(bvn);
   const record = extractBvnRecord(data);
   const ok = status < 400 && !!record;
-  return { ok, record, errorMessage: ok ? undefined : (data?.detail || data?.message || `http_${status}`) };
+  // 2xx + no record = the BVN genuinely isn't on file (definitive miss).
+  const notFound = status >= 200 && status < 300 && !record;
+  return { ok, record, notFound, errorMessage: ok ? undefined : (data?.detail || data?.message || `http_${status}`) };
 }
 
 // CheckMyNINBVN — FALLBACK.
@@ -171,7 +176,9 @@ serve(async (req: Request) => {
       providerUsed = "prembly";
       if (!outcome.ok) {
         primaryError = outcome.errorMessage;
-        lastError = outcome.errorMessage;
+        lastError = outcome.notFound
+          ? "No record found for this BVN. Please check the number and try again."
+          : outcome.errorMessage;
       }
     } catch (e) {
       primaryError = (e as Error).message;
@@ -179,7 +186,9 @@ serve(async (req: Request) => {
     }
   }
 
-  if (!outcome.ok && isNinBvnConfigured()) {
+  // Fall back ONLY on a real provider failure — not on a definitive "not
+  // found", so an invalid BVN doesn't cost a second lookup.
+  if (!outcome.ok && !outcome.notFound && isNinBvnConfigured()) {
     try {
       const fallback = await tryNinBvn(bvn);
       if (fallback.ok) {
