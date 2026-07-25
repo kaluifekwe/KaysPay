@@ -294,17 +294,17 @@ function buildBvnSlipTraditionalHtml(record: BvnRecord, bvn: string, emblemBase6
           <div class="field"><span class="label">Last Name: </span><span class="value">${record.lastname || 'N/A'}</span></div>
           <div class="field"><span class="label">Date of birth: </span><span class="value">${record.dob || 'N/A'}</span></div>
           <div class="field"><span class="label">Gender: </span><span class="value">${record.gender || 'N/A'}</span></div>
-          <div class="field"><span class="label">Marital Status: </span><span class="value">N/A</span></div>
+          <div class="field"><span class="label">Marital Status: </span><span class="value">${record.maritalStatus || 'N/A'}</span></div>
           <div class="field"><span class="label">Phone Number: </span><span class="value">${record.phone || 'N/A'}</span></div>
-          <div class="field"><span class="label">Enrollment Institution: </span><span class="value">N/A</span></div>
+          <div class="field"><span class="label">Enrollment Institution: </span><span class="value">${record.enrollmentBank || 'N/A'}</span></div>
           <div class="field"><span class="label">Origin State: </span><span class="value">${record.stateOfOrigin || 'N/A'}</span></div>
           <div class="field"><span class="label">Residence State: </span><span class="value">${record.stateOfResidence || 'N/A'}</span></div>
-          <div class="field"><span class="label">Residential Address: </span><span class="value">N/A</span></div>
+          <div class="field"><span class="label">Residential Address: </span><span class="value">${record.residentialAddress || 'N/A'}</span></div>
         </div>
         <div class="field-col-2">
-          <div class="field"><span class="label">Enrollment Branch: </span><span class="value">N/A</span></div>
-          <div class="field"><span class="label">Origin LGA: </span><span class="value">N/A</span></div>
-          <div class="field"><span class="label">Residence LGA: </span><span class="value">N/A</span></div>
+          <div class="field"><span class="label">Enrollment Branch: </span><span class="value">${record.enrollmentBranch || 'N/A'}</span></div>
+          <div class="field"><span class="label">Origin LGA: </span><span class="value">${record.lgaOfOrigin || 'N/A'}</span></div>
+          <div class="field"><span class="label">Residence LGA: </span><span class="value">${record.lgaOfResidence || 'N/A'}</span></div>
         </div>
         <div class="mid-col">
           ${photoTag(record.photo)}

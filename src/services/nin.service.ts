@@ -49,8 +49,17 @@ export interface BvnRecord {
   gender?: string;
   bvn?: string;
   photo?: string;
-  stateOfOrigin?: string; // only present when CheckMyNINBVN answers
-  stateOfResidence?: string; // only present when CheckMyNINBVN answers
+  stateOfOrigin?: string;
+  stateOfResidence?: string;
+  // Full NIBSS record (Prembly BVN 2.0) — undefined when a leaner endpoint answers.
+  maritalStatus?: string;
+  nationality?: string;
+  lgaOfOrigin?: string;
+  lgaOfResidence?: string;
+  residentialAddress?: string;
+  enrollmentBank?: string;
+  enrollmentBranch?: string;
+  nameOnCard?: string;
 }
 
 export interface BvnVerifyResult {

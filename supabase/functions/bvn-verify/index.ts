@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient, consumeAuthToken } from "../_shared/auth.ts";
-import { verifyBvn as verifyBvnPrembly, isPremblyConfigured } from "../_shared/prembly-client.ts";
+import { verifyBvnFull as verifyBvnPremblyFull, isPremblyConfigured } from "../_shared/prembly-client.ts";
 import { verifyBvn as verifyBvnNinBvn, isNinBvnConfigured } from "../_shared/ninbvn-client.ts";
 
 // Retail price — normally ₦1,000 (confirmed by owner 2026-07-06). TEMPORARILY
@@ -27,32 +27,45 @@ interface ProviderOutcome {
   errorMessage?: string;
 }
 
-// Prembly and CheckMyNINBVN use different field names/casing for the same
-// BVN record (confirmed against each provider's own docs 2026-07-06:
-// Prembly returns firstName/middleName/lastName/dateOfBirth/phoneNumber;
-// CheckMyNINBVN returns firstname/middlename/lastname/phone/dob/gender/bvn/
-// photo). Normalize both into one shape so the app never needs to know
-// which provider actually answered.
+// Providers use different field names/casing for the same BVN record. Prembly
+// BVN 2.0 returns camelCase (enrollmentBank, lgaOfResidence, base64Image, …),
+// usually nested under bvn_data; the older endpoints and CheckMyNINBVN use
+// snake_case (state_of_origin, …). Normalize every plausible spelling into one
+// shape so the app (and the slip) never needs to know which provider/endpoint
+// answered. Fields the answering endpoint doesn't return stay undefined.
+function pick(c: any, ...keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = c[k];
+    if (v !== undefined && v !== null && v !== "") return typeof v === "string" ? v : String(v);
+  }
+  return undefined;
+}
+
 function extractBvnRecord(data: any): any {
-  const candidates = [data?.data?.data, data?.data, data];
+  const candidates = [data?.bvn_data, data?.data?.bvn_data, data?.data?.data, data?.data, data];
   for (const c of candidates) {
     if (!c || typeof c !== "object") continue;
-    const firstname = c.firstname ?? c.firstName;
+    const firstname = pick(c, "firstname", "firstName", "first_name");
     if (typeof firstname === "string" && firstname.trim().length > 0) {
       return {
         firstname,
-        middlename: c.middlename ?? c.middleName,
-        lastname: c.lastname ?? c.lastName ?? c.surname,
-        phone: c.phone ?? c.phoneNumber,
-        dob: c.dob ?? c.dateOfBirth,
-        gender: c.gender,
-        bvn: c.bvn ?? c.number,
-        photo: c.photo,
-        // Only CheckMyNINBVN's response includes these (confirmed 2026-07-06)
-        // — Prembly's bvn_validation doesn't return them, so they're simply
-        // absent/undefined when Prembly answers.
-        stateOfOrigin: c.state_of_origin,
-        stateOfResidence: c.state_of_residence,
+        middlename: pick(c, "middlename", "middleName", "middle_name"),
+        lastname: pick(c, "lastname", "lastName", "surname"),
+        phone: pick(c, "phone", "phoneNumber1", "phoneNumber", "phone_number"),
+        dob: pick(c, "dob", "dateOfBirth", "DateOfBirth", "birthdate"),
+        gender: pick(c, "gender"),
+        bvn: pick(c, "bvn", "number"),
+        photo: pick(c, "photo", "base64Image", "image", "face_image"),
+        maritalStatus: pick(c, "maritalStatus", "marital_status"),
+        nationality: pick(c, "nationality"),
+        stateOfOrigin: pick(c, "stateOfOrigin", "state_of_origin"),
+        stateOfResidence: pick(c, "stateOfResidence", "state_of_residence"),
+        lgaOfOrigin: pick(c, "lgaOfOrigin", "lga_of_origin"),
+        lgaOfResidence: pick(c, "lgaOfResidence", "lga_of_residence"),
+        residentialAddress: pick(c, "residentialAddress", "residential_address", "address"),
+        enrollmentBank: pick(c, "enrollmentBank", "enrollment_bank", "registrationBank"),
+        enrollmentBranch: pick(c, "enrollmentBranch", "enrollment_branch"),
+        nameOnCard: pick(c, "nameOnCard", "name_on_card"),
       };
     }
   }
@@ -61,7 +74,7 @@ function extractBvnRecord(data: any): any {
 
 // Prembly — PRIMARY (funded account, confirmed 2026-07-06).
 async function tryPrembly(bvn: string): Promise<ProviderOutcome> {
-  const { status, data } = await verifyBvnPrembly(bvn);
+  const { status, data } = await verifyBvnPremblyFull(bvn);
   const record = extractBvnRecord(data);
   const ok = status < 400 && !!record;
   return { ok, record, errorMessage: ok ? undefined : (data?.detail || data?.message || `http_${status}`) };
