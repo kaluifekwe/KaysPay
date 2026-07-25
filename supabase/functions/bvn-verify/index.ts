@@ -4,11 +4,10 @@ import { getAuthUser, adminClient, consumeAuthToken } from "../_shared/auth.ts";
 import { verifyBvnFull as verifyBvnPremblyFull, isPremblyConfigured } from "../_shared/prembly-client.ts";
 import { verifyBvn as verifyBvnNinBvn, isNinBvnConfigured } from "../_shared/ninbvn-client.ts";
 
-// Retail price — normally ₦1,000 (confirmed by owner 2026-07-06). TEMPORARILY
-// FREE (1 kobo, not a true 0 since debit_for_service requires a strictly
-// positive amount) while the owner tests the live flow on their own Kay's
-// Pay wallet. Restore to 100000 once the owner confirms testing is done.
-const BVN_VERIFY_PRICE_KOBO = 1;
+// BVN slip price — ₦500 (owner-set 2026-07-25). Must match the client's
+// BVN_VERIFY_PRICE (₦500) shown in the PIN prompt. Kobo, since debit_for_service
+// charges in kobo.
+const BVN_VERIFY_PRICE_KOBO = 50000;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {

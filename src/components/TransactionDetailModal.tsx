@@ -9,6 +9,8 @@ import { safeErrorMessage } from '../utils/errorMessages';
 import { downloadPdf, sharePdf } from '../utils/pdf';
 import { buildElectricityReceiptHtml } from '../utils/receipts';
 import { vtuService } from '../services/vtu.service';
+import { buildBvnSlipTraditionalHtml, getEmblemBase64 } from '../screens/NinServicesScreen';
+import type { BvnRecord } from '../services/nin.service';
 
 export interface TransactionDetailItem {
   id: string;
@@ -135,6 +137,15 @@ export default function TransactionDetailModal({
   const electricityToken: string | undefined = transaction.metadata?.token;
   const electricityRequest = transaction.metadata?.request;
 
+  // Re-downloadable BVN slip: a successful BVN verification stores the full
+  // record in its metadata, so the slip can be rebuilt any time from History —
+  // no re-verification, no charge.
+  const bvnSlipRecord: BvnRecord | undefined =
+    transaction.rawType === 'bvn_verification' && transaction.status === 'successful'
+      ? (transaction.metadata?.record as BvnRecord | undefined)
+      : undefined;
+  const bvnSlipNumber = String(bvnSlipRecord?.bvn || transaction.recipientPhone || '');
+
   const buildElectricityReceipt = () =>
     buildElectricityReceiptHtml({
       providerName: vtuService.getElectricityProviderName(String(electricityRequest?.service || '')),
@@ -168,6 +179,38 @@ export default function TransactionDetailModal({
       await sharePdf(buildElectricityReceipt(), 'Share your electricity receipt');
     } catch (e) {
       Alert.alert('Error', safeErrorMessage(e, 'Could not generate the receipt. Please try again.'));
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  const handleDownloadBvnSlip = async () => {
+    if (!bvnSlipRecord) return;
+    setGeneratingPdf(true);
+    try {
+      const emblem = await getEmblemBase64();
+      const html = buildBvnSlipTraditionalHtml(bvnSlipRecord, bvnSlipNumber, emblem);
+      await downloadPdf(html, `BVN_Slip_${bvnSlipNumber || transaction.id}`);
+      Alert.alert(
+        Platform.OS === 'android' ? 'Downloaded' : 'Saved',
+        Platform.OS === 'android' ? 'Slip saved to the folder you selected.' : 'Choose "Save to Files" to store it on your device.',
+      );
+    } catch (e) {
+      Alert.alert('Error', safeErrorMessage(e, 'Could not save the slip. Please try again.'));
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  const handleShareBvnSlip = async () => {
+    if (!bvnSlipRecord) return;
+    setGeneratingPdf(true);
+    try {
+      const emblem = await getEmblemBase64();
+      const html = buildBvnSlipTraditionalHtml(bvnSlipRecord, bvnSlipNumber, emblem);
+      await sharePdf(html, 'Share your BVN slip');
+    } catch (e) {
+      Alert.alert('Error', safeErrorMessage(e, 'Could not generate the slip. Please try again.'));
     } finally {
       setGeneratingPdf(false);
     }
@@ -238,6 +281,30 @@ export default function TransactionDetailModal({
                   disabled={generatingPdf}
                 >
                   <Text style={styles.receiptButtonSecondaryText}>Share Receipt</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {bvnSlipRecord && (
+              <View style={styles.receiptSection}>
+                <Text style={styles.sectionTitle}>BVN Slip</Text>
+                <TouchableOpacity
+                  style={[styles.receiptButton, generatingPdf && styles.receiptButtonDisabled]}
+                  onPress={handleDownloadBvnSlip}
+                  disabled={generatingPdf}
+                >
+                  {generatingPdf ? (
+                    <ActivityIndicator color={Colors.WHITE} />
+                  ) : (
+                    <Text style={styles.receiptButtonText}>Download BVN Slip (PDF)</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.receiptButtonSecondary, generatingPdf && styles.receiptButtonDisabled]}
+                  onPress={handleShareBvnSlip}
+                  disabled={generatingPdf}
+                >
+                  <Text style={styles.receiptButtonSecondaryText}>Share BVN Slip</Text>
                 </TouchableOpacity>
               </View>
             )}

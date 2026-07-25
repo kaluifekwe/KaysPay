@@ -33,11 +33,10 @@ export const SLIP_TIERS: { id: SlipTier; name: string; valueKobo: number }[] = [
   { id: 'premium', name: 'Premium Slip', valueKobo: 45000 },
 ];
 
-export type BvnSlipTier = 'slip' | 'card';
+export type BvnSlipTier = 'slip';
 
 export const BVN_SLIP_TIERS: { id: BvnSlipTier; name: string; valueKobo: number }[] = [
-  { id: 'slip', name: 'BVN Slip', valueKobo: 35000 },
-  { id: 'card', name: 'BVN Card', valueKobo: 45000 },
+  { id: 'slip', name: 'BVN Slip', valueKobo: 50000 },
 ];
 
 function photoTag(photo?: string, className = 'photo'): string {
@@ -59,7 +58,7 @@ let cachedEmblemBase64: string | null = null;
 // Resolves the bundled emblem to a base64 data URI for use inside
 // expo-print's HTML string (which can't reference RN require()'d assets
 // directly). Cached after the first call — the asset never changes at runtime.
-async function getEmblemBase64(): Promise<string> {
+export async function getEmblemBase64(): Promise<string> {
   if (cachedEmblemBase64) return cachedEmblemBase64;
   const asset = Asset.fromModule(EMBLEM_ASSET);
   await asset.downloadAsync();
@@ -252,7 +251,7 @@ function fingerprintIconSvg(size = 38): string {
 
 // BVN Slip — the traditional tabular layout (field list + photo/BVN block +
 // verified badge with notice text).
-function buildBvnSlipTraditionalHtml(record: BvnRecord, bvn: string, emblemBase64: string): string {
+export function buildBvnSlipTraditionalHtml(record: BvnRecord, bvn: string, emblemBase64: string): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8" />
   <style>
     body { font-family: -apple-system, Helvetica, Arial, sans-serif; padding: 24px; color: #111; background: #f4f4ee; }
@@ -417,7 +416,7 @@ type ModifyState = 'idle' | 'processing' | 'submitted' | 'error';
 const VERIFICATION_FREE_FOR_TESTING = true;
 const VERIFY_PRICE = 1000;
 const VALIDATE_PRICE = 8000;
-const BVN_VERIFY_PRICE = 1000;
+const BVN_VERIFY_PRICE = 500;
 const MODIFY_PRICE = 18000;
 
 export default function NinServicesScreen({ navigation }: NinServicesScreenProps) {
@@ -570,8 +569,8 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   const handleVerifyBvn = useCallback(async () => {
     if (!canVerifyBvn) return;
     const authResult = await authorize({
-      title: 'Confirm BVN Verification',
-      amount: VERIFICATION_FREE_FOR_TESTING ? undefined : BVN_VERIFY_PRICE,
+      title: 'Generate BVN Slip',
+      amount: BVN_VERIFY_PRICE,
     });
     if (!authResult) return;
 
@@ -580,6 +579,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     const result = await ninService.verifyBvn(bvnNumber, authResult.token);
     if (result.success && result.record) {
       setBvnRecord(result.record);
+      setBvnPrintOpen(true);
       setBvnState('result');
     } else {
       setBvnError(result.error || 'Could not verify this BVN. Please try again.');
@@ -598,7 +598,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
 
   const [generatingBvnPdf, setGeneratingBvnPdf] = useState(false);
   const [bvnPrintOpen, setBvnPrintOpen] = useState(false);
-  const [selectedBvnTier, setSelectedBvnTier] = useState<BvnSlipTier>('slip');
+  const [selectedBvnTier] = useState<BvnSlipTier>('slip');
 
   const bvnFullName = useMemo(() => {
     if (!bvnRecord) return '';
@@ -607,10 +607,8 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
 
   const buildSelectedBvnSlipHtml = useCallback(async () => {
     const emblemBase64 = await getEmblemBase64();
-    return selectedBvnTier === 'slip'
-      ? buildBvnSlipTraditionalHtml(bvnRecord!, bvnNumber, emblemBase64)
-      : buildBvnCardHtml(bvnRecord!, bvnNumber);
-  }, [bvnRecord, selectedBvnTier, bvnNumber]);
+    return buildBvnSlipTraditionalHtml(bvnRecord!, bvnNumber, emblemBase64);
+  }, [bvnRecord, bvnNumber]);
 
   const handleDownloadBvn = useCallback(async () => {
     if (!bvnRecord) return;
@@ -1138,7 +1136,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                   <ActivityIndicator color={Colors.WHITE} />
                 ) : (
                   <Text style={styles.primaryButtonText}>
-                    Verify ({VERIFICATION_FREE_FOR_TESTING ? 'Free' : formatNaira(BVN_VERIFY_PRICE)})
+                    Generate Slip ({formatNaira(BVN_VERIFY_PRICE)})
                   </Text>
                 )}
               </TouchableOpacity>
@@ -1178,90 +1176,30 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 </View>
               ) : (
                 <View>
-                  <Text style={styles.stepLabel}>01  Select Slip Type</Text>
-                  <View style={styles.tierRow}>
-                    {BVN_SLIP_TIERS.map((tier) => {
-                      const isSelected = selectedBvnTier === tier.id;
-                      return (
-                        <TouchableOpacity
-                          key={tier.id}
-                          style={[styles.tierCard, isSelected && styles.tierCardSelected]}
-                          onPress={() => setSelectedBvnTier(tier.id)}
-                        >
-                          <View style={[styles.radio, isSelected && styles.radioSelected]}>
-                            {isSelected && <View style={styles.radioDot} />}
-                          </View>
-                          <Text style={styles.tierName}>{tier.name}</Text>
-                          <Text style={styles.tierValue}>{formatNaira(tier.valueKobo / 100)}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                  <View style={styles.regularPreview}>
+                    <View style={styles.regularPreviewHeader}>
+                      <Image source={EMBLEM_ASSET} style={styles.regularPreviewEmblem} />
+                      <View style={styles.regularPreviewTitleBlock}>
+                        <Text style={styles.regularPreviewTitle}>Federal Republic of Nigeria</Text>
+                        <Text style={styles.regularPreviewSub}>Verified BVN Details</Text>
+                      </View>
+                      <View style={styles.regularPreviewEmblemSpacer} />
+                    </View>
+                    <View style={styles.regularPreviewBody}>
+                      <View style={styles.regularPreviewFields}>
+                        <Text style={styles.regularPreviewField}>First Name: {bvnRecord.firstname || 'N/A'}</Text>
+                        <Text style={styles.regularPreviewField}>Last Name: {bvnRecord.lastname || 'N/A'}</Text>
+                        <Text style={styles.regularPreviewField}>Date of birth: {bvnRecord.dob || 'N/A'}</Text>
+                        <Text style={styles.regularPreviewField}>Gender: {bvnRecord.gender || 'N/A'}</Text>
+                        <Text style={styles.regularPreviewField}>BVN: {(bvnRecord.bvn || bvnNumber || '').replace(/(\d{3})(?=\d)/g, '$1 ')}</Text>
+                      </View>
+                      {bvnRecord.photo ? (
+                        <Image source={{ uri: `data:image/jpeg;base64,${bvnRecord.photo}` }} style={styles.regularPreviewPhoto} />
+                      ) : (
+                        <View style={styles.regularPreviewPhotoBlank} />
+                      )}
+                    </View>
                   </View>
-
-                  <Text style={styles.freeNote}>Free to generate — the price above just shows the slip's typical value.</Text>
-
-                  {selectedBvnTier === 'slip' ? (
-                    <View style={styles.regularPreview}>
-                      <View style={styles.regularPreviewHeader}>
-                        <Image source={EMBLEM_ASSET} style={styles.regularPreviewEmblem} />
-                        <View style={styles.regularPreviewTitleBlock}>
-                          <Text style={styles.regularPreviewTitle}>Federal Republic of Nigeria</Text>
-                          <Text style={styles.regularPreviewSub}>Verified BVN Details</Text>
-                        </View>
-                        <View style={styles.regularPreviewEmblemSpacer} />
-                      </View>
-                      <View style={styles.regularPreviewBody}>
-                        <View style={styles.regularPreviewFields}>
-                          <Text style={styles.regularPreviewField}>First Name: {bvnRecord.firstname || 'N/A'}</Text>
-                          <Text style={styles.regularPreviewField}>Last Name: {bvnRecord.lastname || 'N/A'}</Text>
-                          <Text style={styles.regularPreviewField}>Date of birth: {bvnRecord.dob || 'N/A'}</Text>
-                          <Text style={styles.regularPreviewField}>Gender: {bvnRecord.gender || 'N/A'}</Text>
-                          <Text style={styles.regularPreviewField}>BVN: {(bvnRecord.bvn || bvnNumber || '').replace(/(\d{3})(?=\d)/g, '$1 ')}</Text>
-                        </View>
-                        {bvnRecord.photo ? (
-                          <Image source={{ uri: `data:image/jpeg;base64,${bvnRecord.photo}` }} style={styles.regularPreviewPhoto} />
-                        ) : (
-                          <View style={styles.regularPreviewPhotoBlank} />
-                        )}
-                      </View>
-                    </View>
-                  ) : (
-                    <View style={styles.cardPreview}>
-                      <View style={styles.cardPreviewHeaderRow}>
-                        <Text style={styles.cardPreviewBrandSub}>Bank Verification Number</Text>
-                      </View>
-                      <View style={styles.cardPreviewRow}>
-                        {bvnRecord.photo ? (
-                          <Image source={{ uri: `data:image/jpeg;base64,${bvnRecord.photo}` }} style={styles.cardPreviewPhoto} />
-                        ) : (
-                          <View style={styles.cardPreviewPhotoBlank} />
-                        )}
-                        <View style={styles.cardPreviewFields}>
-                          <Text style={styles.cardPreviewLabel}>Surname</Text>
-                          <Text style={styles.cardPreviewValue}>{bvnRecord.lastname || ''}</Text>
-                          <Text style={styles.cardPreviewLabel}>First Name/Other Name</Text>
-                          <Text style={styles.cardPreviewValue}>{bvnRecord.firstname || ''} {bvnRecord.middlename || ''}</Text>
-                          <View style={styles.cardPreviewDobSexRow}>
-                            <View>
-                              <Text style={styles.cardPreviewLabel}>Date of Birth</Text>
-                              <Text style={styles.cardPreviewValue}>{formatDobDisplay(bvnRecord.dob)}</Text>
-                            </View>
-                            <View>
-                              <Text style={styles.cardPreviewLabel}>Gender</Text>
-                              <Text style={styles.cardPreviewValue}>{(bvnRecord.gender || 'N/A').toUpperCase().slice(0, 1)}</Text>
-                            </View>
-                          </View>
-                        </View>
-                        <View style={styles.cardPreviewRightCol}>
-                          <Text style={styles.cardPreviewNga}>NGA</Text>
-                          <Text style={styles.cardPreviewIssueLabel}>Issue Date</Text>
-                          <Text style={styles.cardPreviewIssueValue}>{new Date().toLocaleDateString('en-GB')}</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.cardPreviewNinLabel}>Bank Verification Number (BVN)</Text>
-                      <Text style={styles.cardPreviewNin}>{(bvnRecord.bvn || bvnNumber || '').replace(/(\d{3})(?=\d)/g, '$1 ')}</Text>
-                    </View>
-                  )}
 
                   <TouchableOpacity
                     style={[styles.primaryButton, generatingBvnPdf && styles.primaryButtonDisabled]}
