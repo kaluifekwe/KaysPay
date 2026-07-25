@@ -51,14 +51,14 @@ export async function verifyBvn(bvn: string): Promise<{ status: number; data: an
   return { status: res.status, data: await res.json() };
 }
 
-// BVN 2.0 — the full NIBSS record (verified against Prembly's docs 2026-07-25):
-// enrollment bank + branch, LGA of origin + residence, state of origin +
-// residence, residential address, gender, marital status, nationality, name
-// on card, watchlist status, and the base64 photo. This is what a complete
-// printable BVN slip needs. It's the premium product (costs more per call than
-// bvn_validation), so it's used only for the paid slip/card flow. The v2
-// endpoint lives on a different host and also requires the account's App ID
-// header (set PREMBLY_APP_ID) in addition to the Secret Key.
+// BVN Advance — the full NIBSS record: enrollment bank + branch, LGA of origin
+// + residence, state of origin + residence, residential address, gender,
+// marital status, nationality, name on card, watchlist status, and the base64
+// photo. This is what a complete printable BVN slip needs, and it's the
+// premium product (costs more per call than bvn_validation), so it's used only
+// for the paid slip/card flow. Same base + Secret-Key-only auth as the other
+// endpoints on this account (no app-id) — an optional app-id header is still
+// sent if PREMBLY_APP_ID is ever configured, for accounts that require it.
 export async function verifyBvnFull(bvn: string): Promise<{ status: number; data: any }> {
   if (!PREMBLY_API_KEY) throw new PremblyError("Prembly API key not configured");
 
@@ -69,7 +69,7 @@ export async function verifyBvnFull(bvn: string): Promise<{ status: number; data
   };
   if (PREMBLY_APP_ID) headers["app-id"] = PREMBLY_APP_ID;
 
-  const res = await fetch("https://api.myidentitypay.com/api/v2/biometrics/merchant/data/verification/bvn", {
+  const res = await fetch(`${PREMBLY_BASE_URL}/verification/bvn`, {
     method: "POST",
     headers,
     body: JSON.stringify({ number: bvn }),
