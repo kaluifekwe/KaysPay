@@ -1136,7 +1136,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                   <ActivityIndicator color={Colors.WHITE} />
                 ) : (
                   <Text style={styles.primaryButtonText}>
-                    Generate Slip ({formatNaira(BVN_VERIFY_PRICE)})
+                    Pay {formatNaira(BVN_VERIFY_PRICE)}
                   </Text>
                 )}
               </TouchableOpacity>
