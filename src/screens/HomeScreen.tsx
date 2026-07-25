@@ -173,7 +173,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             style={styles.headerIcon}
             onPress={() => navigation.navigate('Notifications')}
           >
-            <Text style={styles.iconEmoji}>🔔</Text>
+            <Ionicons name="notifications-outline" size={24} color={Colors.WHITE} />
             {unreadCount > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
