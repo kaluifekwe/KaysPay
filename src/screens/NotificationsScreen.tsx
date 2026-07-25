@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -8,8 +8,9 @@ import {
   StyleSheet,
   StatusBar,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
 import { Spacing } from '../constants/spacing';
@@ -48,6 +49,8 @@ export default function NotificationsScreen() {
   );
   const notifications = data || [];
   const unreadCount = notifications.filter((n) => !n.read).length;
+  const [selected, setSelected] = useState<AppNotification | null>(null);
+  const insets = useSafeAreaInsets();
 
   const markAsRead = useCallback(
     async (id: string) => {
@@ -73,7 +76,10 @@ export default function NotificationsScreen() {
   const renderNotification = ({ item }: { item: AppNotification }) => (
     <TouchableOpacity
       style={[styles.notificationCard, !item.read && styles.unreadCard]}
-      onPress={() => !item.read && markAsRead(item.id)}
+      onPress={() => {
+        setSelected(item);
+        if (!item.read) markAsRead(item.id);
+      }}
       activeOpacity={0.7}
     >
       <View style={styles.iconContainer}>
@@ -129,6 +135,32 @@ export default function NotificationsScreen() {
         }
         showsVerticalScrollIndicator={false}
       />
+
+      <Modal
+        visible={!!selected}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelected(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + Spacing.M }]}>
+            <View style={styles.modalHandle} />
+            {selected && (
+              <>
+                <View style={styles.modalIcon}>
+                  <Ionicons name={ICONS[selected.type] || 'notifications-outline'} size={28} color={Colors.GREEN} />
+                </View>
+                <Text style={styles.modalTitle}>{selected.title}</Text>
+                <Text style={styles.modalTime}>{timeAgo(selected.createdAt)}</Text>
+                <Text style={styles.modalBody}>{selected.body}</Text>
+              </>
+            )}
+            <TouchableOpacity style={styles.modalClose} onPress={() => setSelected(null)} activeOpacity={0.7}>
+              <Text style={styles.modalCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -243,5 +275,65 @@ const styles = StyleSheet.create({
     ...Typography.BODY,
     color: Colors.GRAY,
     textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: Colors.OVERLAY,
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: Colors.WHITE,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: Spacing.L,
+    paddingTop: Spacing.S,
+    alignItems: 'center',
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.BORDER,
+    marginBottom: Spacing.L,
+  },
+  modalIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#EAF4EE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.M,
+  },
+  modalTitle: {
+    ...Typography.SECTION_HEADING,
+    color: Colors.DARK,
+    textAlign: 'center',
+  },
+  modalTime: {
+    ...Typography.CAPTION,
+    color: Colors.GRAY,
+    marginTop: 4,
+    marginBottom: Spacing.M,
+  },
+  modalBody: {
+    ...Typography.BODY,
+    color: Colors.DARK,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: Spacing.L,
+  },
+  modalClose: {
+    height: Spacing.BUTTON_HEIGHT_PRIMARY,
+    borderRadius: Spacing.BUTTON_RADIUS,
+    backgroundColor: Colors.GREEN,
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    marginTop: Spacing.S,
+  },
+  modalCloseText: {
+    ...Typography.BUTTON_TEXT,
+    color: Colors.WHITE,
   },
 });
