@@ -47,6 +47,9 @@ serve(async (req: Request) => {
       sent++;
     } else {
       failed++;
+      // Surface the real Resend error so a domain/test-mode/key problem is
+      // visible in the logs instead of just an incrementing failure count.
+      console.error("welcome-email: Resend send failed for", row.email, ":", result.error);
       // Release the claim so this user is retried on the next run instead of
       // being silently skipped forever.
       await supabase.rpc("unmark_welcome_sent", { p_user_id: row.user_id });

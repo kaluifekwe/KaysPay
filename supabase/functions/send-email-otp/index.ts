@@ -54,7 +54,13 @@ serve(async (req: Request) => {
 
   const { subject, html, text } = otpEmail(code);
   const sendResult = await sendEmail(user.email, subject, html, { text });
-  if (!sendResult.ok) return json({ success: false, error: "Could not send the verification email. Please try again." }, 500);
+  if (!sendResult.ok) {
+    // Surface the real Resend error in the function logs — otherwise a
+    // domain-not-verified / test-mode / bad-key rejection is invisible and
+    // looks like a generic outage from the client's side.
+    console.error("send-email-otp: Resend send failed:", sendResult.error);
+    return json({ success: false, error: "Could not send the verification email. Please try again." }, 500);
+  }
 
   return json({ success: true, sent_to: user.email.replace(/^(.{2}).*(@.*)$/, "$1***$2") });
 });
