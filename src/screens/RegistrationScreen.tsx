@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { authService } from '../services/auth.service';
+import { supabase } from '../lib/supabase';
 
 const BRAND_GREEN = '#1A5C3A';
 const DARK_TEXT = '#0F1A14';
@@ -299,21 +300,35 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
         return;
       }
 
-      // Session now exists — save the PIN captured in step 2 right away, so
-      // there's no separate "set up your PIN" screen after email verify. A
-      // single silent failure here (a dropped connection, or the auth session
-      // still settling in the split second right after signUp) is exactly what
-      // was stranding users on a redundant "Create PIN" gate — the result used
-      // to be discarded. Retry a few times so a transient miss doesn't cost the
-      // user that. The PIN gate after email verify remains the ultimate
-      // fallback if all attempts genuinely fail.
+      // Save the PIN captured in step 2 right away, so there's no separate
+      // "set up your PIN" screen after email verify.
+      //
+      // Root cause of the redundant PIN gate: right after signUp the new access
+      // token isn't yet attached to database calls, so set_user_pin runs with
+      // no authenticated user (auth.uid() is null) and fails. A plain retry
+      // didn't help because the token still wasn't there. Forcing the session
+      // to materialize first (refreshSession) guarantees a valid token is
+      // attached before we save. Retries then cover any brief network miss. The
+      // PIN gate after email verify remains the ultimate fallback.
+      try {
+        await supabase.auth.refreshSession();
+      } catch {
+        // ignore — the save + retries below still guard the common case
+      }
       let pinSaved = false;
-      for (let attempt = 0; attempt < 3 && !pinSaved; attempt++) {
+      let lastPinError: string | undefined;
+      for (let attempt = 0; attempt < 4 && !pinSaved; attempt++) {
         const pinResult = await authService.savePIN(pinString);
         pinSaved = pinResult.success;
-        if (!pinSaved && attempt < 2) {
-          await new Promise((r) => setTimeout(r, 800));
+        lastPinError = pinResult.error;
+        if (!pinSaved && attempt < 3) {
+          await new Promise((r) => setTimeout(r, 700));
         }
+      }
+      if (!pinSaved) {
+        // Surfaces the true reason in logs if it ever still fails, instead of
+        // silently dropping the user onto the PIN gate.
+        console.warn('Signup: PIN save failed after retries:', lastPinError);
       }
 
       // No manual navigation — AppNavigator's root-level auth listener
