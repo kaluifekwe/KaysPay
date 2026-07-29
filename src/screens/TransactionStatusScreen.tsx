@@ -146,11 +146,13 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
         const s = data?.status;
         if (s === 'completed') {
           stopPolling();
-          // Pull the token / exam PIN(s) the server persisted, so they show
-          // even when we only saw the settled transaction (pending -> poll).
-          const m = (data?.metadata ?? {}) as { token?: string; pins?: string[] };
+          // Pull the token / exam PIN(s) / provider reference the server
+          // persisted, so they show even when we only saw the settled
+          // transaction (pending -> poll) rather than the purchase response.
+          const m = (data?.metadata ?? {}) as { token?: string; pins?: string[]; order_id?: string };
           if (m.token) setToken(m.token);
           if (m.pins && m.pins.length) setPins(m.pins);
+          if (m.order_id) setOrderId(m.order_id);
           setStatus('success');
         } else if (s === 'failed' || s === 'refunded') {
           stopPolling();

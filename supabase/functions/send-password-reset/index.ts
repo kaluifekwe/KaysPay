@@ -64,8 +64,8 @@ serve(async (req: Request) => {
   // code until the 60s cooldown passes.
   if (createError || !createResult?.ok) return json(GENERIC);
 
-  const { subject, html } = passwordResetEmail(code);
-  await sendEmail(email, subject, html);
+  const { subject, html, text } = passwordResetEmail(code);
+  await sendEmail(email, subject, html, { text });
 
   return json(GENERIC);
 });

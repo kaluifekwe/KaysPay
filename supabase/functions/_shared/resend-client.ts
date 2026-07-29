@@ -18,6 +18,9 @@ export interface SendEmailOptions {
   /** Where replies go (the From can be no-reply while replies still reach a
    *  real inbox). */
   replyTo?: string;
+  /** Plain-text alternative. Sending a multipart message (text + html) instead
+   *  of HTML-only materially improves Gmail/Yahoo inbox placement. */
+  text?: string;
 }
 
 export async function sendEmail(
@@ -35,6 +38,7 @@ export async function sendEmail(
       subject,
       html,
     };
+    if (opts.text) payload.text = opts.text;
     if (opts.replyTo) payload.reply_to = opts.replyTo;
 
     const res = await fetch(RESEND_API_URL, {

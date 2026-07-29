@@ -176,46 +176,52 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
       return new Promise<AuthorizeResult | null>((resolve) => {
         const amount = opts?.amount;
 
-        // Pre-PIN balance check: if the wallet can't cover this, tell the user
-        // up front and offer to fund — instead of making them enter their PIN
-        // only to hit a generic "insufficient balance" after the fact. If the
-        // balance can't be read (offline/timeout), fall through to the PIN and
-        // let the server's atomic debit stay the authority.
+        // Show the PIN pad IMMEDIATELY — the user can start entering their PIN
+        // right away instead of staring at a frozen screen while a wallet
+        // round trip completes first (a visible stall on poor connections).
+        showPinModal(opts || {}, resolve);
+
+        // In parallel, check the balance so we can still warn early with a
+        // "Fund Wallet" shortcut if the wallet can't cover this. This never
+        // blocks the PIN pad. If it loses the race (the user enters a valid
+        // PIN before it returns), we drop it — the server's atomic debit stays
+        // the authority and returns "Insufficient balance" cleanly. If the
+        // balance can't be read (offline/timeout), we do nothing and let the
+        // server enforce it.
         if (amount && amount > 0 && !opts?.skipBalanceCheck) {
           (async () => {
             try {
               const r = await withTimeout(walletService.getWallet());
+              // Only act if THIS authorize is still pending — finish() clears
+              // resolverRef, so a mismatch means the user already resolved
+              // (passed/cancelled) and we must not disturb them.
+              if (resolverRef.current !== resolve) return;
               if (r.success && r.wallet && r.wallet.available_balance < amount) {
                 const shortfall = amount - r.wallet.available_balance;
                 Alert.alert(
                   'Insufficient Balance',
                   `You need ${formatNaira(shortfall)} more to complete this. Fund your wallet to continue.`,
                   [
-                    { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+                    { text: 'Cancel', style: 'cancel', onPress: () => finish(null) },
                     {
                       text: 'Fund Wallet',
                       onPress: () => {
-                        resolve(null);
+                        finish(null);
                         if (navigationRef.isReady()) navigationRef.navigate('WalletFunding' as never);
                       },
                     },
                   ],
-                  { cancelable: true, onDismiss: () => resolve(null) },
+                  { cancelable: true, onDismiss: () => finish(null) },
                 );
-                return;
               }
             } catch {
               // balance unreadable — proceed; the server still enforces it
             }
-            showPinModal(opts || {}, resolve);
           })();
-          return;
         }
-
-        showPinModal(opts || {}, resolve);
       });
     },
-    [showPinModal],
+    [showPinModal, finish],
   );
 
   // Verify automatically once the PIN is fully entered. Guarded by a ref,

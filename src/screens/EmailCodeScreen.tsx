@@ -4,7 +4,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
+  TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
   Alert,
@@ -183,7 +183,14 @@ export default function EmailCodeScreen(props: any) {
             </View>
           ) : (
             <>
-              <Text style={styles.subtitle}>{subtitle}</Text>
+              <Text style={[styles.subtitle, styles.subtitleTight]}>{subtitle}</Text>
+
+              <View style={styles.spamHint}>
+                <Text style={styles.spamHintText}>
+                  Didn't get it? Check your <Text style={styles.spamHintBold}>Spam</Text> or{' '}
+                  <Text style={styles.spamHintBold}>Promotions</Text> folder, then tap Resend.
+                </Text>
+              </View>
 
               <View style={styles.otpContainer}>
                 {code.map((digit, index) => (
@@ -274,6 +281,25 @@ const styles = StyleSheet.create({
     color: GRAY_TEXT,
     marginBottom: 40,
     lineHeight: 20,
+  },
+  subtitleTight: {
+    marginBottom: 14,
+  },
+  spamHint: {
+    backgroundColor: '#F0F7F2',
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 32,
+  },
+  spamHintText: {
+    fontSize: 13,
+    color: '#5b6b63',
+    lineHeight: 19,
+  },
+  spamHintBold: {
+    color: BRAND_GREEN,
+    fontWeight: '700',
   },
   otpContainer: {
     flexDirection: 'row',

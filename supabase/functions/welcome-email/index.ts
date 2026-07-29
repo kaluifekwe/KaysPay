@@ -41,8 +41,8 @@ serve(async (req: Request) => {
   let failed = 0;
 
   for (const row of rows) {
-    const { subject, html } = welcomeEmail(firstNameOf(row.full_name));
-    const result = await sendEmail(row.email, subject, html, { from: WELCOME_FROM, replyTo: WELCOME_REPLY_TO });
+    const { subject, html, text } = welcomeEmail(firstNameOf(row.full_name));
+    const result = await sendEmail(row.email, subject, html, { from: WELCOME_FROM, replyTo: WELCOME_REPLY_TO, text });
     if (result.ok) {
       sent++;
     } else {

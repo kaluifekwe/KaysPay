@@ -49,6 +49,16 @@ export default function ElectricityPayScreen(props: any) {
   const isValidMeter = meterNumber.trim().length >= 6;
   const canProceed = isValidMeter && isValidAmount && buyState !== 'processing';
 
+  // The single next thing the user must do before Pay can proceed — so the
+  // greyed button is never a silent dead end. null once everything's ready.
+  const payHint = useMemo(() => {
+    if (buyState === 'processing') return null;
+    if (!isValidMeter) return 'Enter your meter number';
+    if (numericAmount > 500000) return 'Maximum amount is ₦500,000';
+    if (!isValidAmount) return 'Enter an amount of at least ₦500';
+    return null;
+  }, [buyState, isValidMeter, numericAmount, isValidAmount]);
+
   const handleMeterChange = useCallback((text: string) => {
     setMeterNumber(text.replace(/[^0-9]/g, '').slice(0, 13));
   }, []);
@@ -285,6 +295,11 @@ export default function ElectricityPayScreen(props: any) {
               <Text style={styles.summaryAmount}>{formatNaira(numericAmount)}</Text>
             </View>
           )}
+          {payHint && (
+            <View style={styles.payHintRow}>
+              <Text style={styles.payHintText}>{payHint}</Text>
+            </View>
+          )}
           <TouchableOpacity
             style={[
               styles.primaryButton,
@@ -394,6 +409,8 @@ const styles = StyleSheet.create({
   },
   summaryText: { ...Typography.BODY, flex: 1 },
   summaryAmount: { ...Typography.AMOUNT_SMALL },
+  payHintRow: { marginBottom: Spacing.M, alignItems: 'center' },
+  payHintText: { ...Typography.CAPTION, color: Colors.GRAY, textAlign: 'center' },
   primaryButton: {
     width: '100%',
     height: Spacing.BUTTON_HEIGHT_PRIMARY,

@@ -17,7 +17,16 @@ export const SERVICE_CALL_TIMEOUT_MS = 25000;
 export function withTimeout<T>(promise: Promise<T>, ms: number = SERVICE_CALL_TIMEOUT_MS): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
-      () => reject(new Error('Request timed out. Please check your connection and try again.')),
+      () => {
+        // Tag the timeout so invokeWithRetry treats it like a dropped
+        // connection: an AMBIGUOUS outcome, not a definite failure. We stopped
+        // waiting, but the request may well have reached the server and
+        // succeeded (or is holding 'pending') — resolving that by
+        // idempotency key beats falsely telling the user it failed.
+        const err = new Error('Request timed out. Please check your connection and try again.');
+        (err as { isAmbiguousNetwork?: boolean }).isAmbiguousNetwork = true;
+        reject(err);
+      },
       ms,
     );
     promise.then(
@@ -43,7 +52,13 @@ function isNetworkLevelError(error: any): boolean {
   // "Insufficient balance" is a definitive answer) — never retry that.
   // FunctionsFetchError/FunctionsRelayError mean the request never reached
   // us or never got a response back — exactly the "network blip" case.
-  return error?.name === 'FunctionsFetchError' || error?.name === 'FunctionsRelayError';
+  // isAmbiguousNetwork is set by withTimeout(): we gave up waiting, but the
+  // request's fate is unknown, so it's handled the same ambiguous way.
+  return (
+    error?.name === 'FunctionsFetchError' ||
+    error?.name === 'FunctionsRelayError' ||
+    error?.isAmbiguousNetwork === true
+  );
 }
 
 /**

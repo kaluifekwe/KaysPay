@@ -174,6 +174,16 @@ export default function DataScreen({ navigation }: DataScreenProps) {
     setSelectedBundle(null);
   }, []);
 
+  // The single next thing the user must do before Pay can proceed — so the
+  // greyed button is never a silent dead end. null once everything's ready.
+  const payHint = useMemo(() => {
+    if (buyState === 'processing') return null;
+    if (!validateNigerianPhone(phoneNumber.replace(/\D/g, ''))) return "Enter the recipient's phone number";
+    if (!effectiveNetwork) return 'Select a network to continue';
+    if (!selectedBundle) return 'Choose a data bundle to continue';
+    return null;
+  }, [buyState, phoneNumber, effectiveNetwork, selectedBundle]);
+
   if (buyState === 'success') {
     return (
       <SafeAreaView style={styles.container}>
@@ -370,6 +380,11 @@ export default function DataScreen({ navigation }: DataScreenProps) {
               <Text style={styles.summaryAmount}>
                 {formatNaira(selectedBundle.amount)}
               </Text>
+            </View>
+          )}
+          {payHint && (
+            <View style={styles.payHintRow}>
+              <Text style={styles.payHintText}>{payHint}</Text>
             </View>
           )}
           <TouchableOpacity
@@ -575,6 +590,15 @@ const styles = StyleSheet.create({
   },
   summaryAmount: {
     ...Typography.AMOUNT_SMALL,
+  },
+  payHintRow: {
+    marginBottom: Spacing.M,
+    alignItems: 'center',
+  },
+  payHintText: {
+    ...Typography.CAPTION,
+    color: Colors.GRAY,
+    textAlign: 'center',
   },
   primaryButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,

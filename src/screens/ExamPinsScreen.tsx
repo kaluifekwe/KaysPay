@@ -69,6 +69,15 @@ export default function ExamPinsScreen({ navigation }: ExamPinsScreenProps) {
     !isProcessing &&
     (!needsProfileCode || profileCode.trim().length > 0);
 
+  // The single next thing the user must do before Pay can proceed — so the
+  // greyed button is never a silent dead end. null once everything's ready.
+  const payHint = useMemo(() => {
+    if (isProcessing) return null;
+    if (!selectedExam) return 'Select an exam type to continue';
+    if (needsProfileCode && profileCode.trim().length === 0) return 'Enter your JAMB profile code';
+    return null;
+  }, [isProcessing, selectedExam, needsProfileCode, profileCode]);
+
   const handleExamSelect = useCallback((exam: ExamType) => {
     setSelectedExam(exam);
     setProfileCode('');
@@ -318,6 +327,11 @@ export default function ExamPinsScreen({ navigation }: ExamPinsScreenProps) {
         </ScrollView>
 
         <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + Spacing.SCREEN_PADDING }]}>
+          {payHint && (
+            <View style={styles.payHintRow}>
+              <Text style={styles.payHintText}>{payHint}</Text>
+            </View>
+          )}
           <TouchableOpacity
             style={[
               styles.payButton,
@@ -494,6 +508,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.BORDER,
   },
+  payHintRow: { marginBottom: Spacing.M, alignItems: 'center' },
+  payHintText: { ...Typography.CAPTION, color: Colors.GRAY, textAlign: 'center' },
   payButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     backgroundColor: Colors.GREEN,

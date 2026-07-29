@@ -4,7 +4,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
+  TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -300,10 +300,21 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
       }
 
       // Session now exists — save the PIN captured in step 2 right away, so
-      // there's no separate "set up your PIN" screen after email verify. If
-      // this fails (e.g. a network drop), the app's existing PIN gate will
-      // just ask for it again after verification — not a dead end.
-      await authService.savePIN(pinString);
+      // there's no separate "set up your PIN" screen after email verify. A
+      // single silent failure here (a dropped connection, or the auth session
+      // still settling in the split second right after signUp) is exactly what
+      // was stranding users on a redundant "Create PIN" gate — the result used
+      // to be discarded. Retry a few times so a transient miss doesn't cost the
+      // user that. The PIN gate after email verify remains the ultimate
+      // fallback if all attempts genuinely fail.
+      let pinSaved = false;
+      for (let attempt = 0; attempt < 3 && !pinSaved; attempt++) {
+        const pinResult = await authService.savePIN(pinString);
+        pinSaved = pinResult.success;
+        if (!pinSaved && attempt < 2) {
+          await new Promise((r) => setTimeout(r, 800));
+        }
+      }
 
       // No manual navigation — AppNavigator's root-level auth listener
       // detects the new session and swaps to the email-verify gate on its

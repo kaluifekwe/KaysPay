@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,7 @@ import {
   type BatchResultItem,
 } from '../services/vtu.service';
 import { walletService } from '../services/wallet.service';
+import { supabase } from '../lib/supabase';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import { PickedContact } from '../services/contacts.service';
 import { NETWORK_LABEL, NETWORK_COLOR } from '../utils/phone';
@@ -64,11 +65,61 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
   const [phase, setPhase] = useState<Phase>('review');
   const [results, setResults] = useState<Record<string, BatchResultItem>>({});
 
+  // Read the latest results inside the poll without making it a dependency
+  // (which would tear down and restart the interval on every settle).
+  const resultsRef = useRef(results);
+  useEffect(() => {
+    resultsRef.current = results;
+  }, [results]);
+
   useEffect(() => {
     walletService.getWallet().then((res) => {
       if (res.success && res.wallet) setWalletBalance(res.wallet.available_balance);
     });
   }, []);
+
+  // Once submitted, the provider settles each order in the background. Poll the
+  // still-pending transactions until each reaches a terminal state so a later
+  // refund is reflected as ✗ instead of being hidden behind a premature ✓.
+  useEffect(() => {
+    if (phase !== 'done') return;
+    const startedAt = Date.now();
+    const interval = setInterval(async () => {
+      const pending = Object.values(resultsRef.current).filter(
+        (r) => r.success && r.pending && r.transaction_id,
+      );
+      // Give up after 60s — reconcile + notifications finish the rest.
+      if (pending.length === 0 || Date.now() - startedAt > 60000) {
+        clearInterval(interval);
+        return;
+      }
+      try {
+        const ids = pending.map((r) => r.transaction_id as string);
+        const { data } = await supabase
+          .from('transactions')
+          .select('id, status')
+          .in('id', ids);
+        if (!data || data.length === 0) return;
+        const statusById = new Map(data.map((row: any) => [row.id, row.status]));
+        setResults((prev) => {
+          const next = { ...prev };
+          for (const entry of Object.values(prev)) {
+            if (!entry.pending || !entry.transaction_id) continue;
+            const s = statusById.get(entry.transaction_id);
+            if (s === 'completed') {
+              next[entry.phone] = { ...entry, pending: false, success: true };
+            } else if (s === 'failed' || s === 'refunded') {
+              next[entry.phone] = { ...entry, pending: false, success: false, error: 'Refunded' };
+            }
+          }
+          return next;
+        });
+      } catch {
+        /* transient — keep polling */
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [phase]);
 
   const total = useMemo(() => {
     if (type === 'airtime') {
@@ -158,12 +209,15 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
     setPhase('done');
   }, [canSend, insufficientBalance, total, walletBalance, type, airtimeRows, dataRows, authorize]);
 
-  const successCount = Object.values(results).filter((r) => r.success).length;
+  const successCount = Object.values(results).filter((r) => r.success && !r.pending).length;
+  const pendingCount = Object.values(results).filter((r) => r.success && r.pending).length;
   const failedCount = Object.values(results).filter((r) => !r.success).length;
 
   const renderStatusIcon = (phone: string) => {
     const result = results[phone];
-    if (phase === 'sending' && !result) {
+    // Spinner while a recipient is either still being submitted, or submitted
+    // and awaiting its background settlement.
+    if ((phase === 'sending' && !result) || (result?.success && result.pending)) {
       return <ActivityIndicator size="small" color={Colors.GRAY} />;
     }
     if (!result) return null;
@@ -319,7 +373,9 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
           {phase === 'done' && (
             <View style={styles.summaryContainer}>
               <Text style={styles.summaryText}>
-                {successCount} sent{failedCount > 0 ? `, ${failedCount} failed` : ''}
+                {successCount} sent
+                {pendingCount > 0 ? `, ${pendingCount} processing` : ''}
+                {failedCount > 0 ? `, ${failedCount} failed` : ''}
               </Text>
             </View>
           )}

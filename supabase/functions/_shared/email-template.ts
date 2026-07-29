@@ -51,6 +51,26 @@ function shell(inner: string, preheader: string): string {
   </table></body></html>`;
 }
 
+// Plain-text alternative for every email. A multipart message with a real
+// text/plain part scores markedly better with Gmail/Yahoo spam filters than
+// HTML-only mail, and it's what shows in clients that don't render HTML.
+function textShell(lines: string[]): string {
+  return [
+    "KAY'S PAY",
+    "",
+    ...lines,
+    "",
+    "----",
+    "Kay's Pay. Airtime, data, bills & wallet, made simple.",
+    `Need help? ${SUPPORT_EMAIL}`,
+    "© 2026 Kay's Pay. All rights reserved.",
+  ].join("\n");
+}
+
+function codeText(title: string, lead: string, code: string, note: string): string {
+  return textShell([title, "", lead, "", `    ${code}`, "", note.replace(/<\/?b>/g, "")]);
+}
+
 function codeBlock(title: string, lead: string, code: string, note: string): string {
   return `
     <tr><td style="padding:30px 28px 8px;">
@@ -70,34 +90,26 @@ function codeBlock(title: string, lead: string, code: string, note: string): str
 }
 
 /** Signup email-verification code. */
-export function otpEmail(code: string): { subject: string; html: string } {
+export function otpEmail(code: string): { subject: string; html: string; text: string } {
+  const title = "Verify your email";
+  const lead = "Enter this code in the app to finish creating your Kay's Pay account.";
+  const note = "This code expires in <b>10 minutes</b>. If you didn't try to sign up, you can safely ignore this email.";
   return {
     subject: "Your Kay's Pay verification code",
-    html: shell(
-      codeBlock(
-        "Verify your email",
-        "Enter this code in the app to finish creating your Kay's Pay account.",
-        code,
-        "This code expires in <b>10 minutes</b>. If you didn't try to sign up, you can safely ignore this email.",
-      ),
-      "Your Kay's Pay verification code",
-    ),
+    html: shell(codeBlock(title, lead, code, note), "Your Kay's Pay verification code"),
+    text: codeText(title, lead, code, note),
   };
 }
 
 /** Forgot-password reset code. */
-export function passwordResetEmail(code: string): { subject: string; html: string } {
+export function passwordResetEmail(code: string): { subject: string; html: string; text: string } {
+  const title = "Reset your password";
+  const lead = "We received a request to reset your Kay's Pay password. Enter this code in the app to set a new one.";
+  const note = "This code expires in <b>10 minutes</b>. If you didn't request this, your password is unchanged, so you can safely ignore this email.";
   return {
     subject: "Reset your Kay's Pay password",
-    html: shell(
-      codeBlock(
-        "Reset your password",
-        "We received a request to reset your Kay's Pay password. Enter this code in the app to set a new one.",
-        code,
-        "This code expires in <b>10 minutes</b>. If you didn't request this, your password is unchanged, so you can safely ignore this email.",
-      ),
-      "Reset your Kay's Pay password",
-    ),
+    html: shell(codeBlock(title, lead, code, note), "Reset your Kay's Pay password"),
+    text: codeText(title, lead, code, note),
   };
 }
 
@@ -111,8 +123,9 @@ const WELCOME_STEPS: [string, string][] = [
 ];
 
 /** Founder welcome, sent ~10 minutes after signup by the welcome-email cron. */
-export function welcomeEmail(firstName: string): { subject: string; html: string } {
+export function welcomeEmail(firstName: string): { subject: string; html: string; text: string } {
   const name = firstName && firstName.trim() ? esc(firstName.trim()) : "there";
+  const plainName = firstName && firstName.trim() ? firstName.trim() : "there";
   const steps = WELCOME_STEPS.map(
     ([t, d], i) => `
     <tr><td style="padding:0 0 16px;">
@@ -154,5 +167,24 @@ export function welcomeEmail(firstName: string): { subject: string; html: string
       </tr></table>
     </td></tr>`;
 
-  return { subject: "Welcome to Kay's Pay 🎉", html: shell(inner, "A note from the founder") };
+  const text = textShell([
+    "Welcome to Kay's Pay",
+    "",
+    `Hi ${plainName},`,
+    "",
+    "I'm Kalu Ifekwe, the founder of Kay's Pay. I wanted to personally say hello, and thank you for joining us.",
+    "",
+    "I built Kay's Pay on one simple belief: paying for the things we use every day, like airtime, data, electricity, TV and exam pins, should be fast, fairly priced, and reliable, even when the network isn't at its best.",
+    "",
+    "HERE'S WHAT YOU CAN DO",
+    ...WELCOME_STEPS.map(([t, d], i) => `${i + 1}. ${t} — ${d.replace(/&amp;/g, "&")}`),
+    "",
+    "If you ever have a question, an issue, or even just an idea, reply to this email. It comes straight to my team and me, and we read every one.",
+    "",
+    "Warmly,",
+    "Kalu Ifekwe",
+    "Founder, Kay's Pay",
+  ]);
+
+  return { subject: "Welcome to Kay's Pay 🎉", html: shell(inner, "A note from the founder"), text };
 }

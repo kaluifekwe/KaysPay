@@ -52,8 +52,8 @@ serve(async (req: Request) => {
     return json({ success: false, error: "Could not start verification. Please try again." }, 500);
   }
 
-  const { subject, html } = otpEmail(code);
-  const sendResult = await sendEmail(user.email, subject, html);
+  const { subject, html, text } = otpEmail(code);
+  const sendResult = await sendEmail(user.email, subject, html, { text });
   if (!sendResult.ok) return json({ success: false, error: "Could not send the verification email. Please try again." }, 500);
 
   return json({ success: true, sent_to: user.email.replace(/^(.{2}).*(@.*)$/, "$1***$2") });

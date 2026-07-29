@@ -61,6 +61,12 @@ export interface BatchDataRecipient {
 export interface BatchResultItem {
   phone: string;
   success: boolean;
+  // The provider now settles in the background, so a freshly-submitted order
+  // comes back success+pending: accepted, not yet confirmed delivered. The
+  // bulk screen polls `transaction_id` until it flips to a terminal state so a
+  // later refund is never hidden behind a premature ✓.
+  pending?: boolean;
+  transaction_id?: string;
   order_id?: string;
   error?: string;
 }
@@ -424,6 +430,8 @@ export const vtuService = {
       const item: BatchResultItem = {
         phone: r.phone,
         success: res.success,
+        pending: res.pending,
+        transaction_id: res.transaction_id,
         order_id: res.order_id,
         error: res.error,
       };
@@ -445,6 +453,8 @@ export const vtuService = {
       const item: BatchResultItem = {
         phone: r.phone,
         success: res.success,
+        pending: res.pending,
+        transaction_id: res.transaction_id,
         order_id: res.order_id,
         error: res.error,
       };

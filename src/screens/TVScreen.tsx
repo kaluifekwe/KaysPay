@@ -111,6 +111,22 @@ export default function TVScreen({ navigation }: TVScreenProps) {
     setResultPending(false);
   }, []);
 
+  const isValidSmartcard = useMemo(
+    () => smartcardNumber.replace(/\D/g, '').length >= 8,
+    [smartcardNumber],
+  );
+  const canProceed = !!selectedProvider && !!selectedBouquet && isValidSmartcard && buyState !== 'processing';
+
+  // The single next thing the user must do before Pay can proceed — so the
+  // greyed button is never a silent dead end. null once everything's ready.
+  const payHint = useMemo(() => {
+    if (buyState === 'processing') return null;
+    if (!selectedProvider) return 'Select a TV provider to continue';
+    if (!selectedBouquet) return 'Choose a bouquet to continue';
+    if (!isValidSmartcard) return 'Enter your smartcard number';
+    return null;
+  }, [buyState, selectedProvider, selectedBouquet, isValidSmartcard]);
+
   if (buyState === 'success') {
     return (
       <SafeAreaView style={styles.container}>
@@ -269,14 +285,18 @@ export default function TVScreen({ navigation }: TVScreenProps) {
               </Text>
             </View>
           )}
+          {payHint && (
+            <View style={styles.payHintRow}>
+              <Text style={styles.payHintText}>{payHint}</Text>
+            </View>
+          )}
           <TouchableOpacity
             style={[
               styles.primaryButton,
-              (!selectedProvider || !selectedBouquet || buyState === 'processing') &&
-                styles.primaryButtonDisabled,
+              !canProceed && styles.primaryButtonDisabled,
             ]}
             onPress={handleBuy}
-            disabled={!selectedProvider || !selectedBouquet || buyState === 'processing'}
+            disabled={!canProceed}
           >
             {buyState === 'processing' ? (
               <ActivityIndicator color={Colors.WHITE} />
@@ -445,6 +465,8 @@ const styles = StyleSheet.create({
   summaryAmount: {
     ...Typography.AMOUNT_SMALL,
   },
+  payHintRow: { marginBottom: Spacing.M, alignItems: 'center' },
+  payHintText: { ...Typography.CAPTION, color: Colors.GRAY, textAlign: 'center' },
   primaryButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     backgroundColor: Colors.GREEN,

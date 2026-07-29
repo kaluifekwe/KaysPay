@@ -304,9 +304,10 @@ serve(async (req: Request) => {
         const outcome = vtuAfricaOutcome(result);
 
         if (outcome === "success") {
+          const orderId: string | undefined = result?.description?.ReferenceID;
           await supabase.rpc("complete_service_transaction", {
             p_tx_id: txId,
-            p_order_id: result?.description?.ReferenceID ?? null,
+            p_order_id: orderId ?? null,
           });
 
           // The prepaid meter token was previously only ever returned in this
@@ -324,11 +325,16 @@ serve(async (req: Request) => {
           const pinsRaw: string | undefined = result?.description?.pins;
           const pins = pinsRaw ? pinsRaw.split("<=>").filter(Boolean) : undefined;
 
-          // Persist the token AND the exam PIN(s) — both are one-time values in
-          // the provider response. Saving them means they're never lost: the
-          // meter receipt / exam PIN(s) can always be re-read from Transaction
-          // History, even if the app was closed on the result screen.
-          if (electricityToken || pins) {
+          // Persist the token, exam PIN(s) AND the provider reference — all
+          // one-time values in the provider response. Saving them means they're
+          // never lost: the meter receipt / exam PIN(s) can always be re-read
+          // from Transaction History, even if the app was closed on the result
+          // screen. The order_id matters more now that the result screen learns
+          // this outcome by POLLING the transaction row (the provider call runs
+          // in the background) rather than from this response directly — the
+          // poll rebuilds the receipt from metadata, so the reference must live
+          // there too, not only in the response body below.
+          if (electricityToken || pins || orderId) {
             await supabase
               .from("transactions")
               .update({
@@ -337,6 +343,7 @@ serve(async (req: Request) => {
                   request: plan.providerPayload,
                   ...(electricityToken ? { token: electricityToken } : {}),
                   ...(pins ? { pins } : {}),
+                  ...(orderId ? { order_id: orderId } : {}),
                 },
               })
               .eq("id", txId);
@@ -345,7 +352,7 @@ serve(async (req: Request) => {
           return json({
             success: true,
             transaction_id: txId,
-            order_id: result?.description?.ReferenceID,
+            order_id: orderId,
             pins,
             // Present only for electricity (prepaid meter token).
             token: electricityToken,
@@ -393,15 +400,35 @@ serve(async (req: Request) => {
       }
     };
 
-    // Await the provider fully and return the real completed/failed result.
-    // The purchase now runs from the TransactionStatus result screen, which
-    // shows "Processing" with a spinner while this resolves and then flips to
-    // Successful/Failed — so the user is never blocked on the Pay button and
-    // there's no need to return early. (An earlier "return pending at 3s +
-    // finish in the background" approach left slow data orders — always >3s —
-    // stuck 'pending' when the backgrounded settle wasn't kept alive, so it's
-    // removed. Genuinely async provider "Processing" replies are still handled
-    // inside settle() and finalized by vtuafrica-reconcile.)
+    // Run the provider call in the BACKGROUND and return to the phone right
+    // away. VTUAfrica's purchase endpoint holds the connection open for the
+    // whole 2-13s (up to 20s) it takes to reach the telco — and keeping one
+    // long HTTPS connection open for that long is exactly what stalls and
+    // drops on poor Nigerian mobile networks. The debit is already recorded,
+    // so nothing about the money outcome depends on the phone staying
+    // connected: the result screen polls the transaction row to flip
+    // Processing -> Successful/Failed, and vtuafrica-reconcile is the backstop.
+    // The one-time meter token / exam PIN(s) are persisted to the transaction
+    // metadata inside settle(), so the poll path surfaces them on completion.
+    //
+    // EdgeRuntime.waitUntil keeps the background task alive after this response
+    // is sent. A plain fire-and-forget promise gets killed the moment the
+    // response returns — that's why the earlier "finish in the background"
+    // attempt left slow orders stuck 'pending'. waitUntil is the correct
+    // primitive and does not have that problem.
+    const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime;
+    if (runtime?.waitUntil) {
+      runtime.waitUntil(settle());
+      return json({
+        success: true,
+        pending: true,
+        transaction_id: txId,
+        message: "Your order is processing. You'll be notified once it completes.",
+      });
+    }
+
+    // Fallback for any runtime without waitUntil (e.g. local dev): keep the
+    // old synchronous behaviour so the outcome is never lost.
     return await settle();
   }
 

@@ -78,6 +78,17 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
 
   const canProceed = isValidPhone && selectedNetwork && isValidAmount && !isProcessing;
 
+  // The single next thing the user must do before Pay can proceed — so the
+  // greyed button is never a silent dead end. null once everything's ready.
+  const payHint = useMemo(() => {
+    if (isProcessing) return null;
+    if (!isValidPhone) return "Enter the recipient's 11-digit phone number";
+    if (!selectedNetwork) return 'Select a network to continue';
+    if (numericAmount > 50000) return 'Maximum amount is ₦50,000';
+    if (!isValidAmount) return 'Enter an amount of at least ₦100';
+    return null;
+  }, [isProcessing, isValidPhone, selectedNetwork, numericAmount, isValidAmount]);
+
   useEffect(() => {
     if (!isManualNetwork && phoneNumber.length >= 4) {
       const info = detectNetwork(phoneNumber);
@@ -348,6 +359,11 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
         </ScrollView>
 
         <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + Spacing.SCREEN_PADDING }]}>
+          {payHint && (
+            <View style={styles.payHintRow}>
+              <Text style={styles.payHintText}>{payHint}</Text>
+            </View>
+          )}
           <TouchableOpacity
             style={[
               styles.payButton,
@@ -586,6 +602,15 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.WHITE,
     borderTopWidth: 1,
     borderTopColor: Colors.BORDER,
+  },
+  payHintRow: {
+    marginBottom: Spacing.M,
+    alignItems: 'center',
+  },
+  payHintText: {
+    ...Typography.CAPTION,
+    color: Colors.GRAY,
+    textAlign: 'center',
   },
   payButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
