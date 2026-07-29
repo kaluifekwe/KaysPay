@@ -4,10 +4,12 @@ import { getAuthUser, adminClient, consumeAuthToken } from "../_shared/auth.ts";
 import { verifyBvnFull as verifyBvnPremblyFull, isPremblyConfigured } from "../_shared/prembly-client.ts";
 import { verifyBvn as verifyBvnNinBvn, isNinBvnConfigured } from "../_shared/ninbvn-client.ts";
 
-// BVN slip price — ₦500 (owner-set 2026-07-25). Must match the client's
-// BVN_VERIFY_PRICE (₦500) shown in the PIN prompt. Kobo, since debit_for_service
-// charges in kobo.
-const BVN_VERIFY_PRICE_KOBO = 50000;
+// BVN slip prices (owner-set 2026-07-26): Regular Slip ₦500, Card ₦700.
+// SERVER-AUTHORITATIVE — the client sends the chosen slip type, but the price
+// is looked up HERE; a tampered client amount can never change what is charged.
+// Kobo, since debit_for_service charges in kobo.
+const SLIP_PRICE_KOBO: Record<string, number> = { regular: 50000, card: 70000 };
+const DEFAULT_SLIP_TIER = "regular";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -122,6 +124,13 @@ serve(async (req: Request) => {
 
   const requestId = String(body.idempotency_key || newRequestId());
 
+  // The slip type chosen up front decides the price. Validate against our own
+  // map — never trust a client-sent amount.
+  const slipTier = Object.prototype.hasOwnProperty.call(SLIP_PRICE_KOBO, String(body?.slip_tier))
+    ? String(body.slip_tier)
+    : DEFAULT_SLIP_TIER;
+  const priceKobo = SLIP_PRICE_KOBO[slipTier];
+
   // Same 24h cache rationale as nin-verify: a BVN record doesn't change
   // day-to-day, so a repeat lookup shouldn't cost the user twice or risk
   // hitting a provider's rate limit.
@@ -139,21 +148,48 @@ serve(async (req: Request) => {
     .maybeSingle();
 
   if (cachedTx?.metadata?.record?.firstname) {
-    return json({
-      success: true,
-      transaction_id: cachedTx.id,
-      record: cachedTx.metadata.record,
-      cached: true,
+    const cachedTier = cachedTx.metadata.slip_tier || DEFAULT_SLIP_TIER;
+    // Same BVN + same slip type within 24h → free re-access (re-download).
+    if (cachedTier === slipTier) {
+      return json({
+        success: true,
+        transaction_id: cachedTx.id,
+        record: cachedTx.metadata.record,
+        cached: true,
+      });
+    }
+    // Different slip type (e.g. upgrading Regular → Card): reuse the already
+    // verified record (no provider re-call), but charge the new type's price.
+    const { data: upTxId, error: upErr } = await supabase.rpc("debit_for_service", {
+      p_user_id: user.id,
+      p_amount: priceKobo,
+      p_type: "bvn_verification",
+      p_network: "N/A",
+      p_recipient: bvn,
+      p_metadata: { service: "bvn_verification", slip_tier: slipTier },
+      p_idempotency_key: requestId,
     });
+    if (upErr) {
+      const msg = upErr.message || "";
+      if (msg.includes("INSUFFICIENT_FUNDS")) return json({ success: false, error: "Insufficient balance" });
+      if (msg.includes("WALLET_NOT_FOUND")) return json({ success: false, error: "Wallet not found" });
+      return json({ success: false, error: "Could not start transaction" }, 500);
+    }
+    await supabase.rpc("complete_service_transaction", { p_tx_id: upTxId, p_order_id: bvn });
+    await supabase
+      .from("transactions")
+      .update({ metadata: { service: "bvn_verification", slip_tier: slipTier, provider: "cache", record: cachedTx.metadata.record } })
+      .eq("id", upTxId);
+    return json({ success: true, transaction_id: upTxId, record: cachedTx.metadata.record, cached: true });
   }
 
   const { data: txId, error: debitError } = await supabase.rpc("debit_for_service", {
     p_user_id: user.id,
-    p_amount: BVN_VERIFY_PRICE_KOBO,
+    p_amount: priceKobo,
     p_type: "bvn_verification",
     p_network: "N/A",
     p_recipient: bvn,
-    p_metadata: { service: "bvn_verification" },
+    p_metadata: { service: "bvn_verification", slip_tier: slipTier },
     p_idempotency_key: requestId,
   });
 
@@ -213,7 +249,7 @@ serve(async (req: Request) => {
 
   await supabase
     .from("transactions")
-    .update({ metadata: { service: "bvn_verification", provider: providerUsed, record: outcome.record } })
+    .update({ metadata: { service: "bvn_verification", slip_tier: slipTier, provider: providerUsed, record: outcome.record } })
     .eq("id", txId);
 
   return json({ success: true, transaction_id: txId, record: outcome.record });

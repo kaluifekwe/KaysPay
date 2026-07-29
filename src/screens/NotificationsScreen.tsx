@@ -43,7 +43,7 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-export default function NotificationsScreen() {
+export default function NotificationsScreen({ navigation }: { navigation: any }) {
   const { data, loading, refresh } = useCachedData<AppNotification[]>('notifications', () =>
     notificationService.getNotifications(),
   );
@@ -117,7 +117,15 @@ export default function NotificationsScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.WHITE} />
       <View style={styles.header}>
-        <Text style={styles.screenTitle}>Notifications</Text>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            onPress={() => (navigation?.canGoBack?.() ? navigation.goBack() : navigation?.navigate?.('HomeTabs'))}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons name="chevron-back" size={26} color={Colors.DARK} />
+          </TouchableOpacity>
+          <Text style={styles.screenTitle}>Notifications</Text>
+        </View>
         {unreadCount > 0 && (
           <TouchableOpacity style={styles.markAllButton} onPress={markAllAsRead}>
             <Text style={styles.markAllText}>Mark all read</Text>
@@ -168,7 +176,7 @@ export default function NotificationsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: '#F2F4F3',
   },
   header: {
     flexDirection: 'row',
@@ -176,8 +184,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.L,
     paddingVertical: Spacing.M,
+    backgroundColor: Colors.WHITE,
     borderBottomWidth: 1,
     borderBottomColor: Colors.BORDER,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   screenTitle: {
     ...Typography.SCREEN_TITLE,
@@ -193,7 +207,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   listContent: {
-    padding: Spacing.S,
+    padding: Spacing.M,
     paddingBottom: Spacing.XL,
   },
   listEmpty: {
@@ -205,11 +219,16 @@ const styles = StyleSheet.create({
   notificationCard: {
     flexDirection: 'row',
     backgroundColor: Colors.WHITE,
-    borderRadius: Spacing.S,
+    borderRadius: 14,
     padding: Spacing.M,
-    marginBottom: Spacing.S,
+    marginBottom: Spacing.M,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: '#EDF0EE',
+    shadowColor: '#0F1A14',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   unreadCard: {
     backgroundColor: Colors.GREEN_LIGHT,

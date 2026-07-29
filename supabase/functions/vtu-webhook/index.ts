@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient } from "../_shared/auth.ts";
+import { redactSecrets } from "../_shared/redact.ts";
 
 // VTU.ng's own account PIN (NOT the login password) — used only to verify
 // webhook signatures. Set via: supabase secrets set VTU_NG_USER_PIN=xxx
@@ -89,7 +90,7 @@ serve(async (req: Request) => {
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("VTU.ng webhook processing error:", (error as Error).message);
+    console.error("VTU.ng webhook processing error:", redactSecrets(error));
     return new Response(JSON.stringify({ error: "Processing error" }), { status: 500 });
   }
 });

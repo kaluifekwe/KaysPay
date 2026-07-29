@@ -1,12 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient, consumeAuthToken } from "../_shared/auth.ts";
-import { getPrices, getNumber, isGrizzlySMSConfigured, GrizzlySMSError } from "../_shared/grizzlysms-client.ts";
+import { getServicePriceUSD, getNumber, isSmspvaConfigured, SmspvaError } from "../_shared/smspva-client.ts";
 import {
   isPlausibleServiceCode,
+  isPlausibleCountryCode,
   usdToNgnKobo,
+  isWithinPriceCap,
   FOREIGN_NUMBER_SERVICES,
-} from "../_shared/foreign-number-catalog.ts";
+} from "../_shared/smspva-catalog.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -23,7 +25,7 @@ serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
 
-  if (!isGrizzlySMSConfigured()) return json({ error: "Foreign Number provider not configured" }, 500);
+  if (!isSmspvaConfigured()) return json({ error: "Foreign Number provider not configured" }, 500);
 
   const user = await getAuthUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
@@ -39,7 +41,7 @@ serve(async (req: Request) => {
   const country = String(body?.country || "");
 
   if (!isPlausibleServiceCode(service)) return json({ success: false, error: "Unknown service" }, 400);
-  if (!/^\d+$/.test(country)) return json({ success: false, error: "Invalid country" }, 400);
+  if (!isPlausibleCountryCode(country)) return json({ success: false, error: "Invalid country" }, 400);
 
   const supabase = adminClient();
 
@@ -48,24 +50,46 @@ serve(async (req: Request) => {
   const authorized = await consumeAuthToken(supabase, user.id, body.auth_token);
   if (!authorized) return json({ success: false, error: "Re-authorization required. Please try again." }, 401);
 
+  // Abuse guard: cap how many foreign-number buys one user can fire in a short
+  // window (each rents a real number + spends money).
+  const rlCutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const { count: recentCount } = await supabase
+    .from("transactions")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .eq("type", "foreign_number")
+    .gte("created_at", rlCutoff);
+  if ((recentCount ?? 0) >= 5) {
+    return json({ success: false, error: "Too many number requests. Please wait a few minutes and try again." });
+  }
+
   // Re-fetch the live price ourselves — never trust a client-supplied price.
   let priceUSD: number;
   try {
-    const prices = await getPrices(country);
-    const entry = prices?.[service];
-    if (!entry || !Number.isFinite(entry.cost) || entry.count <= 0) {
+    const p = await getServicePriceUSD(service, country);
+    if (p === null || !isWithinPriceCap(p)) {
       return json({ success: false, error: "No numbers currently available for this combination" });
     }
-    priceUSD = entry.cost;
+    priceUSD = p;
   } catch {
     return json({ success: false, error: "Could not verify current price. Please try again." });
   }
 
   const amountKobo = usdToNgnKobo(priceUSD);
+
+  // Price-lock: never charge more than the price the user actually agreed to.
+  // SMSPVA prices swing, so if the live rate rose above their quote, stop and
+  // ask them to refresh — no surprise overcharge. (A drop just charges less.)
+  const quotedKobo = Number(body.quoted_kobo);
+  if (Number.isFinite(quotedKobo) && quotedKobo > 0 && amountKobo > quotedKobo) {
+    return json({
+      success: false,
+      price_changed: true,
+      error: "The price changed since you last checked. Please refresh and try again.",
+    });
+  }
+
   const requestId = String(body.idempotency_key || newIdempotencyKey());
-  // Prefer the curated name; for an "Other"-list service, trust the display
-  // name the client passed (came from GrizzlySMS's own list) — it's only used
-  // for display/receipt, never for pricing or the provider call.
   const clientName = typeof body.service_name === "string" ? body.service_name.trim().slice(0, 60) : "";
   const serviceName = FOREIGN_NUMBER_SERVICES.find((s) => s.id === service)?.name || clientName || service;
 
@@ -86,19 +110,15 @@ serve(async (req: Request) => {
     return json({ success: false, error: "Could not start transaction" }, 500);
   }
 
-  // Rented number itself is the paid-for good — complete on successful
-  // rental, independent of whether an SMS code ever arrives (that's a
-  // separate, non-money-moving polling step the client does afterward).
+  // The rented number itself is the paid-for good — complete on successful
+  // rental. If a code never arrives the user is auto-refunded later (and, since
+  // SMSPVA only charges us ON code delivery, a no-code rental costs us nothing).
   try {
-    // maxPrice is a safety cap in the SAME currency as getPrices' "cost"
-    // field (USD) — a small buffer above the price we just read, so a
-    // price bump between our check and this call fails cleanly instead of
-    // silently overcharging our own GrizzlySMS balance.
-    const result = await getNumber(service, country, Math.round((priceUSD * 1.05 + Number.EPSILON) * 100) / 100);
+    const result = await getNumber(service, country);
 
     if ("error" in result) {
       await supabase.rpc("refund_service_transaction", { p_tx_id: txId, p_reason: result.error });
-      return json({ success: false, error: humanizeGrizzlyError(result.error) });
+      return json({ success: false, error: humanizeSmspvaError(result.error) });
     }
 
     await supabase.rpc("complete_service_transaction", { p_tx_id: txId, p_order_id: result.activationId });
@@ -112,10 +132,10 @@ serve(async (req: Request) => {
       amount: amountKobo,
     });
   } catch (e) {
-    const isAuthError = e instanceof GrizzlySMSError;
+    const isAuthError = e instanceof SmspvaError;
     await supabase.rpc("refund_service_transaction", {
       p_tx_id: txId,
-      p_reason: isAuthError ? `grizzlysms_config: ${e.message}` : "provider_unreachable",
+      p_reason: isAuthError ? `smspva_config: ${e.message}` : "provider_unreachable",
     });
     return json({
       success: false,
@@ -124,9 +144,9 @@ serve(async (req: Request) => {
   }
 });
 
-function humanizeGrizzlyError(code: string): string {
-  if (code.includes("NO_NUMBERS")) return "No numbers currently available. Please try a different country.";
-  if (code.includes("NO_BALANCE")) return "Service temporarily unavailable. Please try again later.";
-  if (code.includes("BAD_KEY")) return "Provider configuration error. Please try again later.";
+function humanizeSmspvaError(code: string): string {
+  if (/no_number|no numbers|not available|no free|not found/i.test(code)) return "No numbers currently available. Please try a different country.";
+  if (/balance|no_money/i.test(code)) return "Service temporarily unavailable. Please try again later.";
+  if (/bad.?key|apikey/i.test(code)) return "Provider configuration error. Please try again later.";
   return "Purchase failed. You were not charged.";
 }

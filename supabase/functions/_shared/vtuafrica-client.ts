@@ -16,6 +16,15 @@ const FAILURE_STATUSES = ["failed", "refunded", "reversed", "cancelled", "cancel
 
 export class VTUAfricaError extends Error {}
 
+// The apikey rides in the VTUAfrica request URL, so a low-level fetch failure
+// (e.g. DNS "Temporary failure in name resolution") throws an Error whose
+// message contains the full URL — including the key. Callers persist these
+// error strings to transaction metadata (reconcile) which is user-readable via
+// RLS, so the key MUST be stripped before it ever leaves this module.
+function redactApiKey(s: string): string {
+  return s.replace(/apikey=[^&\s)"']+/gi, "apikey=***");
+}
+
 export function isVtuAfricaConfigured(): boolean {
   return !!VTUAFRICA_API_KEY;
 }
@@ -50,6 +59,11 @@ export async function callVTUAfrica(
   let res: Response;
   try {
     res = await fetch(`${VTUAFRICA_BASE_URL}${endpoint}/?${query.toString()}`, { signal: controller.signal });
+  } catch (e) {
+    // Re-throw as a plain Error (NOT VTUAfricaError, so callers still treat a
+    // transient network blip as ambiguous/hold-pending, not a config failure)
+    // with the apikey stripped out of the message.
+    throw new Error(redactApiKey(String((e as Error)?.message ?? e)));
   } finally {
     clearTimeout(timeout);
   }

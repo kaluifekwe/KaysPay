@@ -33,22 +33,81 @@ interface QuickAction {
   label: string;
   screen: string;
   comingSoon?: boolean;
+  badge?: 'New' | 'Soon';
 }
+
+interface Advert {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  sub: string;
+  screen?: string;
+  comingSoon?: boolean;
+}
+
+// Auto-rotating promo adverts on the home screen (owner 2026-07-28). Hardcoded
+// for now — can be moved to a Supabase table later so promos are editable
+// without an app update.
+const ADVERTS: Advert[] = [
+  { icon: 'phone-portrait-outline', title: 'Instant airtime, any network', sub: 'MTN, Airtel, Glo, 9mobile in seconds', screen: 'Airtime' },
+  { icon: 'cellular-outline', title: 'Cheap data bundles', sub: 'Every network, delivered instantly', screen: 'Data' },
+  { icon: 'globe-outline', title: 'Travel eSIMs', sub: 'Stay online in 190+ countries', screen: 'TravelEsim' },
+  { icon: 'id-card-outline', title: 'Get your BVN slip', sub: 'Verify and download in seconds', screen: 'NinServices' },
+  { icon: 'id-card-outline', title: 'Get your NIN slip', sub: 'Verify and download in seconds', screen: 'NinServices' },
+  { icon: 'logo-bitcoin', title: 'Crypto is coming soon', sub: "Buy and sell crypto, soon on Kay's Pay", comingSoon: true },
+];
 
 // One unified icon family (Ionicons outline) in brand green — replaces the
 // mixed emoji set so every tile reads as part of the same system.
 const quickActions: QuickAction[] = [
   { id: '1', icon: 'phone-portrait-outline', label: Strings.SERVICE_AIRTIME, screen: 'Airtime' },
   { id: '2', icon: 'cellular-outline', label: Strings.SERVICE_DATA, screen: 'Data' },
-  { id: '3', icon: 'school-outline', label: Strings.SERVICE_EXAMS, screen: 'ExamPins' },
   { id: '4', icon: 'receipt-outline', label: Strings.SERVICE_BILLS, screen: 'Bills' },
   { id: '5', icon: 'tv-outline', label: Strings.SERVICE_TV, screen: 'TV' },
-  { id: '7', icon: 'globe-outline', label: Strings.SERVICE_ESIM, screen: 'TravelEsim' },
-  { id: '8', icon: 'call-outline', label: Strings.SERVICE_FOREIGN, screen: 'ForeignNumber' },
-  // Dollar Card hidden for v1 — screen is a mock and BridgeCard live access is
-  // blocked (see kayspay-bridgecard memory). Re-add this entry to restore.
-  { id: '11', icon: 'id-card-outline', label: Strings.SERVICE_NIN, screen: 'NinServices' },
+  { id: '3', icon: 'school-outline', label: Strings.SERVICE_EXAMS, screen: 'ExamPins' },
+  { id: '7', icon: 'globe-outline', label: Strings.SERVICE_ESIM, screen: 'TravelEsim', badge: 'New' },
+  // Foreign Number + Dollar Card hidden (owner 2026-07-28) — re-add to restore.
+  { id: '11', icon: 'id-card-outline', label: Strings.SERVICE_NIN, screen: 'NinServices', badge: 'New' },
+  // Crypto: not built yet — tapping shows a "coming soon" alert (comingSoon).
+  { id: '99', icon: 'logo-bitcoin', label: 'Crypto', screen: 'Crypto', comingSoon: true, badge: 'Soon' },
 ];
+
+// Auto-rotating advert banner (cycles every 3s). Taps navigate to the service,
+// or show the coming-soon alert for Crypto.
+function AdvertCarousel({ navigation }: { navigation: any }) {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setIndex((i) => (i + 1) % ADVERTS.length), 3000);
+    return () => clearInterval(t);
+  }, []);
+  const ad = ADVERTS[index];
+  return (
+    <View style={styles.advertWrap}>
+      <TouchableOpacity
+        style={styles.advertCard}
+        activeOpacity={0.9}
+        onPress={() =>
+          ad.comingSoon
+            ? Alert.alert('Crypto — coming soon', "Buy and sell crypto right inside Kay's Pay. We'll notify you the moment it's live.")
+            : ad.screen && navigation.navigate(ad.screen)
+        }
+      >
+        <View style={styles.advertIcon}>
+          <Ionicons name={ad.icon} size={22} color="#C79A3A" />
+        </View>
+        <View style={styles.advertText}>
+          <Text style={styles.advertTitle} numberOfLines={1}>{ad.title}</Text>
+          <Text style={styles.advertSub} numberOfLines={1}>{ad.sub}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color="#C79A3A" />
+      </TouchableOpacity>
+      <View style={styles.advertDots}>
+        {ADVERTS.map((_, i) => (
+          <View key={i} style={[styles.advertDot, i === index && styles.advertDotActive]} />
+        ))}
+      </View>
+    </View>
+  );
+}
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [balance, setBalance] = useState(0);
@@ -56,6 +115,11 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [userName, setUserName] = useState('User');
+  // Time-based greeting (from the phone's clock); recomputes whenever Home
+  // re-renders (e.g. on focus), so it's current each time the user opens it.
+  const greetingHour = new Date().getHours();
+  const greeting =
+    greetingHour < 12 ? 'Good morning' : greetingHour < 17 ? 'Good afternoon' : 'Good evening';
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -167,6 +231,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.headerGreeting}>Hi, {userName.split(' ')[0]} 👋</Text>
+          <Text style={styles.headerGreetingTime}>{greeting}</Text>
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity
@@ -213,14 +278,15 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             </TouchableOpacity>
           </View>
           <View style={styles.walletButtons}>
+            {/* Withdraw removed with Paystack (owner 2026-07-28) — payout
+                gateway (Monnify/Budpay) not yet integrated. Fund only for now. */}
             <TouchableOpacity style={styles.walletButton} onPress={() => navigation.navigate('WalletFunding')}>
               <Text style={styles.walletButtonText}>{Strings.HOME_FUND_WALLET}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.walletButtonSecondary} onPress={() => navigation.navigate('Withdraw')}>
-              <Text style={styles.walletButtonTextSecondary}>{Strings.HOME_WITHDRAW}</Text>
-            </TouchableOpacity>
           </View>
         </View>
+
+        <AdvertCarousel navigation={navigation} />
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{Strings.HOME_QUICK_ACTIONS}</Text>
@@ -237,9 +303,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               >
                 <View style={styles.quickActionIcon}>
                   <Ionicons name={action.icon} size={26} color={Colors.GREEN} />
-                  {action.comingSoon && (
-                    <View style={styles.comingSoonBadge}>
-                      <Text style={styles.comingSoonBadgeText}>Soon</Text>
+                  {action.badge && (
+                    <View style={[styles.comingSoonBadge, action.badge === 'Soon' && { backgroundColor: Colors.GRAY }]}>
+                      <Text style={styles.comingSoonBadgeText}>{action.badge}</Text>
                     </View>
                   )}
                 </View>
@@ -317,6 +383,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  headerGreetingTime: {
+    fontSize: 13,
+    color: Colors.WHITE_80,
+    marginTop: 2,
+  },
   headerGreeting: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 20,
@@ -377,8 +448,9 @@ const styles = StyleSheet.create({
   },
   walletCard: {
     backgroundColor: Colors.GREEN,
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
     marginBottom: 16,
   },
   walletLabel: {
@@ -390,11 +462,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   balanceAmount: {
     fontFamily: 'Helvetica-Bold',
-    fontSize: 32,
+    fontSize: 26,
     color: Colors.WHITE,
   },
   eyeIcon: {
@@ -406,13 +478,12 @@ const styles = StyleSheet.create({
   },
   walletButton: {
     flex: 1,
-    height: 44,
+    height: 42,
     borderWidth: 1,
     borderColor: Colors.WHITE,
-    borderRadius: 12,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
   },
   walletButtonText: {
     ...Typography.BUTTON_TEXT,
@@ -434,6 +505,55 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: 16,
+  },
+  advertWrap: {
+    marginBottom: 16,
+  },
+  advertCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.GREEN_DARK,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  advertIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  advertText: {
+    flex: 1,
+  },
+  advertTitle: {
+    color: Colors.WHITE,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  advertSub: {
+    color: '#B8D6C6',
+    fontSize: 12,
+    marginTop: 1,
+  },
+  advertDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  advertDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: Colors.BORDER,
+  },
+  advertDotActive: {
+    width: 16,
+    backgroundColor: Colors.AMBER,
   },
   sectionHeader: {
     flexDirection: 'row',

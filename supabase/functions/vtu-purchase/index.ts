@@ -180,6 +180,27 @@ function resolvePurchase(body: any): {
   }
 }
 
+// Turn the internal validation codes thrown by resolvePurchase into clear,
+// user-facing sentences — the client shows this text directly, so it must
+// never be a raw code like "INVALID_PHONE".
+const VALIDATION_MESSAGES: Record<string, string> = {
+  INVALID_NETWORK: "Please choose a valid network.",
+  INVALID_PHONE: "Please enter a valid phone number.",
+  INVALID_AMOUNT: "Please enter a valid amount.",
+  INVALID_BUNDLE: "Please choose a valid data bundle.",
+  INVALID_PROVIDER: "Please choose a valid provider.",
+  INVALID_METER: "Please enter a valid meter number.",
+  INVALID_BOUQUET: "Please choose a valid package.",
+  INVALID_SMARTCARD: "Please enter a valid smartcard number.",
+  INVALID_EXAM_TYPE: "Please choose a valid exam type.",
+  INVALID_QUANTITY: "Please choose a valid quantity.",
+  INVALID_PROFILE_CODE: "Please enter your JAMB profile code.",
+  UNKNOWN_SERVICE: "This service isn't available right now.",
+};
+function friendlyValidation(code: string): string {
+  return VALIDATION_MESSAGES[code] || "Please check your details and try again.";
+}
+
 serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
@@ -207,11 +228,42 @@ serve(async (req: Request) => {
   try {
     plan = resolvePurchase(body);
   } catch (code) {
-    return json({ error: String(code) }, 400);
+    return json({ error: friendlyValidation(String(code)) }, 400);
   }
 
   if (plan.provider === "vtu_ng" && !isVtuConfigured()) return json({ error: "VTU provider not configured" }, 500);
   if (plan.provider === "vtuafrica" && !isVtuAfricaConfigured()) return json({ error: "VTUAfrica provider not configured" }, 500);
+
+  // 3b. Duplicate guard (data + TV only). The telco/VTUAfrica rejects a repeat
+  // of the SAME plan to the SAME recipient within a short window, which would
+  // otherwise become a confusing debit -> provider-reject -> refund. Catch it
+  // here and tell the user plainly. Airtime/electricity/exam allow legitimate
+  // repeats, so they're excluded.
+  if (body.service === "data" || body.service === "tv") {
+    const dupSince = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+    const { data: recentSame } = await supabase
+      .from("transactions")
+      .select("metadata")
+      .eq("user_id", user.id)
+      .eq("type", plan.txType)
+      .eq("recipient_phone", plan.recipient)
+      .in("status", ["completed", "pending"])
+      .gte("created_at", dupSince)
+      .limit(5);
+    const pp = plan.providerPayload as Record<string, unknown>;
+    const isSamePlan = (recentSame ?? []).some((t) => {
+      const req = ((t.metadata as Record<string, unknown>)?.request ?? {}) as Record<string, unknown>;
+      return body.service === "data"
+        ? req.service === pp.service && req.DataPlan === pp.DataPlan
+        : req.service === pp.service && req.variation === pp.variation;
+    });
+    if (isSamePlan) {
+      return json({
+        success: false,
+        error: "You just bought this plan for this number. Please wait a couple of minutes before buying it again.",
+      });
+    }
+  }
 
   const requestId = String(body.idempotency_key || newRequestId());
 
@@ -241,50 +293,97 @@ serve(async (req: Request) => {
   // refunded) and finalized by the vtuafrica-reconcile sweep — same lifecycle
   // as VTU.ng below. Refunding a "Processing" order is a money leak.
   if (plan.provider === "vtuafrica") {
-    try {
-      const result = await callVTUAfrica(plan.endpoint, { ...plan.providerPayload, ref: requestId });
-      const outcome = vtuAfricaOutcome(result);
+    // VTUAfrica's purchase endpoint is synchronous and slow (measured 2-13s in
+    // production — it holds the connection open while it reaches the telco).
+    // The settle logic below is UNCHANGED (same debit/complete/refund
+    // semantics); it's just wrapped in a function so airtime/data can stop
+    // blocking the user for the whole call. Every branch returns a Response.
+    const settle = async (): Promise<Response> => {
+      try {
+        const result = await callVTUAfrica(plan.endpoint, { ...plan.providerPayload, ref: requestId });
+        const outcome = vtuAfricaOutcome(result);
 
-      if (outcome === "success") {
-        await supabase.rpc("complete_service_transaction", {
-          p_tx_id: txId,
-          p_order_id: result?.description?.ReferenceID ?? null,
-        });
+        if (outcome === "success") {
+          await supabase.rpc("complete_service_transaction", {
+            p_tx_id: txId,
+            p_order_id: result?.description?.ReferenceID ?? null,
+          });
 
-        // The prepaid meter token was previously only ever returned in this
-        // one-time response and never saved anywhere — closing the app
-        // without downloading/copying it meant it was gone for good, with
-        // no way to regenerate the receipt from Transaction History later.
-        // Persist it into the transaction's own metadata (a short string,
-        // not a file — this is not the same as storing a generated PDF,
-        // which is still never done) so the receipt can be rebuilt anytime.
-        const electricityToken: string | undefined = result?.description?.Token;
-        if (electricityToken) {
-          await supabase
-            .from("transactions")
-            .update({ metadata: { service: body.service, request: plan.providerPayload, token: electricityToken } })
-            .eq("id", txId);
+          // The prepaid meter token was previously only ever returned in this
+          // one-time response and never saved anywhere — closing the app
+          // without downloading/copying it meant it was gone for good, with
+          // no way to regenerate the receipt from Transaction History later.
+          // Persist it into the transaction's own metadata (a short string,
+          // not a file — this is not the same as storing a generated PDF,
+          // which is still never done) so the receipt can be rebuilt anytime.
+          const electricityToken: string | undefined = result?.description?.Token;
+
+          // Exam PINs come back as a single "<=>"-delimited string for
+          // multi-quantity purchases (VTUAfrica's own docs example:
+          // "WR23454<=>456786564") — split into a clean array for the client.
+          const pinsRaw: string | undefined = result?.description?.pins;
+          const pins = pinsRaw ? pinsRaw.split("<=>").filter(Boolean) : undefined;
+
+          // Persist the token AND the exam PIN(s) — both are one-time values in
+          // the provider response. Saving them means they're never lost: the
+          // meter receipt / exam PIN(s) can always be re-read from Transaction
+          // History, even if the app was closed on the result screen.
+          if (electricityToken || pins) {
+            await supabase
+              .from("transactions")
+              .update({
+                metadata: {
+                  service: body.service,
+                  request: plan.providerPayload,
+                  ...(electricityToken ? { token: electricityToken } : {}),
+                  ...(pins ? { pins } : {}),
+                },
+              })
+              .eq("id", txId);
+          }
+
+          return json({
+            success: true,
+            transaction_id: txId,
+            order_id: result?.description?.ReferenceID,
+            pins,
+            // Present only for electricity (prepaid meter token).
+            token: electricityToken,
+            amount: plan.amount,
+          });
         }
 
-        // Exam PINs come back as a single "<=>"-delimited string for
-        // multi-quantity purchases (VTUAfrica's own docs example:
-        // "WR23454<=>456786564") — split into a clean array for the client.
-        const pinsRaw: string | undefined = result?.description?.pins;
-        const pins = pinsRaw ? pinsRaw.split("<=>").filter(Boolean) : undefined;
-        return json({
-          success: true,
-          transaction_id: txId,
-          order_id: result?.description?.ReferenceID,
-          pins,
-          // Present only for electricity (prepaid meter token).
-          token: electricityToken,
-          amount: plan.amount,
-        });
-      }
+        if (outcome === "pending" || outcome === "unknown") {
+          // Accepted but not settled — leave 'pending' (its default state),
+          // don't refund. vtuafrica-reconcile requeries by ref and finalizes.
+          return json({
+            success: true,
+            pending: true,
+            transaction_id: txId,
+            message: "Your order is still processing. You'll be notified once it completes.",
+          });
+        }
 
-      if (outcome === "pending" || outcome === "unknown") {
-        // Accepted but not settled — leave 'pending' (its default state),
-        // don't refund. vtuafrica-reconcile requeries by ref and finalizes.
+        // outcome === "failed": explicit failure or hard reject — refund.
+        await supabase.rpc("refund_service_transaction", {
+          p_tx_id: txId,
+          p_reason: JSON.stringify(result?.description ?? result ?? "provider_rejected").slice(0, 500),
+        });
+        return json({ success: false, error: result?.description?.message || "Purchase failed. You were not charged." });
+      } catch (e) {
+        // A config/auth error means the request never reached VTUAfrica —
+        // nothing was charged, so refunding is safe. But a generic network
+        // error is ambiguous: the request may have reached VTUAfrica and
+        // charged our merchant wallet, with only the RESPONSE lost. Refunding
+        // in that case is a money leak, so we hold 'pending' and let
+        // vtuafrica-reconcile settle it by querying the ref.
+        if (e instanceof VTUAfricaError) {
+          await supabase.rpc("refund_service_transaction", {
+            p_tx_id: txId,
+            p_reason: `vtuafrica_config: ${e.message}`,
+          });
+          return json({ success: false, error: "Provider not configured. Please try again later." });
+        }
         return json({
           success: true,
           pending: true,
@@ -292,34 +391,18 @@ serve(async (req: Request) => {
           message: "Your order is still processing. You'll be notified once it completes.",
         });
       }
+    };
 
-      // outcome === "failed": explicit failure or hard reject — refund.
-      await supabase.rpc("refund_service_transaction", {
-        p_tx_id: txId,
-        p_reason: JSON.stringify(result?.description ?? result ?? "provider_rejected").slice(0, 500),
-      });
-      return json({ success: false, error: result?.description?.message || "Purchase failed. You were not charged." });
-    } catch (e) {
-      // A config/auth error means the request never reached VTUAfrica —
-      // nothing was charged, so refunding is safe. But a generic network
-      // error is ambiguous: the request may have reached VTUAfrica and
-      // charged our merchant wallet, with only the RESPONSE lost. Refunding
-      // in that case is a money leak, so we hold 'pending' and let
-      // vtuafrica-reconcile settle it by querying the ref.
-      if (e instanceof VTUAfricaError) {
-        await supabase.rpc("refund_service_transaction", {
-          p_tx_id: txId,
-          p_reason: `vtuafrica_config: ${e.message}`,
-        });
-        return json({ success: false, error: "Provider not configured. Please try again later." });
-      }
-      return json({
-        success: true,
-        pending: true,
-        transaction_id: txId,
-        message: "Your order is still processing. You'll be notified once it completes.",
-      });
-    }
+    // Await the provider fully and return the real completed/failed result.
+    // The purchase now runs from the TransactionStatus result screen, which
+    // shows "Processing" with a spinner while this resolves and then flips to
+    // Successful/Failed — so the user is never blocked on the Pay button and
+    // there's no need to return early. (An earlier "return pending at 3s +
+    // finish in the background" approach left slow data orders — always >3s —
+    // stuck 'pending' when the backgrounded settle wasn't kept alive, so it's
+    // removed. Genuinely async provider "Processing" replies are still handled
+    // inside settle() and finalized by vtuafrica-reconcile.)
+    return await settle();
   }
 
   // 4b. VTU.ng — call the provider with the SERVER-SIDE token.

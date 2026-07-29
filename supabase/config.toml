@@ -23,9 +23,6 @@ project_id = "xswlrzhtxrzugoxdonjc"
 [functions.flutterwave-webhook]
 verify_jwt = false
 
-[functions.paystack-webhook]
-verify_jwt = false
-
 [functions.vtu-webhook]
 verify_jwt = false
 
@@ -50,10 +47,6 @@ verify_jwt = true
 
 [functions.welcome-email]
 verify_jwt = true
-
-# --- Public utility: no sensitive/user-specific data ---
-[functions.paystack-banks]
-verify_jwt = false
 
 # --- User-facing: identity from JWT via getAuthUser() ---
 [functions.bvn-verify]
@@ -92,6 +85,15 @@ verify_jwt = true
 [functions.foreign-number-cancel]
 verify_jwt = true
 
+[functions.foreign-number-reconcile]
+verify_jwt = true
+
+[functions.smspva-balance-check]
+verify_jwt = true
+
+[functions.smspva-catalog-sync]
+verify_jwt = true
+
 [functions.foreign-number-countries]
 verify_jwt = true
 
@@ -114,18 +116,6 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.nin-verify]
-verify_jwt = true
-
-[functions.paystack-init]
-verify_jwt = true
-
-[functions.paystack-resolve-account]
-verify_jwt = true
-
-[functions.paystack-transfer]
-verify_jwt = true
-
-[functions.paystack-verify]
 verify_jwt = true
 
 [functions.vtu-purchase]

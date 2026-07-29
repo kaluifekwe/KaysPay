@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
+  StyleSheet,
   ScrollView,
   TouchableOpacity,
   TextInput,
@@ -26,9 +26,6 @@ export default function EditProfileScreen({ navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-
   const [fullName, setFullName] = useState('');
   const [address, setAddress] = useState('');
   const [nameLocked, setNameLocked] = useState(false);
@@ -46,8 +43,6 @@ export default function EditProfileScreen({ navigation }: any) {
         supabase.auth.getUser(),
         kycService.getStatus(),
       ]);
-      setEmail(user?.email || '');
-      setPhone(user?.phone || user?.user_metadata?.phone || '');
       setFullName(user?.user_metadata?.full_name || '');
       setAddress(user?.user_metadata?.address || '');
       setNameLocked(kyc.verified);
@@ -138,18 +133,6 @@ export default function EditProfileScreen({ navigation }: any) {
             multiline
             numberOfLines={2}
           />
-        </View>
-
-        <View style={styles.fieldCard}>
-          <Text style={styles.fieldLabel}>Email Address</Text>
-          <Text style={styles.fieldValue}>{email || 'Not set'}</Text>
-          <Text style={styles.helperText}>Fixed at signup and can't be changed.</Text>
-        </View>
-
-        <View style={styles.fieldCard}>
-          <Text style={styles.fieldLabel}>Phone Number</Text>
-          <Text style={styles.fieldValue}>{phone || 'Not set'}</Text>
-          <Text style={styles.helperText}>Fixed at signup and can't be changed.</Text>
         </View>
 
         <TouchableOpacity

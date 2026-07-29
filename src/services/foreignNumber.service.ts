@@ -19,48 +19,34 @@ export interface AvailableCountry {
   available: number;
 }
 
-// Confirmed against GrizzlySMS's own getServicesList API response
-// (2026-07-02) — matches _shared/foreign-number-catalog.ts on the server exactly.
+// SMSPVA service opt-codes (real-SIM numbers). Matches
+// _shared/smspva-catalog.ts on the server exactly. Confirmed 2026-07-28.
 export const FOREIGN_NUMBER_SERVICES: ForeignNumberService[] = [
-  // Catch-all for any service not specifically listed (GrizzlySMS "ot").
-  { id: 'ot', name: 'Any other service' },
-  { id: 'wa', name: 'WhatsApp' },
-  { id: 'tg', name: 'Telegram' },
-  { id: 'go', name: 'Google / Gmail / YouTube' },
-  { id: 'fb', name: 'Facebook' },
-  { id: 'ig', name: 'Instagram + Threads' },
-  { id: 'ts', name: 'PayPal' },
-  { id: 'wx', name: 'Apple / iCloud' },
-  { id: 'nf', name: 'Netflix' },
-  { id: 'lf', name: 'TikTok' },
-  { id: 'fu', name: 'Snapchat' },
-  { id: 'ds', name: 'Discord' },
-  { id: 'tw', name: 'Twitter / X' },
-  { id: 'ub', name: 'Uber' },
-  { id: 'mt', name: 'Steam' },
-  { id: 'tn', name: 'LinkedIn' },
-  { id: 'gr_sg', name: 'Signal' },
-  { id: 'vi', name: 'Viber' },
-  { id: 'am', name: 'Amazon' },
-  { id: 'dh', name: 'eBay' },
-  { id: 'sf', name: 'Spotify' },
-  { id: 'mm', name: 'Microsoft / Outlook' },
-  { id: 'me', name: 'Line' },
-  { id: 'mo', name: 'Bumble' },
-  { id: 're', name: 'Coinbase' },
-  { id: 'aon', name: 'Binance' },
-  { id: 'uk', name: 'Airbnb' },
-  { id: 'pm', name: 'AOL' },
-  { id: 'dp', name: 'ProtonMail' },
-  { id: 'hb', name: 'Twitch' },
-  { id: 'bnl', name: 'Reddit' },
-  { id: 'pnts', name: 'Pinterest' },
-  { id: 'wb', name: 'WeChat' },
-  { id: 'hw', name: 'AliPay' },
-  { id: 'jg', name: 'Grab' },
-  { id: 'ni', name: 'Gojek' },
-  { id: 'ka', name: 'Shopee' },
-  { id: 'dl', name: 'Lazada' },
+  { id: 'opt20', name: 'WhatsApp' },
+  { id: 'opt29', name: 'Telegram' },
+  { id: 'opt1', name: 'Google / Gmail / YouTube' },
+  { id: 'opt2', name: 'Facebook' },
+  { id: 'opt16', name: 'Instagram + Threads' },
+  { id: 'opt41', name: 'X (Twitter)' },
+  { id: 'opt104', name: 'TikTok' },
+  { id: 'opt45', name: 'Discord' },
+  { id: 'opt131', name: 'Apple / iCloud' },
+  { id: 'opt15', name: 'Microsoft / Outlook' },
+  { id: 'opt83', name: 'PayPal / eBay' },
+  { id: 'opt44', name: 'Amazon' },
+  { id: 'opt72', name: 'Uber' },
+  { id: 'opt90', name: 'Snapchat' },
+  { id: 'opt9', name: 'Tinder' },
+  { id: 'opt46', name: 'Airbnb' },
+  { id: 'opt101', name: 'Netflix' },
+  { id: 'opt58', name: 'Steam' },
+  { id: 'opt8', name: 'LinkedIn' },
+  { id: 'opt11', name: 'Viber' },
+  { id: 'opt127', name: 'Signal' },
+  { id: 'opt112', name: 'Coinbase' },
+  { id: 'opt65', name: 'Yahoo' },
+  { id: 'opt132', name: 'OpenAI / ChatGPT' },
+  { id: 'opt19', name: 'Any other service' },
 ];
 
 export const FOREIGN_NUMBER_COUNTRIES: ForeignNumberCountry[] = [
@@ -294,6 +280,7 @@ export interface ForeignNumberStatusResult {
   error?: string;
   done?: boolean;
   cancelled?: boolean;
+  refunded?: boolean;
   code?: string;
 }
 
@@ -341,6 +328,24 @@ export const foreignNumberService = {
     }
   },
 
+  /** Cheapest available retail price per service (kobo), for the "from ₦X"
+   * labels on the service picker. Best-effort — returns {} on any failure. */
+  async getServiceFromPrices(): Promise<Record<string, number>> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('foreign-number-services', { body: {} }),
+      );
+      if (error || !data?.success) return {};
+      const map: Record<string, number> = {};
+      for (const s of (data.services || [])) {
+        if (typeof s?.fromKobo === 'number' && s?.id) map[s.id] = s.fromKobo;
+      }
+      return map;
+    } catch {
+      return {};
+    }
+  },
+
   /** Returns only the countries that currently have `service` in stock, each
    * with its live price — powers the "pick from available countries" flow. */
   async getCountriesForService(service: string): Promise<{ success: boolean; countries?: AvailableCountry[]; error?: string }> {
@@ -377,14 +382,14 @@ export const foreignNumberService = {
     }
   },
 
-  async purchase(service: string, country: string, authToken: string, serviceName?: string): Promise<ForeignNumberPurchaseResult> {
+  async purchase(service: string, country: string, authToken: string, serviceName?: string, quotedKobo?: number): Promise<ForeignNumberPurchaseResult> {
     try {
       const idempotencyKey = newIdempotencyKey();
       const { data, error } = await invokeWithRetry<any>(
         () =>
           withTimeout(
             supabase.functions.invoke('foreign-number-purchase', {
-              body: { service, country, service_name: serviceName, auth_token: authToken, idempotency_key: idempotencyKey },
+              body: { service, country, service_name: serviceName, auth_token: authToken, idempotency_key: idempotencyKey, quoted_kobo: quotedKobo },
             }),
           ),
         idempotencyKey,
@@ -412,7 +417,7 @@ export const foreignNumberService = {
       );
       if (error) return { success: false, error: await extractError(error, 'Could not check status.') };
       if (!data?.success) return { success: false, error: data?.error || 'Could not check status' };
-      return { success: true, done: data.done, cancelled: data.cancelled, code: data.code };
+      return { success: true, done: data.done, cancelled: data.cancelled, refunded: data.refunded, code: data.code };
     } catch {
       return { success: false, error: 'Network error. Please try again.' };
     }

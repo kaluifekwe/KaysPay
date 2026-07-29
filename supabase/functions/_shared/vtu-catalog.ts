@@ -11,7 +11,7 @@ export type NetworkProvider = "mtn" | "airtel" | "glo" | "9mobile";
 export const KOBO = 100;
 
 // Airtime amount bounds (kobo): ₦50 .. ₦50,000.
-export const AIRTIME_MIN = 50 * KOBO;
+export const AIRTIME_MIN = 100 * KOBO; // network/provider minimum airtime topup
 export const AIRTIME_MAX = 50000 * KOBO;
 
 // Electricity / bill amount bounds (kobo): ₦500 .. ₦100,000.

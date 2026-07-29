@@ -8,12 +8,10 @@ import {
   StatusBar,
   Image,
   Alert,
-  ActivityIndicator,
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
 import { Spacing } from '../constants/spacing';
@@ -34,7 +32,6 @@ const ProfileScreen = ({ navigation }: any) => {
   const [userEmail, setUserEmail] = useState('');
   const [userPhone, setUserPhone] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [totalTransactions, setTotalTransactions] = useState(0);
   const [totalSpent, setTotalSpent] = useState(0);
   const [kycVerified, setKycVerified] = useState(false);
@@ -88,96 +85,6 @@ const ProfileScreen = ({ navigation }: any) => {
     }
   };
 
-  const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please grant camera roll permissions to upload a profile picture.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      uploadAvatar(result.assets[0].uri);
-    }
-  };
-
-  const takePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please grant camera permissions to take a photo.');
-      return;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets[0]) {
-      uploadAvatar(result.assets[0].uri);
-    }
-  };
-
-  const uploadAvatar = async (uri: string) => {
-    setUploading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-
-      const response = await fetch(uri);
-      const blob = await response.blob();
-      const fileExt = uri.split('.').pop() || 'jpg';
-      const fileName = `${user.id}/avatar.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(fileName, blob, {
-          contentType: `image/${fileExt}`,
-          upsert: true,
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(fileName);
-
-      const publicUrl = urlData.publicUrl;
-
-      const { error: updateError } = await supabase.auth.updateUser({
-        data: { avatar_url: publicUrl },
-      });
-
-      if (updateError) throw updateError;
-
-      setAvatarUrl(publicUrl);
-      Alert.alert('Success', 'Profile picture updated!');
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to upload profile picture');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleAvatarPress = () => {
-    Alert.alert(
-      'Change Profile Picture',
-      'Choose an option',
-      [
-        { text: 'Take Photo', onPress: takePhoto },
-        { text: 'Choose from Library', onPress: pickImage },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
-  };
-
   // wa.me works whether or not WhatsApp is installed (falls back to the
   // Play Store / WhatsApp Web), so no need to check canOpenURL first.
   const WHATSAPP_SUPPORT_NUMBER = '2348028387709';
@@ -201,8 +108,7 @@ const ProfileScreen = ({ navigation }: any) => {
   const links: { label: string; icon: keyof typeof Ionicons.glyphMap; screen: string | null; params?: object; onPress?: () => void; badge?: string }[] = [
     { label: 'Edit Profile', icon: 'create-outline', screen: 'EditProfile' },
     { label: 'Identity Verification (KYC)', icon: 'shield-checkmark-outline', screen: 'Kyc', badge: kycVerified ? 'Verified' : 'Not Verified' },
-    { label: 'Transaction History', icon: 'receipt-outline', screen: 'TransactionHistory' },
-    { label: 'Help & Support', icon: 'help-circle-outline', screen: null, onPress: handleOpenSupport },
+    { label: 'Contact Support', icon: 'chatbubble-ellipses-outline', screen: null, onPress: handleOpenSupport },
     { label: 'Privacy Policy', icon: 'lock-closed-outline', screen: 'LegalDocument', params: { type: 'privacy' } },
     { label: 'Terms of Service', icon: 'document-text-outline', screen: 'LegalDocument', params: { type: 'terms' } },
     { label: 'Settings', icon: 'settings-outline', screen: 'Settings' },
@@ -239,24 +145,15 @@ const ProfileScreen = ({ navigation }: any) => {
 
         {/* Profile Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.8}>
-            <View style={styles.avatarContainer}>
-              {avatarUrl ? (
-                <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
-              ) : (
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{userName.charAt(0).toUpperCase()}</Text>
-                </View>
-              )}
-              <View style={styles.cameraIcon}>
-                {uploading ? (
-                  <ActivityIndicator size="small" color={WHITE} />
-                ) : (
-                  <Text style={styles.cameraIconText}>📷</Text>
-                )}
+          <View style={styles.avatarContainer}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{userName.charAt(0).toUpperCase()}</Text>
               </View>
-            </View>
-          </TouchableOpacity>
+            )}
+          </View>
           <Text style={styles.userName}>{userName}</Text>
           {maskedPhone ? <Text style={styles.phoneNumber}>{maskedPhone}</Text> : null}
           {userEmail ? <Text style={styles.emailText}>{userEmail}</Text> : null}
@@ -312,20 +209,6 @@ const ProfileScreen = ({ navigation }: any) => {
                 </View>
               </TouchableOpacity>
             ))}
-          </View>
-        </View>
-
-        {/* Referral Code Button */}
-        <View style={styles.referralSection}>
-          <TouchableOpacity
-            style={styles.referralButton}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.referralButtonText}>Share Referral Code</Text>
-          </TouchableOpacity>
-          <View style={styles.referralCodeContainer}>
-            <Text style={styles.referralCodeLabel}>Your Code:</Text>
-            <Text style={styles.referralCode}>KAYSPAY-XXXX</Text>
           </View>
         </View>
 

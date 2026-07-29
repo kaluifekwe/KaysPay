@@ -90,44 +90,23 @@ export default function ExamPinsScreen({ navigation }: ExamPinsScreenProps) {
     });
     if (!authResult) return;
 
-    setIsProcessing(true);
-    try {
-      const result = await vtuService.buyExamPin(
-        selectedExam,
+    // Go STRAIGHT to the result screen — it runs the purchase itself and shows
+    // Processing -> Successful (with the exam PIN(s) displayed). No spinner on
+    // the Pay button first.
+    navigation.navigate('TransactionStatus', {
+      title: 'Exam PIN',
+      amount: selectedExam.amount * quantity,
+      recipient: selectedExam.name,
+      paymentMethod: 'Balance',
+      request: {
+        kind: 'exam',
+        examType: selectedExam,
         quantity,
-        authResult.token,
-        needsProfileCode ? profileCode.trim() : undefined,
-      );
-
-      if (result.success && result.pins) {
-        setResultPins(result.pins);
-        setResultExamName(selectedExam.name);
-      } else if (result.success && result.pending) {
-        // Order accepted but not settled yet — money is held, not lost.
-        // The PIN(s) will finalize server-side; the user checks back rather
-        // than seeing a false "failed".
-        Alert.alert(
-          'Order Processing',
-          "Your order is still processing. Your PIN(s) will be available shortly — please check your transaction history in a few minutes.",
-          [{ text: 'OK', onPress: handleNewPurchase }],
-        );
-      } else {
-        Alert.alert(
-          'Purchase Failed',
-          result.error || 'Unable to purchase exam PIN. Please try again.',
-          [{ text: 'OK' }],
-        );
-      }
-    } catch {
-      Alert.alert(
-        'Error',
-        'An unexpected error occurred. Please check your connection and try again.',
-        [{ text: 'OK' }],
-      );
-    } finally {
-      setIsProcessing(false);
-    }
-  }, [canProceed, selectedExam, quantity, needsProfileCode, profileCode, authorize]);
+        profileCode: needsProfileCode ? profileCode.trim() : undefined,
+        authToken: authResult.token,
+      },
+    });
+  }, [canProceed, selectedExam, quantity, needsProfileCode, profileCode, navigation, authorize]);
 
   const handleNewPurchase = useCallback(() => {
     setResultPins(null);

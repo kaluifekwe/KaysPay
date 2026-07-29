@@ -4,11 +4,12 @@ import { getAuthUser, adminClient, consumeAuthToken } from "../_shared/auth.ts";
 import { verifyNin as verifyNinPrembly, isPremblyConfigured } from "../_shared/prembly-client.ts";
 import { verifyNin as verifyNinBvn, isNinBvnConfigured } from "../_shared/ninbvn-client.ts";
 
-// Retail price — normally ₦1,000 (confirmed by owner 2026-07-06). TEMPORARILY
-// FREE (1 kobo, not a true 0 since debit_for_service requires a strictly
-// positive amount) while the owner tests the live flow on their own Kay's
-// Pay wallet. Restore to 100000 once the owner confirms testing is done.
-const NIN_VERIFY_PRICE_KOBO = 1;
+// Retail prices confirmed by owner 2026-07-26: Regular Slip ₦500, Card ₦700.
+// SERVER-AUTHORITATIVE: the client sends the chosen slip type, but the price
+// is looked up HERE — a tampered client amount can never change what is
+// charged. Kobo, since debit_for_service requires a strictly positive amount.
+const SLIP_PRICE_KOBO: Record<string, number> = { regular: 50000, card: 70000 };
+const DEFAULT_SLIP_TIER = "regular";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -132,6 +133,13 @@ serve(async (req: Request) => {
   const requestId = String(body.idempotency_key || newRequestId());
   const claimed = body.claimed as Record<string, string> | undefined;
 
+  // Which slip the user chose up front decides the price. Validate against our
+  // own map — never trust a client-sent amount.
+  const slipTier = Object.prototype.hasOwnProperty.call(SLIP_PRICE_KOBO, String(body?.slip_tier))
+    ? String(body.slip_tier)
+    : DEFAULT_SLIP_TIER;
+  const priceKobo = SLIP_PRICE_KOBO[slipTier];
+
   // CACHE: if this user already verified this same NIN in the last 24h,
   // serve our stored copy — no new charge and, crucially, no provider call.
   // CheckMyNINBVN rate-limits repeat lookups of the same NIN (confirmed to
@@ -152,9 +160,43 @@ serve(async (req: Request) => {
     .maybeSingle();
 
   if (cachedTx?.metadata?.record?.firstname) {
+    const cachedTier = cachedTx.metadata.slip_tier || DEFAULT_SLIP_TIER;
+    // Same NIN + same slip type within 24h → free re-access (re-download).
+    if (cachedTier === slipTier) {
+      return json({
+        success: true,
+        transaction_id: cachedTx.id,
+        record: cachedTx.metadata.record,
+        matches: buildMatchReport(cachedTx.metadata.record, claimed),
+        cached: true,
+      });
+    }
+    // Different slip type (e.g. upgrading Regular → Card): reuse the already
+    // verified record (no provider re-call), but charge the new type's price so
+    // a cheaper prior lookup can't unlock a pricier slip for free.
+    const { data: upTxId, error: upErr } = await supabase.rpc("debit_for_service", {
+      p_user_id: user.id,
+      p_amount: priceKobo,
+      p_type: "nin_verification",
+      p_network: "N/A",
+      p_recipient: nin,
+      p_metadata: { service: "nin_verification", slip_tier: slipTier, claimed: claimed ?? null },
+      p_idempotency_key: requestId,
+    });
+    if (upErr) {
+      const msg = upErr.message || "";
+      if (msg.includes("INSUFFICIENT_FUNDS")) return json({ success: false, error: "Insufficient balance" });
+      if (msg.includes("WALLET_NOT_FOUND")) return json({ success: false, error: "Wallet not found" });
+      return json({ success: false, error: "Could not start transaction" }, 500);
+    }
+    await supabase.rpc("complete_service_transaction", { p_tx_id: upTxId, p_order_id: nin });
+    await supabase
+      .from("transactions")
+      .update({ metadata: { service: "nin_verification", slip_tier: slipTier, claimed: claimed ?? null, provider: "cache", record: cachedTx.metadata.record } })
+      .eq("id", upTxId);
     return json({
       success: true,
-      transaction_id: cachedTx.id,
+      transaction_id: upTxId,
       record: cachedTx.metadata.record,
       matches: buildMatchReport(cachedTx.metadata.record, claimed),
       cached: true,
@@ -163,11 +205,11 @@ serve(async (req: Request) => {
 
   const { data: txId, error: debitError } = await supabase.rpc("debit_for_service", {
     p_user_id: user.id,
-    p_amount: NIN_VERIFY_PRICE_KOBO,
+    p_amount: priceKobo,
     p_type: "nin_verification",
     p_network: "N/A",
     p_recipient: nin,
-    p_metadata: { service: "nin_verification", claimed: claimed ?? null },
+    p_metadata: { service: "nin_verification", slip_tier: slipTier, claimed: claimed ?? null },
     p_idempotency_key: requestId,
   });
 
@@ -241,7 +283,7 @@ serve(async (req: Request) => {
   // History) can redisplay it later without paying again.
   await supabase
     .from("transactions")
-    .update({ metadata: { service: "nin_verification", claimed: claimed ?? null, provider: providerUsed, record: outcome.record } })
+    .update({ metadata: { service: "nin_verification", slip_tier: slipTier, claimed: claimed ?? null, provider: providerUsed, record: outcome.record } })
     .eq("id", txId);
 
   return json({

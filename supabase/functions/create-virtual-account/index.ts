@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient } from "../_shared/auth.ts";
 import { createCustomer, createStaticVirtualAccount, isFlutterwaveConfigured } from "../_shared/flutterwave-client.ts";
+import { redactSecrets } from "../_shared/redact.ts";
 
 // Flutterwave's top-level error.message is a generic "Request is not valid"
 // — the actually useful reason is in error.validation_errors. Surface both
@@ -32,8 +33,8 @@ serve(async (req: Request) => {
   try {
     return await handleRequest(req, user);
   } catch (e) {
-    console.error("create-virtual-account unhandled error:", (e as Error).message);
-    return json({ success: false, error: (e as Error).message || "Unexpected error" }, 500);
+    console.error("create-virtual-account unhandled error:", redactSecrets(e));
+    return json({ success: false, error: "We couldn't set up your account right now. Please try again." }, 500);
   }
 });
 
@@ -92,7 +93,7 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
   if (custRes.status >= 400 || custRes.data?.status !== "success") {
     // Log only a safe summary — never the raw response body, which can echo
     // back submitted PII (see the bvnOrNin case below) on validation failures.
-    console.error("Flutterwave create-customer failed:", JSON.stringify({ status: custRes.status, message: custRes.data?.message }));
+    console.error("Flutterwave create-customer failed:", redactSecrets(JSON.stringify({ status: custRes.status, message: custRes.data?.message })));
     return json(
       { success: false, error: flwErrorMessage(custRes.data, "Could not create customer") },
       400,
@@ -118,7 +119,9 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
     // request includes bvnOrNin, and KYC validation errors can echo the
     // submitted value back in the message.
     const failedFields = vaRes.data?.error?.validation_errors?.map((v: any) => v.field_name);
-    console.error("Flutterwave create-virtual-account failed:", JSON.stringify({ status: vaRes.status, message: vaRes.data?.message, failedFields }));
+    // Deliberately DO NOT log vaRes.data.message — this request carries BVN/NIN
+    // and KYC validation messages can echo the submitted value back. Fields only.
+    console.error("Flutterwave create-virtual-account failed:", JSON.stringify({ status: vaRes.status, failedFields }));
     return json(
       { success: false, error: flwErrorMessage(vaRes.data, "Could not create virtual account") },
       400,

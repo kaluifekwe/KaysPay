@@ -37,6 +37,15 @@
         {
           "contactsPermission": "Allow Kay's Pay to access your contacts so you can send airtime and data without typing numbers."
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
+        }
       ]
     ],
     "extra": {

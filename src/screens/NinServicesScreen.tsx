@@ -21,23 +21,51 @@ import { Spacing } from '../constants/spacing';
 import { formatNaira } from '../utils/formatCurrency';
 import { ninService, NinRecord, BvnRecord, NinModificationType } from '../services/nin.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
+import ResultStatusView from '../components/ResultStatusView';
 import { sharePdf, downloadPdf } from '../utils/pdf';
 
 const DISCLAIMER = 'This is a reprint of verified NIN details for convenience and is not a replacement for the official NIMC card.';
 
-export type SlipTier = 'regular' | 'standard' | 'premium';
+// Two slip types the user picks up front (prices confirmed by owner 2026-07-26).
+// `valueKobo` is now the ACTUAL charge — the server re-derives the same price
+// from `slip_tier`, so the app value is display-only and never authoritative.
+// "Card" is the modern ID-card layout (formerly "Premium").
+export type SlipTier = 'regular' | 'card';
 
 export const SLIP_TIERS: { id: SlipTier; name: string; valueKobo: number }[] = [
-  { id: 'regular', name: 'Regular Slip', valueKobo: 35000 },
-  { id: 'standard', name: 'Standard Slip', valueKobo: 40000 },
-  { id: 'premium', name: 'Premium Slip', valueKobo: 45000 },
+  { id: 'regular', name: 'Regular Slip', valueKobo: 50000 },
+  { id: 'card', name: 'Card', valueKobo: 70000 },
 ];
 
-export type BvnSlipTier = 'slip';
+// Specimen record for the SAMPLE previews shown BEFORE a real NIN is entered,
+// so the user can see each layout up front without any lookup.
+const SAMPLE_NIN_RECORD: NinRecord = {
+  nin: '00000000000',
+  surname: 'SPECIMEN',
+  firstname: 'SAMPLE',
+  gender: 'male',
+  birthdate: '1990-01-01',
+  telephoneno: '08000000000',
+};
+
+// BVN mirrors NIN: pick Regular Slip (₦500) or Card (₦700) up front. `valueKobo`
+// is the ACTUAL charge; the server re-derives the same price from slip_tier.
+export type BvnSlipTier = 'regular' | 'card';
 
 export const BVN_SLIP_TIERS: { id: BvnSlipTier; name: string; valueKobo: number }[] = [
-  { id: 'slip', name: 'BVN Slip', valueKobo: 50000 },
+  { id: 'regular', name: 'Regular Slip', valueKobo: 50000 },
+  { id: 'card', name: 'Card', valueKobo: 70000 },
 ];
+
+// Specimen record for the BVN sample previews shown BEFORE a real BVN is entered.
+const SAMPLE_BVN_RECORD: BvnRecord = {
+  firstname: 'SAMPLE',
+  lastname: 'SPECIMEN',
+  dob: '1990-01-01',
+  gender: 'Male',
+  bvn: '00000000000',
+  phone: '08000000000',
+};
 
 function photoTag(photo?: string, className = 'photo'): string {
   if (!photo) return `<div class="${className} photo-blank"></div>`;
@@ -329,7 +357,7 @@ export function buildBvnSlipTraditionalHtml(record: BvnRecord, bvn: string, embl
 // BVN Card — the modern ID-card layout (bank-security iconography, no coat
 // of arms: a BVN is a banking/NIBSS construct, not a NIMC-issued ID, so it
 // gets its own bank-styled branding instead of the national emblem).
-function buildBvnCardHtml(record: BvnRecord, bvn: string): string {
+export function buildBvnCardHtml(record: BvnRecord, bvn: string): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8" />
   <style>
     body { font-family: -apple-system, Helvetica, Arial, sans-serif; padding: 32px; color: #111; }
@@ -409,14 +437,11 @@ type ValidateState = 'idle' | 'processing' | 'submitted' | 'error';
 type BvnState = 'idle' | 'processing' | 'result' | 'error';
 type ModifyState = 'idle' | 'processing' | 'submitted' | 'error';
 
-// VERIFY_PRICE/BVN_VERIFY_PRICE: normally 1000. TEMPORARILY free (see
-// VERIFICATION_FREE_FOR_TESTING below) for owner testing 2026-07-06 — see
-// matching comment in nin-verify/bvn-verify edge functions. Flip the flag
-// back to false (and nothing else needs to change here) once testing is done.
-const VERIFICATION_FREE_FOR_TESTING = true;
-const VERIFY_PRICE = 1000;
+// NIN Verify is priced per slip type via SLIP_TIERS (Regular ₦500 / Card ₦700).
+// The amount shown in the PIN prompt comes from the tier the user picked up
+// front; the server (nin-verify) re-derives the same price authoritatively.
 const VALIDATE_PRICE = 8000;
-const BVN_VERIFY_PRICE = 500;
+// BVN pricing is per slip type via BVN_SLIP_TIERS (Regular ₦500 / Card ₦700).
 const MODIFY_PRICE = 18000;
 
 export default function NinServicesScreen({ navigation }: NinServicesScreenProps) {
@@ -450,6 +475,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   const [bvnState, setBvnState] = useState<BvnState>('idle');
   const [bvnError, setBvnError] = useState('');
   const [bvnRecord, setBvnRecord] = useState<BvnRecord | null>(null);
+  const [selectedBvnTier, setSelectedBvnTier] = useState<BvnSlipTier>('regular');
 
   // Modify (NIN correction) state
   const [modifyType, setModifyType] = useState<NinModificationType>('name');
@@ -467,14 +493,14 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   const [modifyMessage, setModifyMessage] = useState('');
 
   const isNinValid = /^\d{11}$/.test(nin);
-  const canVerify = isNinValid && consent && verifyState !== 'processing';
+  const canVerify = isNinValid && verifyState !== 'processing';
 
   const isValidateNinValid = /^\d{11}$/.test(validateNin);
   const isValidateDobValid = /^\d{4}-\d{2}-\d{2}$/.test(validateDob);
   const canValidate = isValidateNinValid && isValidateDobValid && validateConsent && validateState !== 'processing';
 
   const isBvnValid = /^\d{11}$/.test(bvnNumber);
-  const canVerifyBvn = isBvnValid && bvnConsent && bvnState !== 'processing';
+  const canVerifyBvn = isBvnValid && bvnState !== 'processing';
 
   const isModNinValid = /^\d{11}$/.test(modNin);
   const canModify = useMemo(() => {
@@ -502,7 +528,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     if (!canVerify) return;
     const authResult = await authorize({
       title: 'Confirm NIN Verification',
-      amount: VERIFICATION_FREE_FOR_TESTING ? undefined : VERIFY_PRICE,
+      amount: (SLIP_TIERS.find((t) => t.id === selectedTier)?.valueKobo || 0) / 100,
     });
     if (!authResult) return;
 
@@ -517,7 +543,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     };
     const hasClaim = Object.values(claimed).some(Boolean);
 
-    const result = await ninService.verifyNin(nin, hasClaim ? claimed : undefined, authResult.token);
+    const result = await ninService.verifyNin(nin, hasClaim ? claimed : undefined, authResult.token, selectedTier);
     if (result.success && result.record) {
       setRecord(result.record);
       setMatches(result.matches);
@@ -526,7 +552,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
       setVerifyError(result.error || 'Could not verify this NIN. Please try again.');
       setVerifyState('error');
     }
-  }, [canVerify, nin, firstname, surname, gender, birthdate, authorize]);
+  }, [canVerify, nin, firstname, surname, gender, birthdate, authorize, selectedTier]);
 
   const handleResetVerify = useCallback(() => {
     setVerifyState('idle');
@@ -569,23 +595,22 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   const handleVerifyBvn = useCallback(async () => {
     if (!canVerifyBvn) return;
     const authResult = await authorize({
-      title: 'Generate BVN Slip',
-      amount: BVN_VERIFY_PRICE,
+      title: 'Confirm BVN Verification',
+      amount: (BVN_SLIP_TIERS.find((t) => t.id === selectedBvnTier)?.valueKobo || 0) / 100,
     });
     if (!authResult) return;
 
     setBvnError('');
     setBvnState('processing');
-    const result = await ninService.verifyBvn(bvnNumber, authResult.token);
+    const result = await ninService.verifyBvn(bvnNumber, authResult.token, selectedBvnTier);
     if (result.success && result.record) {
       setBvnRecord(result.record);
-      setBvnPrintOpen(true);
       setBvnState('result');
     } else {
       setBvnError(result.error || 'Could not verify this BVN. Please try again.');
       setBvnState('error');
     }
-  }, [canVerifyBvn, bvnNumber, authorize]);
+  }, [canVerifyBvn, bvnNumber, authorize, selectedBvnTier]);
 
   const handleResetBvn = useCallback(() => {
     setBvnState('idle');
@@ -593,12 +618,9 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     setBvnRecord(null);
     setBvnNumber('');
     setBvnConsent(false);
-    setBvnPrintOpen(false);
   }, []);
 
   const [generatingBvnPdf, setGeneratingBvnPdf] = useState(false);
-  const [bvnPrintOpen, setBvnPrintOpen] = useState(false);
-  const [selectedBvnTier] = useState<BvnSlipTier>('slip');
 
   const bvnFullName = useMemo(() => {
     if (!bvnRecord) return '';
@@ -606,9 +628,12 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   }, [bvnRecord]);
 
   const buildSelectedBvnSlipHtml = useCallback(async () => {
+    if (selectedBvnTier === 'card') {
+      return buildBvnCardHtml(bvnRecord!, bvnNumber);
+    }
     const emblemBase64 = await getEmblemBase64();
     return buildBvnSlipTraditionalHtml(bvnRecord!, bvnNumber, emblemBase64);
-  }, [bvnRecord, bvnNumber]);
+  }, [bvnRecord, bvnNumber, selectedBvnTier]);
 
   const handleDownloadBvn = useCallback(async () => {
     if (!bvnRecord) return;
@@ -705,7 +730,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     const emblemBase64 = await getEmblemBase64();
     return selectedTier === 'regular'
       ? buildRegularSlipHtml(record!, fullName, nin, emblemBase64)
-      : buildStandardSlipHtml(record!, fullName, nin, selectedTier === 'premium', emblemBase64);
+      : buildStandardSlipHtml(record!, fullName, nin, true, emblemBase64);
   }, [record, selectedTier, fullName, nin]);
 
   const handleDownload = useCallback(async () => {
@@ -753,6 +778,187 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     );
   };
 
+  // Renders a visual preview of a slip layout from any record — used with
+  // SAMPLE_NIN_RECORD to show the "sample" up front (before a real NIN is
+  // entered), and reusable with a real record if ever needed.
+  const renderSlipPreview = (rec: NinRecord, tier: SlipTier) => {
+    const name = [rec.firstname, rec.middlename, rec.surname].filter(Boolean).join(' ');
+    if (tier === 'regular') {
+      return (
+        <View style={styles.regularPreview}>
+          <View style={styles.regularPreviewHeader}>
+            <Image source={EMBLEM_ASSET} style={styles.regularPreviewEmblem} />
+            <View style={styles.regularPreviewTitleBlock}>
+              <Text style={styles.regularPreviewTitle}>National Identity Management System</Text>
+              <Text style={styles.regularPreviewSub}>Federal Republic of Nigeria</Text>
+            </View>
+            <View style={styles.regularPreviewEmblemSpacer} />
+          </View>
+          <View style={styles.regularPreviewBody}>
+            <View style={styles.regularPreviewFields}>
+              <Text style={styles.regularPreviewField}>NIN: {rec.nin || ''}</Text>
+              <Text style={styles.regularPreviewField}>Surname: {rec.surname || ''}</Text>
+              <Text style={styles.regularPreviewField}>First Name: {rec.firstname || ''}</Text>
+              <Text style={styles.regularPreviewField}>Gender: {(rec.gender || '').toUpperCase()}</Text>
+            </View>
+            {rec.photo ? (
+              <Image source={{ uri: `data:image/jpeg;base64,${rec.photo}` }} style={styles.regularPreviewPhoto} />
+            ) : (
+              <View style={styles.regularPreviewPhotoBlank} />
+            )}
+          </View>
+        </View>
+      );
+    }
+    return (
+      <View style={[styles.cardPreview, styles.cardPreviewPremium]}>
+        <Image source={EMBLEM_ASSET} style={styles.cardPreviewWatermark} />
+        <View style={styles.cardPreviewHeaderRow}>
+          <View>
+            <Text style={styles.cardPreviewBrandFed}>FEDERAL REPUBLIC OF NIGERIA</Text>
+            <Text style={styles.cardPreviewBrandSub}>DIGITAL NIN SLIP</Text>
+          </View>
+        </View>
+        <View style={styles.cardPreviewRow}>
+          {rec.photo ? (
+            <Image source={{ uri: `data:image/jpeg;base64,${rec.photo}` }} style={styles.cardPreviewPhoto} />
+          ) : (
+            <View style={styles.cardPreviewPhotoBlank} />
+          )}
+          <View style={styles.cardPreviewFields}>
+            <Text style={styles.cardPreviewLabel}>Surname/Nom</Text>
+            <Text style={styles.cardPreviewValue}>{rec.surname || ''}</Text>
+            <Text style={styles.cardPreviewLabel}>Given Names/Prénoms</Text>
+            <Text style={styles.cardPreviewValue}>{name}</Text>
+            <View style={styles.cardPreviewDobSexRow}>
+              <View>
+                <Text style={styles.cardPreviewLabel}>Date of Birth</Text>
+                <Text style={styles.cardPreviewValue}>{formatDobDisplay(rec.birthdate)}</Text>
+              </View>
+              <View>
+                <Text style={styles.cardPreviewLabel}>Sex/Sexe</Text>
+                <Text style={styles.cardPreviewValue}>{(rec.gender || 'N/A').toUpperCase().slice(0, 1)}</Text>
+              </View>
+            </View>
+          </View>
+          <View style={styles.cardPreviewRightCol}>
+            <Text style={styles.cardPreviewNga}>NGA</Text>
+            <Text style={styles.cardPreviewIssueLabel}>Issue Date</Text>
+            <Text style={styles.cardPreviewIssueValue}>{new Date().toLocaleDateString('en-GB')}</Text>
+          </View>
+        </View>
+        <Text style={styles.cardPreviewNinLabel}>National Identification Number (NIN)</Text>
+        <Text style={styles.cardPreviewNin}>{rec.nin || ''}</Text>
+      </View>
+    );
+  };
+
+  // BVN sample previews — regular slip (coat-of-arms tabular look) and the
+  // bank-styled card. Fed with SAMPLE_BVN_RECORD before a real BVN is entered.
+  const renderBvnSlipPreview = (rec: BvnRecord, tier: BvnSlipTier) => {
+    const name = [rec.firstname, rec.middlename, rec.lastname].filter(Boolean).join(' ');
+    const maskedBvn = (rec.bvn || '').replace(/(\d{3})(?=\d)/g, '$1 ');
+    if (tier === 'regular') {
+      return (
+        <View style={styles.regularPreview}>
+          <View style={styles.regularPreviewHeader}>
+            <Image source={EMBLEM_ASSET} style={styles.regularPreviewEmblem} />
+            <View style={styles.regularPreviewTitleBlock}>
+              <Text style={styles.regularPreviewTitle}>Federal Republic of Nigeria</Text>
+              <Text style={styles.regularPreviewSub}>Verified BVN Details</Text>
+            </View>
+            <View style={styles.regularPreviewEmblemSpacer} />
+          </View>
+          <View style={styles.regularPreviewBody}>
+            <View style={styles.regularPreviewFields}>
+              <Text style={styles.regularPreviewField}>First Name: {rec.firstname || 'N/A'}</Text>
+              <Text style={styles.regularPreviewField}>Last Name: {rec.lastname || 'N/A'}</Text>
+              <Text style={styles.regularPreviewField}>Date of birth: {rec.dob || 'N/A'}</Text>
+              <Text style={styles.regularPreviewField}>Gender: {rec.gender || 'N/A'}</Text>
+              <Text style={styles.regularPreviewField}>BVN: {maskedBvn}</Text>
+            </View>
+            {rec.photo ? (
+              <Image source={{ uri: `data:image/jpeg;base64,${rec.photo}` }} style={styles.regularPreviewPhoto} />
+            ) : (
+              <View style={styles.regularPreviewPhotoBlank} />
+            )}
+          </View>
+        </View>
+      );
+    }
+    return (
+      <View style={[styles.cardPreview, styles.cardPreviewPremium]}>
+        <View style={styles.cardPreviewHeaderRow}>
+          <View>
+            <Text style={styles.cardPreviewBrandFed}>BANK VERIFICATION NUMBER</Text>
+            <Text style={styles.cardPreviewBrandSub}>NIBSS · Federal Republic of Nigeria</Text>
+          </View>
+        </View>
+        <View style={styles.cardPreviewRow}>
+          {rec.photo ? (
+            <Image source={{ uri: `data:image/jpeg;base64,${rec.photo}` }} style={styles.cardPreviewPhoto} />
+          ) : (
+            <View style={styles.cardPreviewPhotoBlank} />
+          )}
+          <View style={styles.cardPreviewFields}>
+            <Text style={styles.cardPreviewLabel}>Surname</Text>
+            <Text style={styles.cardPreviewValue}>{rec.lastname || ''}</Text>
+            <Text style={styles.cardPreviewLabel}>Given Names</Text>
+            <Text style={styles.cardPreviewValue}>{name}</Text>
+            <View style={styles.cardPreviewDobSexRow}>
+              <View>
+                <Text style={styles.cardPreviewLabel}>Date of Birth</Text>
+                <Text style={styles.cardPreviewValue}>{rec.dob || 'N/A'}</Text>
+              </View>
+              <View>
+                <Text style={styles.cardPreviewLabel}>Sex</Text>
+                <Text style={styles.cardPreviewValue}>{(rec.gender || 'N/A').toUpperCase().slice(0, 1)}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+        <Text style={styles.cardPreviewNinLabel}>Bank Verification Number (BVN)</Text>
+        <Text style={styles.cardPreviewNin}>{maskedBvn}</Text>
+      </View>
+    );
+  };
+
+  // Tap Pay -> straight to a full-screen Processing state (set before the async
+  // verify call) -> the slip result / Failed. Same feel as the VTU services.
+  const ninAmount = (SLIP_TIERS.find((t) => t.id === selectedTier)?.valueKobo || 0) / 100;
+  const bvnAmount = (BVN_SLIP_TIERS.find((t) => t.id === selectedBvnTier)?.valueKobo || 0) / 100;
+
+  if (mode === 'verify' && verifyState === 'processing') {
+    return <ResultStatusView status="processing" headerTitle="NIN Slip" amount={ninAmount} processingHint="Verifying your NIN…" />;
+  }
+  if (mode === 'verify' && verifyState === 'error') {
+    return (
+      <ResultStatusView
+        status="failed"
+        headerTitle="NIN Slip"
+        amount={ninAmount}
+        message={verifyError || 'Could not verify this NIN. Please try again.'}
+        onDone={handleResetVerify}
+        doneLabel="Try Again"
+      />
+    );
+  }
+  if (mode === 'bvn' && bvnState === 'processing') {
+    return <ResultStatusView status="processing" headerTitle="BVN Slip" amount={bvnAmount} processingHint="Verifying your BVN…" />;
+  }
+  if (mode === 'bvn' && bvnState === 'error') {
+    return (
+      <ResultStatusView
+        status="failed"
+        headerTitle="BVN Slip"
+        amount={bvnAmount}
+        message={bvnError || 'Could not verify this BVN. Please try again.'}
+        onDone={handleResetBvn}
+        doneLabel="Try Again"
+      />
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -798,10 +1004,30 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
           {mode === 'verify' && verifyState !== 'result' && (
             <View>
               <Text style={styles.helperText}>
-                Confirm a NIN's on-file details — used to check that submitted information (e.g. for a bank, school, or SIM registration) is genuine.
+                Get your NIN slip. Pick a slip type, enter your NIN, then verify to generate it.
               </Text>
 
-              <Text style={styles.label}>NIN Number</Text>
+              <Text style={styles.stepLabel}>01  Select Slip Type</Text>
+              <View style={styles.tierRow}>
+                {SLIP_TIERS.map((tier) => {
+                  const isSelected = selectedTier === tier.id;
+                  return (
+                    <TouchableOpacity
+                      key={tier.id}
+                      style={[styles.tierCard, isSelected && styles.tierCardSelected]}
+                      onPress={() => setSelectedTier(tier.id)}
+                    >
+                      <View style={[styles.radio, isSelected && styles.radioSelected]}>
+                        {isSelected && <View style={styles.radioDot} />}
+                      </View>
+                      <Text style={styles.tierName}>{tier.name}</Text>
+                      <Text style={styles.tierValue}>{formatNaira(tier.valueKobo / 100)}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.stepLabel}>02  Enter your NIN</Text>
               <TextInput
                 style={styles.input}
                 value={nin}
@@ -810,54 +1036,8 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 placeholderTextColor={Colors.GRAY}
                 keyboardType="number-pad"
                 maxLength={11}
+                returnKeyType="done"
               />
-
-              <Text style={styles.label}>Claimed Details (optional — leave blank to just confirm the NIN exists)</Text>
-              <TextInput
-                style={styles.input}
-                value={firstname}
-                onChangeText={setFirstname}
-                placeholder="First name"
-                placeholderTextColor={Colors.GRAY}
-              />
-              <TextInput
-                style={styles.input}
-                value={surname}
-                onChangeText={setSurname}
-                placeholder="Surname"
-                placeholderTextColor={Colors.GRAY}
-              />
-              <View style={styles.genderRow}>
-                {(['male', 'female'] as const).map((g) => (
-                  <TouchableOpacity
-                    key={g}
-                    style={[styles.genderButton, gender === g && styles.genderButtonSelected]}
-                    onPress={() => setGender(gender === g ? '' : g)}
-                  >
-                    <Text style={[styles.genderText, gender === g && styles.genderTextSelected]}>
-                      {g === 'male' ? 'Male' : 'Female'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <TextInput
-                style={styles.input}
-                value={birthdate}
-                onChangeText={(t) => setBirthdate(t.replace(/[^0-9-]/g, '').slice(0, 10))}
-                placeholder="Date of Birth (YYYY-MM-DD)"
-                placeholderTextColor={Colors.GRAY}
-                keyboardType="numbers-and-punctuation"
-                maxLength={10}
-              />
-
-              <TouchableOpacity style={styles.consentRow} onPress={() => setConsent(!consent)}>
-                <View style={[styles.checkbox, consent && styles.checkboxChecked]}>
-                  {consent && <Text style={styles.checkmark}>✓</Text>}
-                </View>
-                <Text style={styles.consentText}>
-                  I consent to this NIN being checked against NIMC's database.
-                </Text>
-              </TouchableOpacity>
 
               {verifyError ? <Text style={styles.errorText}>{verifyError}</Text> : null}
 
@@ -870,171 +1050,84 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                   <ActivityIndicator color={Colors.WHITE} />
                 ) : (
                   <Text style={styles.primaryButtonText}>
-                    Verify ({VERIFICATION_FREE_FOR_TESTING ? 'Free' : formatNaira(VERIFY_PRICE)})
+                    Verify & Pay {formatNaira((SLIP_TIERS.find((t) => t.id === selectedTier)?.valueKobo || 0) / 100)}
                   </Text>
                 )}
               </TouchableOpacity>
+              <Text style={styles.consentNote}>
+                By continuing, you consent to your NIN being checked with NIMC.
+              </Text>
+
+              <Text style={styles.sampleLabel}>
+                Sample — how your {SLIP_TIERS.find((t) => t.id === selectedTier)?.name} will look
+              </Text>
+              {renderSlipPreview(SAMPLE_NIN_RECORD, selectedTier)}
             </View>
           )}
 
           {mode === 'verify' && verifyState === 'result' && record && (
             <View>
-              {!printOpen ? (
-                <View>
-                  <View style={styles.resultCard}>
-                    <Text style={styles.resultName}>{fullName}</Text>
-                    <View style={styles.resultRow}>
-                      <Text style={styles.resultLabel}>NIN</Text>
-                      <Text style={styles.resultValue}>{record.nin || nin}</Text>
-                    </View>
-                    <View style={styles.resultRow}>
-                      <Text style={styles.resultLabel}>Date of Birth</Text>
-                      <Text style={styles.resultValue}>{record.birthdate || 'N/A'}</Text>
-                    </View>
-                    <View style={styles.resultRow}>
-                      <Text style={styles.resultLabel}>Gender</Text>
-                      <Text style={styles.resultValue}>{record.gender || 'N/A'}</Text>
-                    </View>
-                    <View style={styles.resultRow}>
-                      <Text style={styles.resultLabel}>Phone</Text>
-                      <Text style={styles.resultValue}>{record.telephoneno || 'N/A'}</Text>
-                    </View>
-                  </View>
-
-                  {matches && Object.keys(matches).length > 0 && (
-                    <View style={styles.matchCard}>
-                      <Text style={styles.matchTitle}>Submitted Details Comparison</Text>
-                      {renderMatchRow('First Name', 'firstname')}
-                      {renderMatchRow('Surname', 'surname')}
-                      {renderMatchRow('Gender', 'gender')}
-                      {renderMatchRow('Date of Birth', 'birthdate')}
-                    </View>
-                  )}
-
-                  <TouchableOpacity style={styles.secondaryButton} onPress={() => setPrintOpen(true)}>
-                    <Text style={styles.secondaryButtonText}>Get Printable NIN Slip</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.primaryButton} onPress={handleResetVerify}>
-                    <Text style={styles.primaryButtonText}>Done</Text>
-                  </TouchableOpacity>
+              <View>
+                <View style={styles.successBanner}>
+                  <Text style={styles.successBannerIcon}>{'✓'}</Text>
+                  <Text style={styles.successBannerText}>Verification Successful</Text>
                 </View>
-              ) : (
-                <View>
-                  <Text style={styles.stepLabel}>01  Select Slip Type</Text>
-                  <View style={styles.tierRow}>
-                    {SLIP_TIERS.map((tier) => {
-                      const isSelected = selectedTier === tier.id;
-                      return (
-                        <TouchableOpacity
-                          key={tier.id}
-                          style={[styles.tierCard, isSelected && styles.tierCardSelected]}
-                          onPress={() => setSelectedTier(tier.id)}
-                        >
-                          <View style={[styles.radio, isSelected && styles.radioSelected]}>
-                            {isSelected && <View style={styles.radioDot} />}
-                          </View>
-                          <Text style={styles.tierName}>{tier.name}</Text>
-                          <Text style={styles.tierValue}>{formatNaira(tier.valueKobo / 100)}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                <View style={styles.resultCard}>
+                  <Text style={styles.resultName}>{fullName}</Text>
+                  <View style={styles.resultRow}>
+                    <Text style={styles.resultLabel}>NIN</Text>
+                    <Text style={styles.resultValue}>{record.nin || nin}</Text>
                   </View>
+                  <View style={styles.resultRow}>
+                    <Text style={styles.resultLabel}>Date of Birth</Text>
+                    <Text style={styles.resultValue}>{record.birthdate || 'N/A'}</Text>
+                  </View>
+                  <View style={styles.resultRow}>
+                    <Text style={styles.resultLabel}>Gender</Text>
+                    <Text style={styles.resultValue}>{record.gender || 'N/A'}</Text>
+                  </View>
+                  <View style={styles.resultRow}>
+                    <Text style={styles.resultLabel}>Phone</Text>
+                    <Text style={styles.resultValue}>{record.telephoneno || 'N/A'}</Text>
+                  </View>
+                </View>
 
-                  <Text style={styles.freeNote}>Free to generate — the price above just shows the slip's typical value.</Text>
+                {matches && Object.keys(matches).length > 0 && (
+                  <View style={styles.matchCard}>
+                    <Text style={styles.matchTitle}>Submitted Details Comparison</Text>
+                    {renderMatchRow('First Name', 'firstname')}
+                    {renderMatchRow('Surname', 'surname')}
+                    {renderMatchRow('Gender', 'gender')}
+                    {renderMatchRow('Date of Birth', 'birthdate')}
+                  </View>
+                )}
 
-                  {selectedTier === 'regular' ? (
-                    <View style={styles.regularPreview}>
-                      <View style={styles.regularPreviewHeader}>
-                        <Image source={EMBLEM_ASSET} style={styles.regularPreviewEmblem} />
-                        <View style={styles.regularPreviewTitleBlock}>
-                          <Text style={styles.regularPreviewTitle}>National Identity Management System</Text>
-                          <Text style={styles.regularPreviewSub}>Federal Republic of Nigeria</Text>
-                        </View>
-                        <View style={styles.regularPreviewEmblemSpacer} />
-                      </View>
-                      <View style={styles.regularPreviewBody}>
-                        <View style={styles.regularPreviewFields}>
-                          <Text style={styles.regularPreviewField}>NIN: {record.nin || nin}</Text>
-                          <Text style={styles.regularPreviewField}>Surname: {record.surname || ''}</Text>
-                          <Text style={styles.regularPreviewField}>First Name: {record.firstname || ''}</Text>
-                          <Text style={styles.regularPreviewField}>Gender: {(record.gender || '').toUpperCase()}</Text>
-                        </View>
-                        {record.photo ? (
-                          <Image source={{ uri: `data:image/jpeg;base64,${record.photo}` }} style={styles.regularPreviewPhoto} />
-                        ) : (
-                          <View style={styles.regularPreviewPhotoBlank} />
-                        )}
-                      </View>
-                    </View>
+                <Text style={styles.readyText}>
+                  Your {SLIP_TIERS.find((t) => t.id === selectedTier)?.name} is ready to download.
+                </Text>
+                <Text style={styles.printDisclaimer}>{DISCLAIMER}</Text>
+                <TouchableOpacity
+                  style={[styles.primaryButton, generatingPdf && styles.primaryButtonDisabled]}
+                  onPress={handleDownload}
+                  disabled={generatingPdf}
+                >
+                  {generatingPdf ? (
+                    <ActivityIndicator color={Colors.WHITE} />
                   ) : (
-                    <View style={[styles.cardPreview, selectedTier === 'premium' && styles.cardPreviewPremium]}>
-                      <Image source={EMBLEM_ASSET} style={styles.cardPreviewWatermark} />
-                      <View style={styles.cardPreviewHeaderRow}>
-                        <View>
-                          {selectedTier === 'premium' && (
-                            <Text style={styles.cardPreviewBrandFed}>FEDERAL REPUBLIC OF NIGERIA</Text>
-                          )}
-                          <Text style={styles.cardPreviewBrandSub}>DIGITAL NIN SLIP</Text>
-                        </View>
-                      </View>
-                      <View style={styles.cardPreviewRow}>
-                        {record.photo ? (
-                          <Image source={{ uri: `data:image/jpeg;base64,${record.photo}` }} style={styles.cardPreviewPhoto} />
-                        ) : (
-                          <View style={styles.cardPreviewPhotoBlank} />
-                        )}
-                        <View style={styles.cardPreviewFields}>
-                          <Text style={styles.cardPreviewLabel}>Surname/Nom</Text>
-                          <Text style={styles.cardPreviewValue}>{record.surname || ''}</Text>
-                          <Text style={styles.cardPreviewLabel}>Given Names/Prénoms</Text>
-                          <Text style={styles.cardPreviewValue}>{fullName}</Text>
-                          <View style={styles.cardPreviewDobSexRow}>
-                            <View>
-                              <Text style={styles.cardPreviewLabel}>Date of Birth</Text>
-                              <Text style={styles.cardPreviewValue}>{formatDobDisplay(record.birthdate)}</Text>
-                            </View>
-                            <View>
-                              <Text style={styles.cardPreviewLabel}>Sex/Sexe</Text>
-                              <Text style={styles.cardPreviewValue}>{(record.gender || 'N/A').toUpperCase().slice(0, 1)}</Text>
-                            </View>
-                          </View>
-                        </View>
-                        <View style={styles.cardPreviewRightCol}>
-                          <Text style={styles.cardPreviewNga}>NGA</Text>
-                          <Text style={styles.cardPreviewIssueLabel}>Issue Date</Text>
-                          <Text style={styles.cardPreviewIssueValue}>{new Date().toLocaleDateString('en-GB')}</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.cardPreviewNinLabel}>National Identification Number (NIN)</Text>
-                      <Text style={styles.cardPreviewNin}>{record.nin || nin}</Text>
-                    </View>
+                    <Text style={styles.primaryButtonText}>Download PDF</Text>
                   )}
-
-                  <Text style={styles.printDisclaimer}>{'\n'}{DISCLAIMER}</Text>
-
-                  <TouchableOpacity
-                    style={[styles.primaryButton, generatingPdf && styles.primaryButtonDisabled]}
-                    onPress={handleDownload}
-                    disabled={generatingPdf}
-                  >
-                    {generatingPdf ? (
-                      <ActivityIndicator color={Colors.WHITE} />
-                    ) : (
-                      <Text style={styles.primaryButtonText}>Download PDF</Text>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.secondaryButton, generatingPdf && styles.primaryButtonDisabled]}
-                    onPress={handleShare}
-                    disabled={generatingPdf}
-                  >
-                    <Text style={styles.secondaryButtonText}>Share PDF</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.secondaryButton} onPress={() => setPrintOpen(false)} disabled={generatingPdf}>
-                    <Text style={styles.secondaryButtonText}>Back to Result</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.secondaryButton, generatingPdf && styles.primaryButtonDisabled]}
+                  onPress={handleShare}
+                  disabled={generatingPdf}
+                >
+                  <Text style={styles.secondaryButtonText}>Share PDF</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.secondaryButton} onPress={handleResetVerify} disabled={generatingPdf}>
+                  <Text style={styles.secondaryButtonText}>Done</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 
@@ -1104,10 +1197,30 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
           {mode === 'bvn' && bvnState !== 'result' && (
             <View>
               <Text style={styles.helperText}>
-                Confirm a Bank Verification Number is genuine and retrieve the account holder's on-file details.
+                Get your BVN slip. Pick a slip type, enter your BVN, then verify to generate it.
               </Text>
 
-              <Text style={styles.label}>BVN Number</Text>
+              <Text style={styles.stepLabel}>01  Select Slip Type</Text>
+              <View style={styles.tierRow}>
+                {BVN_SLIP_TIERS.map((tier) => {
+                  const isSelected = selectedBvnTier === tier.id;
+                  return (
+                    <TouchableOpacity
+                      key={tier.id}
+                      style={[styles.tierCard, isSelected && styles.tierCardSelected]}
+                      onPress={() => setSelectedBvnTier(tier.id)}
+                    >
+                      <View style={[styles.radio, isSelected && styles.radioSelected]}>
+                        {isSelected && <View style={styles.radioDot} />}
+                      </View>
+                      <Text style={styles.tierName}>{tier.name}</Text>
+                      <Text style={styles.tierValue}>{formatNaira(tier.valueKobo / 100)}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.stepLabel}>02  Enter your BVN</Text>
               <TextInput
                 style={styles.input}
                 value={bvnNumber}
@@ -1116,14 +1229,8 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 placeholderTextColor={Colors.GRAY}
                 keyboardType="number-pad"
                 maxLength={11}
+                returnKeyType="done"
               />
-
-              <TouchableOpacity style={styles.consentRow} onPress={() => setBvnConsent(!bvnConsent)}>
-                <View style={[styles.checkbox, bvnConsent && styles.checkboxChecked]}>
-                  {bvnConsent && <Text style={styles.checkmark}>✓</Text>}
-                </View>
-                <Text style={styles.consentText}>I consent to this BVN being checked.</Text>
-              </TouchableOpacity>
 
               {bvnError ? <Text style={styles.errorText}>{bvnError}</Text> : null}
 
@@ -1136,94 +1243,71 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                   <ActivityIndicator color={Colors.WHITE} />
                 ) : (
                   <Text style={styles.primaryButtonText}>
-                    Pay {formatNaira(BVN_VERIFY_PRICE)}
+                    Verify & Pay {formatNaira((BVN_SLIP_TIERS.find((t) => t.id === selectedBvnTier)?.valueKobo || 0) / 100)}
                   </Text>
                 )}
               </TouchableOpacity>
+              <Text style={styles.consentNote}>
+                By continuing, you consent to your BVN being checked with NIBSS.
+              </Text>
+
+              <Text style={styles.sampleLabel}>
+                Sample — how your {BVN_SLIP_TIERS.find((t) => t.id === selectedBvnTier)?.name} will look
+              </Text>
+              {renderBvnSlipPreview(SAMPLE_BVN_RECORD, selectedBvnTier)}
             </View>
           )}
 
           {mode === 'bvn' && bvnState === 'result' && bvnRecord && (
             <View>
-              {!bvnPrintOpen ? (
-                <View>
-                  <View style={styles.resultCard}>
-                    <Text style={styles.resultName}>{bvnFullName}</Text>
-                    <View style={styles.resultRow}>
-                      <Text style={styles.resultLabel}>BVN</Text>
-                      <Text style={styles.resultValue}>{bvnRecord.bvn || bvnNumber}</Text>
-                    </View>
-                    <View style={styles.resultRow}>
-                      <Text style={styles.resultLabel}>Date of Birth</Text>
-                      <Text style={styles.resultValue}>{bvnRecord.dob || 'N/A'}</Text>
-                    </View>
-                    <View style={styles.resultRow}>
-                      <Text style={styles.resultLabel}>Gender</Text>
-                      <Text style={styles.resultValue}>{bvnRecord.gender || 'N/A'}</Text>
-                    </View>
-                    <View style={styles.resultRow}>
-                      <Text style={styles.resultLabel}>Phone</Text>
-                      <Text style={styles.resultValue}>{bvnRecord.phone || 'N/A'}</Text>
-                    </View>
-                  </View>
-
-                  <TouchableOpacity style={styles.secondaryButton} onPress={() => setBvnPrintOpen(true)}>
-                    <Text style={styles.secondaryButtonText}>Get Printable BVN Slip</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.primaryButton} onPress={handleResetBvn}>
-                    <Text style={styles.primaryButtonText}>Done</Text>
-                  </TouchableOpacity>
+              <View style={styles.successBanner}>
+                <Text style={styles.successBannerIcon}>{'✓'}</Text>
+                <Text style={styles.successBannerText}>Verification Successful</Text>
+              </View>
+              <View style={styles.resultCard}>
+                <Text style={styles.resultName}>{bvnFullName}</Text>
+                <View style={styles.resultRow}>
+                  <Text style={styles.resultLabel}>BVN</Text>
+                  <Text style={styles.resultValue}>{bvnRecord.bvn || bvnNumber}</Text>
                 </View>
-              ) : (
-                <View>
-                  <View style={styles.regularPreview}>
-                    <View style={styles.regularPreviewHeader}>
-                      <Image source={EMBLEM_ASSET} style={styles.regularPreviewEmblem} />
-                      <View style={styles.regularPreviewTitleBlock}>
-                        <Text style={styles.regularPreviewTitle}>Federal Republic of Nigeria</Text>
-                        <Text style={styles.regularPreviewSub}>Verified BVN Details</Text>
-                      </View>
-                      <View style={styles.regularPreviewEmblemSpacer} />
-                    </View>
-                    <View style={styles.regularPreviewBody}>
-                      <View style={styles.regularPreviewFields}>
-                        <Text style={styles.regularPreviewField}>First Name: {bvnRecord.firstname || 'N/A'}</Text>
-                        <Text style={styles.regularPreviewField}>Last Name: {bvnRecord.lastname || 'N/A'}</Text>
-                        <Text style={styles.regularPreviewField}>Date of birth: {bvnRecord.dob || 'N/A'}</Text>
-                        <Text style={styles.regularPreviewField}>Gender: {bvnRecord.gender || 'N/A'}</Text>
-                        <Text style={styles.regularPreviewField}>BVN: {(bvnRecord.bvn || bvnNumber || '').replace(/(\d{3})(?=\d)/g, '$1 ')}</Text>
-                      </View>
-                      {bvnRecord.photo ? (
-                        <Image source={{ uri: `data:image/jpeg;base64,${bvnRecord.photo}` }} style={styles.regularPreviewPhoto} />
-                      ) : (
-                        <View style={styles.regularPreviewPhotoBlank} />
-                      )}
-                    </View>
-                  </View>
-
-                  <TouchableOpacity
-                    style={[styles.primaryButton, generatingBvnPdf && styles.primaryButtonDisabled]}
-                    onPress={handleDownloadBvn}
-                    disabled={generatingBvnPdf}
-                  >
-                    {generatingBvnPdf ? (
-                      <ActivityIndicator color={Colors.WHITE} />
-                    ) : (
-                      <Text style={styles.primaryButtonText}>Download PDF</Text>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.secondaryButton, generatingBvnPdf && styles.primaryButtonDisabled]}
-                    onPress={handleShareBvn}
-                    disabled={generatingBvnPdf}
-                  >
-                    <Text style={styles.secondaryButtonText}>Share PDF</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.secondaryButton} onPress={() => setBvnPrintOpen(false)} disabled={generatingBvnPdf}>
-                    <Text style={styles.secondaryButtonText}>Back to Result</Text>
-                  </TouchableOpacity>
+                <View style={styles.resultRow}>
+                  <Text style={styles.resultLabel}>Date of Birth</Text>
+                  <Text style={styles.resultValue}>{bvnRecord.dob || 'N/A'}</Text>
                 </View>
-              )}
+                <View style={styles.resultRow}>
+                  <Text style={styles.resultLabel}>Gender</Text>
+                  <Text style={styles.resultValue}>{bvnRecord.gender || 'N/A'}</Text>
+                </View>
+                <View style={styles.resultRow}>
+                  <Text style={styles.resultLabel}>Phone</Text>
+                  <Text style={styles.resultValue}>{bvnRecord.phone || 'N/A'}</Text>
+                </View>
+              </View>
+
+              <Text style={styles.readyText}>
+                Your {BVN_SLIP_TIERS.find((t) => t.id === selectedBvnTier)?.name} is ready to download.
+              </Text>
+              <TouchableOpacity
+                style={[styles.primaryButton, generatingBvnPdf && styles.primaryButtonDisabled]}
+                onPress={handleDownloadBvn}
+                disabled={generatingBvnPdf}
+              >
+                {generatingBvnPdf ? (
+                  <ActivityIndicator color={Colors.WHITE} />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Download PDF</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.secondaryButton, generatingBvnPdf && styles.primaryButtonDisabled]}
+                onPress={handleShareBvn}
+                disabled={generatingBvnPdf}
+              >
+                <Text style={styles.secondaryButtonText}>Share PDF</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.secondaryButton} onPress={handleResetBvn} disabled={generatingBvnPdf}>
+                <Text style={styles.secondaryButtonText}>Done</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -1460,6 +1544,26 @@ const styles = StyleSheet.create({
     padding: Spacing.L,
     marginBottom: Spacing.L,
   },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: Spacing.L,
+  },
+  successBannerIcon: {
+    color: Colors.WHITE,
+    backgroundColor: '#22A45D',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    textAlign: 'center',
+    lineHeight: 26,
+    fontSize: 16,
+    fontWeight: '700',
+    overflow: 'hidden',
+  },
+  successBannerText: { fontSize: 17, fontWeight: '700', color: '#22A45D' },
   resultName: { ...Typography.SECTION_HEADING, marginBottom: Spacing.M },
   resultRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: Spacing.S },
   resultLabel: { ...Typography.BODY, color: Colors.GRAY },
@@ -1478,6 +1582,9 @@ const styles = StyleSheet.create({
   matchIcon: { ...Typography.BODY, fontWeight: '600' },
   printDisclaimer: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.L, fontStyle: 'italic' },
   stepLabel: { ...Typography.SECTION_HEADING, marginBottom: Spacing.M },
+  sampleLabel: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.S, marginTop: Spacing.L, textAlign: 'center' },
+  consentNote: { ...Typography.CAPTION, color: Colors.GRAY, textAlign: 'center', marginTop: Spacing.S },
+  readyText: { ...Typography.CAPTION, color: Colors.GREEN, fontWeight: '600', marginTop: Spacing.M, marginBottom: Spacing.M, textAlign: 'center' },
   tierRow: { flexDirection: 'row', gap: Spacing.M, marginBottom: Spacing.M },
   tierCard: {
     flex: 1,
@@ -1501,7 +1608,7 @@ const styles = StyleSheet.create({
   radioSelected: { borderColor: Colors.GREEN },
   radioDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: Colors.GREEN },
   tierName: { ...Typography.BODY, fontWeight: '700', color: Colors.DARK, marginBottom: 2 },
-  tierValue: { ...Typography.CAPTION, color: Colors.GRAY, textDecorationLine: 'line-through' },
+  tierValue: { ...Typography.CAPTION, color: Colors.GREEN, fontWeight: '700' },
   freeNote: { ...Typography.CAPTION, color: Colors.GREEN, fontWeight: '600', marginBottom: Spacing.L, textAlign: 'center' },
   // Regular-tier on-screen preview
   regularPreview: {

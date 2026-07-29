@@ -5,6 +5,7 @@ import {
   Animated,
   Dimensions,
   StatusBar,
+  Image,
 } from 'react-native';
 import { Colors } from '../constants/colors';
 import { isAuthenticated } from '../lib/supabase';
@@ -61,7 +62,7 @@ export default function SplashScreen({ navigation }: SplashScreenProps) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.GREEN_DARK} />
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.WHITE} />
       <Animated.View
         style={[
           styles.logoContainer,
@@ -71,8 +72,8 @@ export default function SplashScreen({ navigation }: SplashScreenProps) {
           },
         ]}
       >
-        <View style={styles.logoCircle}>
-          <Animated.Text style={styles.logoText}>K</Animated.Text>
+        <View style={styles.logoTile}>
+          <Image source={require('../../assets/icon.png')} style={styles.logoImg} resizeMode="contain" />
         </View>
         <Animated.Text style={styles.appName}>Kay's Pay</Animated.Text>
       </Animated.View>
@@ -83,31 +84,28 @@ export default function SplashScreen({ navigation }: SplashScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.GREEN_DARK,
+    backgroundColor: Colors.WHITE,
     justifyContent: 'center',
     alignItems: 'center',
   },
   logoContainer: {
     alignItems: 'center',
   },
-  logoCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: Colors.GREEN,
+  logoTile: {
+    width: 160,
+    height: 160,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
   },
-  logoText: {
-    fontFamily: 'Helvetica-Bold',
-    fontSize: 48,
-    color: Colors.WHITE,
+  logoImg: {
+    width: 150,
+    height: 150,
   },
   appName: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 28,
-    color: Colors.WHITE,
+    color: Colors.GREEN,
     letterSpacing: 1,
   },
 });

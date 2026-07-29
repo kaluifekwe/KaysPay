@@ -12,6 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -23,16 +24,13 @@ import { useCachedData } from '../hooks/useCachedData';
 
 const QUICK_AMOUNTS = [500, 1000, 2000, 5000, 10000, 20000];
 
-// Bank-transfer funding now runs on Flutterwave Fixed Virtual Accounts
-// (Paystack's was never approved for live use). Account creation works,
-// but the real live transfer test (2026-07-04, via Opay to the assigned
-// Indulge MFB account) was REJECTED/REVERSED — a real transfer failed on
-// the banking rails, not just a display issue. `bank_code` is also
-// confirmed ignored by Flutterwave for real BVN-verified accounts (tried
-// both Wema "035" and Access "044", both silently overridden to Indulge).
-// DO NOT re-enable until Flutterwave explains/fixes the failed-transfer
-// issue, or a working alternative bank is confirmed.
-const BANK_TRANSFER_FUNDING_ENABLED = false;
+// Bank-transfer funding runs on Flutterwave Fixed Virtual Accounts, offered
+// alongside Paystack. Re-enabled 2026-07-26 after fixing the auth blocker
+// (live OAuth credentials were rejected) and configuring the live webhook.
+// The stale 2026-07-04 account (which had gone missing on Flutterwave's
+// side after the credential regeneration) was cleared so the app provisions
+// a fresh account under the current valid credentials. Under live testing.
+const BANK_TRANSFER_FUNDING_ENABLED = true;
 
 const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
@@ -40,6 +38,9 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [account, setAccount] = useState<VirtualAccount | null>(null);
   const [accountLoading, setAccountLoading] = useState(false);
+  // True until the first getMine() resolves — so users who already have an
+  // account see a loader instead of a flash of "Get my account number".
+  const [accountInitialLoading, setAccountInitialLoading] = useState(BANK_TRANSFER_FUNDING_ENABLED);
   const [showBvnInput, setShowBvnInput] = useState(false);
   const [bvnOrNin, setBvnOrNin] = useState('');
 
@@ -62,10 +63,27 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   } = useCachedData('wallet_balance', fetchBalanceOrThrow);
 
   useEffect(() => {
-    if (BANK_TRANSFER_FUNDING_ENABLED) {
-      virtualAccountService.getMine().then(setAccount);
+    if (!BANK_TRANSFER_FUNDING_ENABLED) {
+      setAccountInitialLoading(false);
+      return;
     }
+    virtualAccountService
+      .getMine()
+      .then(setAccount)
+      .finally(() => setAccountInitialLoading(false));
   }, []);
+
+  // Keep the balance current without the user having to leave and come back:
+  // refresh when the screen regains focus (e.g. returning from the Paystack
+  // checkout) and poll while it's open so a bank transfer that lands reflects
+  // here on its own.
+  useFocusEffect(
+    useCallback(() => {
+      fetchBalance();
+      const id = setInterval(fetchBalance, 10000);
+      return () => clearInterval(id);
+    }, [fetchBalance]),
+  );
 
   const handleGetAccount = async () => {
     if (!/^\d{11}$/.test(bvnOrNin)) {
@@ -98,29 +116,6 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     const cleaned = text.replace(/[^0-9.]/g, '');
     setCustomAmount(cleaned);
     setSelectedAmount(null);
-  };
-
-  const handleFundWallet = async () => {
-    const amount = getAmount();
-    if (amount <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter or select a valid amount.');
-      return;
-    }
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !user.email) {
-        Alert.alert('Error', 'Please log in to fund your wallet.');
-        return;
-      }
-
-      navigation.navigate('PaystackCheckout', {
-        amount,
-        email: user.email,
-      });
-    } catch (error) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
-    }
   };
 
   return (
@@ -172,61 +167,8 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               )}
             </TouchableOpacity>
 
-            <Text style={styles.sectionTitle}>Quick Amounts</Text>
-            <View style={styles.quickAmountsGrid}>
-              {QUICK_AMOUNTS.map((amount) => (
-                <TouchableOpacity
-                  key={amount}
-                  style={[
-                    styles.quickAmountButton,
-                    selectedAmount === amount && styles.quickAmountSelected,
-                  ]}
-                  onPress={() => handleQuickAmount(amount)}
-                >
-                  <Text
-                    style={[
-                      styles.quickAmountText,
-                      selectedAmount === amount && styles.quickAmountTextSelected,
-                    ]}
-                  >
-                    {formatNaira(amount)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.sectionTitle}>Custom Amount</Text>
-            <View style={styles.inputContainer}>
-              <Text style={styles.currencySymbol}>₦</Text>
-              <TextInput
-                style={styles.input}
-                value={customAmount}
-                onChangeText={handleCustomAmountChange}
-                placeholder="Enter amount"
-                placeholderTextColor={Colors.GRAY}
-                keyboardType="numeric"
-              />
-            </View>
-
-            <TouchableOpacity
-              style={[
-                styles.fundButton,
-                getAmount() <= 0 && styles.fundButtonDisabled,
-              ]}
-              onPress={handleFundWallet}
-              disabled={getAmount() <= 0}
-            >
-              <Text style={styles.fundButtonText}>Fund with Paystack</Text>
-            </TouchableOpacity>
-
             {BANK_TRANSFER_FUNDING_ENABLED && (
               <>
-                <View style={styles.dividerRow}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>OR</Text>
-                  <View style={styles.dividerLine} />
-                </View>
-
                 <Text style={styles.sectionTitle}>Fund by Bank Transfer</Text>
                 {account ? (
                   <View style={styles.transferCard}>
@@ -247,6 +189,10 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       <Text style={styles.transferLabel}>Account Name</Text>
                       <Text style={styles.transferValue}>{account.account_name}</Text>
                     </View>
+                  </View>
+                ) : accountInitialLoading ? (
+                  <View style={styles.transferCard}>
+                    <ActivityIndicator color={Colors.GREEN} />
                   </View>
                 ) : showBvnInput ? (
                   <View style={styles.transferCard}>

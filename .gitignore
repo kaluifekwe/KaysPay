@@ -53,3 +53,15 @@ emulator_screenshot.png
 
 # Supabase CLI local cache
 supabase/.temp/
+
+# Local dev junk (root only) — never push to the repo
+/*.aab
+/*.apk
+/*.log
+/metro*.log
+/phone_log.txt
+/scratch-*.js
+/screenshot*.png
+/emulator_screenshot.png
+/expo_*.txt
+/kayspay-site.zip

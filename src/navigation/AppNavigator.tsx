@@ -8,6 +8,7 @@ import TabNavigator from './TabNavigator';
 import { navigationRef } from './navigationRef';
 import AirtimeScreen from '../screens/AirtimeScreen';
 import DataScreen from '../screens/DataScreen';
+import TransactionStatusScreen from '../screens/TransactionStatusScreen';
 import BulkSendReviewScreen from '../screens/BulkSendReviewScreen';
 import BillsScreen from '../screens/BillsScreen';
 import ElectricityPayScreen from '../screens/ElectricityPayScreen';
@@ -16,9 +17,6 @@ import TVScreen from '../screens/TVScreen';
 import NinServicesScreen from '../screens/NinServicesScreen';
 import TravelEsimScreen from '../screens/TravelEsimScreen';
 import WalletFundingScreen from '../screens/WalletFundingScreen';
-import PaystackCheckoutScreen from '../screens/PaystackCheckoutScreen';
-import WithdrawScreen from '../screens/WithdrawScreen';
-import BankListScreen from '../screens/BankListScreen';
 import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
 import ForeignNumbersScreen from '../screens/ForeignNumbersScreen';
 import DollarCardsScreen from '../screens/DollarCardsScreen';
@@ -43,6 +41,7 @@ function MainStackScreen() {
       <MainStack.Screen name="HomeTabs" component={TabNavigator} />
       <MainStack.Screen name="Airtime" component={AirtimeScreen} />
       <MainStack.Screen name="Data" component={DataScreen} />
+      <MainStack.Screen name="TransactionStatus" component={TransactionStatusScreen} />
       <MainStack.Screen name="BulkSendReview" component={BulkSendReviewScreen} />
       <MainStack.Screen name="Bills" component={BillsScreen} />
       <MainStack.Screen name="ElectricityPay" component={ElectricityPayScreen} />
@@ -51,9 +50,6 @@ function MainStackScreen() {
       <MainStack.Screen name="NinServices" component={NinServicesScreen} />
       <MainStack.Screen name="TravelEsim" component={TravelEsimScreen} />
       <MainStack.Screen name="WalletFunding" component={WalletFundingScreen} />
-      <MainStack.Screen name="PaystackCheckout" component={PaystackCheckoutScreen} />
-      <MainStack.Screen name="Withdraw" component={WithdrawScreen} />
-      <MainStack.Screen name="BankList" component={BankListScreen} />
       <MainStack.Screen name="TransactionHistory" component={TransactionHistoryScreen} />
       <MainStack.Screen name="ForeignNumber" component={ForeignNumbersScreen} />
       <MainStack.Screen name="DollarCard" component={DollarCardsScreen} />

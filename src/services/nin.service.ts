@@ -102,14 +102,14 @@ export const ninService = {
    * check used by banks/schools/agents. Also the data source for the
    * printable slip/card view.
    */
-  async verifyNin(nin: string, claimed: NinVerifyClaim | undefined, authToken: string): Promise<NinVerifyResult> {
+  async verifyNin(nin: string, claimed: NinVerifyClaim | undefined, authToken: string, slipTier: string = 'regular'): Promise<NinVerifyResult> {
     try {
       const idempotencyKey = newIdempotencyKey();
       const { data, error } = await invokeWithRetry<any>(
         () =>
           withTimeout(
             supabase.functions.invoke('nin-verify', {
-              body: { nin, claimed, auth_token: authToken, idempotency_key: idempotencyKey },
+              body: { nin, claimed, auth_token: authToken, idempotency_key: idempotencyKey, slip_tier: slipTier },
             }),
           ),
         idempotencyKey,
@@ -165,14 +165,14 @@ export const ninService = {
   },
 
   /** Verifies a BVN against the bank's on-file record. */
-  async verifyBvn(bvn: string, authToken: string): Promise<BvnVerifyResult> {
+  async verifyBvn(bvn: string, authToken: string, slipTier: string = 'regular'): Promise<BvnVerifyResult> {
     try {
       const idempotencyKey = newIdempotencyKey();
       const { data, error } = await invokeWithRetry<any>(
         () =>
           withTimeout(
             supabase.functions.invoke('bvn-verify', {
-              body: { bvn, auth_token: authToken, idempotency_key: idempotencyKey },
+              body: { bvn, auth_token: authToken, idempotency_key: idempotencyKey, slip_tier: slipTier },
             }),
           ),
         idempotencyKey,

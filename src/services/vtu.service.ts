@@ -41,6 +41,9 @@ export interface VTUResult {
   // the request returns. `pending` means "not failed, just not final yet";
   // it'll complete or refund on its own shortly after.
   pending?: boolean;
+  // The server transaction id — lets the result screen poll this purchase
+  // until it settles (used by the Processing -> Successful status screen).
+  transaction_id?: string;
 }
 
 export interface BatchAirtimeRecipient {
@@ -355,6 +358,7 @@ async function purchase(
       pending: data.pending,
       message: data.message,
       order_id: data.order_id,
+      transaction_id: data.transaction_id,
       token: data.token,
       pins: data.pins,
       units: data.units,

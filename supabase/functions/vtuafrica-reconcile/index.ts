@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient, verifyCronSecret, withJobLock } from "../_shared/auth.ts";
+import { redactSecrets } from "../_shared/redact.ts";
 import {
   queryVTUAfrica,
   isVtuAfricaSuccess,
@@ -80,9 +81,13 @@ serve(async (req: Request) => {
           stillPending++;
         }
       } catch (e) {
+        // Keep the raw provider/network error OUT of transaction metadata (users
+        // can read their own rows via RLS). Store only a generic status; the
+        // redacted detail goes to the server logs for debugging.
+        console.error("vtuafrica-reconcile verify failed for tx", tx.id, ":", redactSecrets(e));
         await supabase
           .from("transactions")
-          .update({ metadata: { ...tx.metadata, last_reconcile_check: { at: new Date().toISOString(), error: (e as Error).message } } })
+          .update({ metadata: { ...tx.metadata, last_reconcile_check: { at: new Date().toISOString(), status: "verify_failed" } } })
           .eq("id", tx.id);
         stillPending++; // network hiccup this round — next sweep retries (queryVTUAfrica itself already retries transient DNS blips)
       }

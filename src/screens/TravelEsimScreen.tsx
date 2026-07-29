@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -12,6 +12,7 @@ import {
   Modal,
   Linking,
   Platform,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
@@ -28,6 +29,7 @@ import {
 import { walletService } from '../services/wallet.service';
 import { useCachedData } from '../hooks/useCachedData';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
+import ResultStatusView from '../components/ResultStatusView';
 
 interface TravelEsimScreenProps {
   navigation: {
@@ -157,6 +159,17 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
     setPlansError('');
   }, []);
 
+  // Phone/gesture back on the plan sub-screen returns to the country list
+  // (like the on-screen "<") instead of popping the whole screen to Home.
+  useEffect(() => {
+    const onHardwareBack = () => {
+      if (selectedCountry) { handleBackToBrowse(); return true; }
+      return false;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+    return () => sub.remove();
+  }, [selectedCountry, handleBackToBrowse]);
+
   const handlePay = useCallback(async () => {
     if (!selectedPlan || !selectedCountry || buyState === 'processing') return;
 
@@ -209,35 +222,56 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
     `${esimService.formatDataAmount(e.dataMB)}${e.days ? ` · ${e.days} days` : ''}`;
 
   // ---- Success screen ----
+  const buyAmount = selectedPlan ? selectedPlan.priceKobo / 100 : undefined;
+
+  // Tap Buy -> straight to Processing (set before the async call) -> Ready/Failed.
+  if (buyState === 'processing') {
+    return (
+      <ResultStatusView
+        status="processing"
+        headerTitle="eSIM"
+        amount={buyAmount}
+        processingHint="Setting up your eSIM…"
+      />
+    );
+  }
+
+  if (buyState === 'error') {
+    return (
+      <ResultStatusView
+        status="failed"
+        headerTitle="eSIM"
+        amount={buyAmount}
+        message={errorMessage || 'eSIM purchase failed. Please try again.'}
+        onDone={() => setBuyState('idle')}
+        doneLabel="Try Again"
+      />
+    );
+  }
+
   if (buyState === 'success') {
     return (
-      <SafeAreaView style={styles.container}>
-        <ScrollView contentContainerStyle={styles.resultContainer} showsVerticalScrollIndicator={false}>
-          <View style={styles.successIcon}>
-            <Text style={styles.successIconText}>{'✓'}</Text>
+      <ResultStatusView
+        status="success"
+        headerTitle="eSIM"
+        amount={resultPending ? undefined : buyAmount}
+        successLabel={resultPending ? 'eSIM Processing' : 'eSIM Ready'}
+        message={resultPending ? (resultMessage || "You'll be notified once it's ready. Check My eSIMs for updates.") : undefined}
+        onDone={handleDismissResult}
+      >
+        {!resultPending && (
+          <View style={{ alignItems: 'center', width: '100%' }}>
+            <Text style={styles.resultDetail}>{selectedCountry?.name}</Text>
+            <Text style={styles.resultDetail}>{selectedPlan?.name}</Text>
+            {resultQrUrl && (
+              <View style={styles.qrContainer}>
+                <Image source={{ uri: resultQrUrl }} style={styles.qrImage} resizeMode="contain" />
+                <Text style={styles.qrHint}>Scan this QR code in your phone's eSIM settings to install</Text>
+              </View>
+            )}
           </View>
-          <Text style={styles.resultTitle}>{resultPending ? 'eSIM Processing' : 'eSIM Ready'}</Text>
-          {resultPending ? (
-            <Text style={styles.resultDetail}>
-              {resultMessage || "You'll be notified once it's ready. Check My eSIMs for updates."}
-            </Text>
-          ) : (
-            <>
-              <Text style={styles.resultDetail}>{selectedCountry?.name}</Text>
-              <Text style={styles.resultDetail}>{selectedPlan?.name}</Text>
-              {resultQrUrl && (
-                <View style={styles.qrContainer}>
-                  <Image source={{ uri: resultQrUrl }} style={styles.qrImage} resizeMode="contain" />
-                  <Text style={styles.qrHint}>Scan this QR code in your phone's eSIM settings to install</Text>
-                </View>
-              )}
-            </>
-          )}
-          <TouchableOpacity style={styles.primaryButton} onPress={handleDismissResult}>
-            <Text style={styles.primaryButtonText}>Done</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
+        )}
+      </ResultStatusView>
     );
   }
 

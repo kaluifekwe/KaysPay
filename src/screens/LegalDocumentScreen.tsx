@@ -82,7 +82,7 @@ function PrivacyPolicyContent() {
           We never sell your personal information. We share only what's necessary, with the specific
           providers required to fulfil the service you requested:
         </Para>
-        <Bullet>Payment processors (Paystack, Flutterwave) — for wallet funding, withdrawals, and bank
+        <Bullet>Payment processors (Flutterwave) — for wallet funding and bank
           account verification.</Bullet>
         <Bullet>Airtime/data/bills/exam-pin providers (VTU.ng, VTUAfrica) — to deliver the
           specific product you purchased to the recipient number you provide.</Bullet>

@@ -1,8 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser } from "../_shared/auth.ts";
-import { getServicesList, isGrizzlySMSConfigured } from "../_shared/grizzlysms-client.ts";
-import { FOREIGN_NUMBER_SERVICES } from "../_shared/foreign-number-catalog.ts";
+import { getAuthUser, adminClient } from "../_shared/auth.ts";
+import { isSmspvaConfigured } from "../_shared/smspva-client.ts";
+import {
+  FOREIGN_NUMBER_SERVICES,
+  FOREIGN_NUMBER_COUNTRIES,
+  usdToNgnKobo,
+} from "../_shared/smspva-catalog.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -11,38 +15,37 @@ function json(body: unknown, status = 200) {
   });
 }
 
-// Codes deliberately kept out of the "Other" browse list (e.g. removed for
-// fraud-association reasons, same as the curated list). "mb" = Yahoo.
-const EXCLUDED_CODES = new Set(["mb"]);
-
-// Returns GrizzlySMS's full service catalog for the "Other / Browse all"
-// picker — everything NOT already in our curated popular list (those are
-// shown first) and not explicitly excluded. Read-only, no money moved.
+// Returns the curated service list, each with its cheapest available retail
+// price ("from ₦X") computed from the price cache — so the service picker can
+// show a starting price before the user drills in. Read-only, no money.
 serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
 
-  if (!isGrizzlySMSConfigured()) return json({ error: "Foreign Number provider not configured" }, 500);
+  if (!isSmspvaConfigured()) return json({ error: "Foreign Number provider not configured" }, 500);
 
   const user = await getAuthUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
 
+  const supabase = adminClient();
+  let cd: Record<string, Record<string, number>> | undefined;
   try {
-    const all = await getServicesList();
-    const curated = new Set(FOREIGN_NUMBER_SERVICES.map((s) => s.id));
+    const { data: cache } = await supabase.from("smspva_price_cache").select("data").eq("id", 1).maybeSingle();
+    cd = cache?.data as Record<string, Record<string, { p: number; c: number }>> | undefined;
+  } catch { /* no cache yet — fromKobo will be null */ }
 
-    const services = all
-      .filter((s) => s?.code && s?.name && !curated.has(s.code) && !EXCLUDED_CODES.has(s.code))
-      .map((s) => ({ id: s.code, name: s.name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+  // Cache holds only in-stock, under-cap combos, so the "from" price reflects
+  // the cheapest country that's actually available for the service right now.
+  const services = FOREIGN_NUMBER_SERVICES.map((s) => {
+    let minUsd = Infinity;
+    if (cd) {
+      for (const c of FOREIGN_NUMBER_COUNTRIES) {
+        const entry = cd[c.id]?.[s.id];
+        if (entry && typeof entry.p === "number" && entry.p < minUsd) minUsd = entry.p;
+      }
+    }
+    return { id: s.id, name: s.name, fromKobo: minUsd < Infinity ? usdToNgnKobo(minUsd) : null };
+  });
 
-    // Pin the catch-all at the very top with a clean name (GrizzlySMS's own
-    // label for "ot" is "AnyOther/Другой"). It's in the curated list too, so
-    // it was filtered out of `services` above — re-add it here, cleanly.
-    const withCatchAll = [{ id: "ot", name: "Any other service" }, ...services];
-
-    return json({ success: true, services: withCatchAll });
-  } catch {
-    return json({ success: false, error: "Could not load the full service list. Please try again." });
-  }
+  return json({ success: true, services });
 });

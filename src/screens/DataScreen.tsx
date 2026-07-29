@@ -148,23 +148,22 @@ export default function DataScreen({ navigation }: DataScreenProps) {
     if (!authResult) return;
 
     setErrorMessage('');
-    setBuyState('processing');
-
-    try {
-      const result = await vtuService.buyData(digits, effectiveNetwork, selectedBundle, authResult.token);
-
-      if (result.success) {
-        setResultPending(!!result.pending);
-        setBuyState('success');
-      } else {
-        setErrorMessage(result.error || Strings.ERROR_GENERIC);
-        setBuyState('idle');
-      }
-    } catch {
-      setErrorMessage(Strings.ERROR_GENERIC);
-      setBuyState('idle');
-    }
-  }, [phoneNumber, effectiveNetwork, selectedBundle, authorize]);
+    // Go STRAIGHT to the result screen — it runs the purchase itself and shows
+    // Processing -> Successful. No spinner on the Buy button first.
+    navigation.navigate('TransactionStatus', {
+      title: 'Data',
+      amount: selectedBundle.amount,
+      recipient: phoneNumber,
+      paymentMethod: 'Balance',
+      request: {
+        kind: 'data',
+        phone: digits,
+        network: effectiveNetwork,
+        bundle: selectedBundle,
+        authToken: authResult.token,
+      },
+    });
+  }, [phoneNumber, effectiveNetwork, selectedBundle, authorize, navigation]);
 
   const handleDismissResult = useCallback(() => {
     setBuyState('idle');

@@ -42,7 +42,6 @@ interface SettingsSection {
 export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   const { authorize } = useTransactionAuth();
   const [biometricEnabled, setBiometricEnabled] = useState(false);
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
@@ -123,18 +122,6 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       title: 'Account',
       items: [
         {
-          icon: 'call-outline',
-          label: 'Phone Number',
-          value: '0803 *** 4567',
-          onPress: () => {},
-        },
-        {
-          icon: 'mail-outline',
-          label: 'Email',
-          value: 'user@email.com',
-          onPress: () => {},
-        },
-        {
           icon: 'key-outline',
           label: 'Change PIN',
           onPress: () => navigation.navigate('ChangePin'),
@@ -150,13 +137,6 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           hasToggle: true,
           toggleValue: biometricEnabled,
           onToggle: handleBiometricToggle,
-        },
-        {
-          icon: 'shield-checkmark-outline',
-          label: 'Two-Factor Authentication',
-          hasToggle: true,
-          toggleValue: twoFactorEnabled,
-          onToggle: setTwoFactorEnabled,
         },
       ],
     },

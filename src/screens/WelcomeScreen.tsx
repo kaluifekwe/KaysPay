@@ -6,10 +6,12 @@ import {
   TouchableOpacity,
   Text,
   Animated,
-  FlatList,
+  FlatList,
   StatusBar,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
 const BRAND_GREEN = '#1A5C3A';
@@ -137,24 +139,106 @@ const ForeignNumbersSlide = () => (
   </View>
 );
 
+const AirtimeSlide = () => (
+  <View style={styles.slideIllustration}>
+    <View style={styles.illoPanel}>
+      <View style={styles.airtimeRow}>
+        <View style={styles.netStack}>
+          <View style={[styles.netDot, { backgroundColor: '#FFCB00' }]}><Text style={[styles.netDotText, { color: '#5B4A00' }]}>MTN</Text></View>
+          <View style={[styles.netDot, { backgroundColor: '#ED1C24' }]}><Text style={[styles.netDotText, { color: WHITE }]}>Airtel</Text></View>
+          <View style={[styles.netDot, { backgroundColor: '#1A6B3A' }]}><Text style={[styles.netDotText, { color: WHITE }]}>Glo</Text></View>
+        </View>
+        <View style={styles.phone}>
+          <View style={styles.phoneScreen}>
+            <Ionicons name="cellular" size={18} color={BRAND_GREEN} />
+            <Text style={styles.phoneAmount}>+₦500</Text>
+          </View>
+          <View style={styles.phoneHome} />
+        </View>
+      </View>
+    </View>
+  </View>
+);
+
+const DataSlide = () => (
+  <View style={styles.slideIllustration}>
+    <View style={styles.illoPanel}>
+      <View style={styles.dataCard}>
+        <View style={styles.flexOne}>
+          <Text style={styles.dataGb}>2GB</Text>
+          <Text style={styles.dataMeta}>30 days  ·  ₦730</Text>
+        </View>
+        <Ionicons name="wifi" size={30} color="#BFE0CC" />
+      </View>
+      <View style={styles.barsRow}>
+        <View style={[styles.bar, { height: 16 }]} />
+        <View style={[styles.bar, { height: 26 }]} />
+        <View style={[styles.bar, { height: 36 }]} />
+        <View style={[styles.bar, { height: 46, backgroundColor: '#C79A3A' }]} />
+      </View>
+    </View>
+  </View>
+);
+
+const EsimSlide = () => (
+  <View style={styles.slideIllustration}>
+    <View style={styles.illoPanel}>
+      <View style={styles.esimRow}>
+        <Ionicons name="globe-outline" size={104} color={BRAND_GREEN} />
+        <View style={styles.simChip}>
+          <View style={styles.simInner} />
+        </View>
+      </View>
+      <View style={styles.esimBadge}>
+        <Ionicons name="location-sharp" size={13} color={WHITE} />
+        <Text style={styles.esimBadgeText}>190+ countries</Text>
+      </View>
+    </View>
+  </View>
+);
+
+const NinSlide = () => (
+  <View style={styles.slideIllustration}>
+    <View style={styles.illoPanel}>
+      <View style={styles.ninCard}>
+        <View style={styles.ninHeader}><Text style={styles.ninHeaderText}>DIGITAL NIN SLIP</Text></View>
+        <View style={styles.ninBody}>
+          <View style={styles.ninAvatar}><Ionicons name="person" size={20} color={BRAND_GREEN} /></View>
+          <View style={styles.ninLines}>
+            <View style={styles.ninLine} />
+            <View style={[styles.ninLine, { width: '55%', backgroundColor: '#A9C6B4' }]} />
+            <Text style={styles.ninNumber}>{'•••• •••• 040'}</Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  </View>
+);
+
 const slides = [
   {
     id: '1',
-    title: 'Recharge by Name',
-    subtitle: 'Pick a contact, we detect the network. No typing.',
-    Component: SmartRechargeSlide,
+    title: 'Airtime in seconds',
+    subtitle: 'Top up any network instantly — for you, friends, or as a reseller.',
+    Component: AirtimeSlide,
   },
   {
     id: '2',
-    title: 'Your Dollar Card',
-    subtitle: 'Fund from Naira, shop Amazon, Netflix, ChatGPT anywhere.',
-    Component: DollarCardSlide,
+    title: 'Data that lasts',
+    subtitle: 'Affordable bundles for every network, delivered the moment you pay.',
+    Component: DataSlide,
   },
   {
     id: '3',
-    title: 'Get a Foreign Number',
-    subtitle: 'US, UK & Canada numbers for WhatsApp, PayPal, Fiverr and more.',
-    Component: ForeignNumbersSlide,
+    title: 'Travel eSIMs',
+    subtitle: 'Stay online abroad with instant eSIMs for 190+ countries.',
+    Component: EsimSlide,
+  },
+  {
+    id: '4',
+    title: 'NIN & BVN verification',
+    subtitle: 'Verify your NIN or BVN and download the slip in seconds.',
+    Component: NinSlide,
   },
 ];
 
@@ -243,8 +327,8 @@ export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {
       <StatusBar barStyle="dark-content" backgroundColor={WHITE} />
 
       <View style={styles.header}>
-        <View style={styles.logoCircle}>
-          <Text style={styles.logoText}>K</Text>
+        <View style={styles.logoTile}>
+          <Image source={require('../../assets/icon.png')} style={styles.logoImg} resizeMode="contain" />
         </View>
         <Text style={styles.appName}>Kay's Pay</Text>
         <Text style={styles.tagline}>Nigeria's All-in-One Payment App</Text>
@@ -303,24 +387,24 @@ const styles = StyleSheet.create({
     paddingTop: 32,
     paddingBottom: 8,
   },
-  logoCircle: {
+  logoTile: {
     width: 64,
     height: 64,
-    borderRadius: 32,
-    backgroundColor: BRAND_GREEN,
+    borderRadius: 16,
+    backgroundColor: WHITE,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 10,
-    shadowColor: BRAND_GREEN,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  logoText: {
-    fontFamily: 'Helvetica-Bold',
-    fontSize: 30,
-    color: WHITE,
+  logoImg: {
+    width: 64,
+    height: 64,
   },
   appName: {
     fontFamily: 'Helvetica-Bold',
@@ -367,6 +451,43 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     numberOfLines: 2,
   } as any,
+
+  illoPanel: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#E7F1EA',
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  flexOne: { flex: 1 },
+  airtimeRow: { flexDirection: 'row', alignItems: 'center', gap: 22 },
+  netStack: { gap: 12 },
+  netDot: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+  netDotText: { fontSize: 9, fontWeight: '700' },
+  phone: { width: 96, height: 156, borderRadius: 22, backgroundColor: BRAND_GREEN, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  phoneScreen: { width: 74, height: 108, borderRadius: 10, backgroundColor: WHITE, alignItems: 'center', justifyContent: 'center', gap: 6 },
+  phoneAmount: { fontSize: 17, fontWeight: '800', color: BRAND_GREEN },
+  phoneHome: { width: 34, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.6)' },
+  dataCard: { flexDirection: 'row', alignItems: 'center', width: 210, backgroundColor: BRAND_GREEN, borderRadius: 16, padding: 16 },
+  dataGb: { fontSize: 28, fontWeight: '800', color: WHITE },
+  dataMeta: { fontSize: 12, color: '#C7E0D1', marginTop: 3 },
+  barsRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 9, marginTop: 20, height: 46 },
+  bar: { width: 13, borderRadius: 3, backgroundColor: BRAND_GREEN },
+  esimRow: { flexDirection: 'row', alignItems: 'center' },
+  simChip: { width: 48, height: 58, borderRadius: 12, backgroundColor: '#C79A3A', alignItems: 'center', justifyContent: 'center', marginLeft: -10 },
+  simInner: { width: 28, height: 22, borderRadius: 5, backgroundColor: WHITE },
+  esimBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: BRAND_GREEN, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, marginTop: 18 },
+  esimBadgeText: { color: WHITE, fontSize: 12, fontWeight: '600' },
+  ninCard: { width: 230, backgroundColor: WHITE, borderRadius: 12, borderWidth: 1.5, borderColor: BRAND_GREEN, overflow: 'hidden' },
+  ninHeader: { backgroundColor: BRAND_GREEN, paddingVertical: 7, alignItems: 'center' },
+  ninHeaderText: { color: WHITE, fontSize: 9, fontWeight: '700', letterSpacing: 1 },
+  ninBody: { flexDirection: 'row', alignItems: 'center', padding: 14 },
+  ninAvatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#E7F1EA', borderWidth: 1, borderColor: BRAND_GREEN, alignItems: 'center', justifyContent: 'center' },
+  ninLines: { flex: 1, marginLeft: 14 },
+  ninLine: { height: 7, borderRadius: 4, backgroundColor: BRAND_GREEN, width: '85%', marginBottom: 7 },
+  ninNumber: { fontSize: 12, fontWeight: '700', letterSpacing: 2, color: BRAND_GREEN, marginTop: 4 },
 
   dotsContainer: {
     flexDirection: 'row',

@@ -74,7 +74,7 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
   const formattedPhone = useMemo(() => formatNigerianPhone(phoneNumber), [phoneNumber]);
   const isValidPhone = useMemo(() => validateNigerianPhone(phoneNumber), [phoneNumber]);
   const numericAmount = useMemo(() => parseInt(amount, 10), [amount]);
-  const isValidAmount = !isNaN(numericAmount) && numericAmount > 0 && numericAmount <= 50000;
+  const isValidAmount = !isNaN(numericAmount) && numericAmount >= 100 && numericAmount <= 50000;
 
   const canProceed = isValidPhone && selectedNetwork && isValidAmount && !isProcessing;
 
@@ -140,40 +140,22 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
     const authResult = await authorize({ title: 'Confirm Airtime Purchase', amount: numericAmount });
     if (!authResult) return;
 
-    setIsProcessing(true);
-    try {
-      const result = await vtuService.buyAirtime(
-        phoneNumber,
-        selectedNetwork,
-        numericAmount,
-        authResult.token,
-      );
-
-      if (result.success) {
-        Alert.alert(
-          result.pending ? 'Order Processing' : Strings.SUCCESS_TRANSACTION,
-          result.pending
-            ? result.message || 'Your order is still processing. You will be notified once it completes.'
-            : `${formatNaira(numericAmount)} airtime has been sent to ${formattedPhone}`,
-          [{ text: 'OK', onPress: () => navigation.goBack() }],
-        );
-      } else {
-        Alert.alert(
-          'Purchase Failed',
-          result.error || Strings.ERROR_GENERIC,
-          [{ text: 'OK' }],
-        );
-      }
-    } catch {
-      Alert.alert(
-        'Error',
-        Strings.ERROR_GENERIC,
-        [{ text: 'OK' }],
-      );
-    } finally {
-      setIsProcessing(false);
-    }
-  }, [canProceed, selectedNetwork, formattedPhone, numericAmount, navigation, authorize]);
+    // Go STRAIGHT to the result screen — it runs the purchase itself and shows
+    // Processing -> Successful. No spinner on the Pay button first.
+    navigation.navigate('TransactionStatus', {
+      title: 'Airtime',
+      amount: numericAmount,
+      recipient: formattedPhone,
+      paymentMethod: 'Balance',
+      request: {
+        kind: 'airtime',
+        phone: phoneNumber,
+        network: selectedNetwork,
+        amount: numericAmount,
+        authToken: authResult.token,
+      },
+    });
+  }, [canProceed, selectedNetwork, formattedPhone, numericAmount, phoneNumber, navigation, authorize]);
 
   const networkInfo = useMemo(() => {
     if (!selectedNetwork) return null;
@@ -338,7 +320,7 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
             </View>
             {numericAmount > 0 && !isValidAmount && (
               <Text style={styles.amountError}>
-                {numericAmount > 50000 ? 'Maximum amount is ₦50,000' : 'Enter a valid amount'}
+                {numericAmount > 50000 ? 'Maximum amount is ₦50,000' : 'Minimum airtime is ₦100'}
               </Text>
             )}
           </View>

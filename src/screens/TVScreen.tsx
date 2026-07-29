@@ -84,29 +84,23 @@ export default function TVScreen({ navigation }: TVScreenProps) {
     if (!authResult) return;
 
     setErrorMessage('');
-    setBuyState('processing');
-
-    try {
-      const result = await vtuService.buyTVSubscription(
-        selectedProvider.id,
-        digits,
-        selectedBouquet.id,
-        selectedBouquet.amount,
-        authResult.token,
-      );
-
-      if (result.success) {
-        setResultPending(!!result.pending);
-        setBuyState('success');
-      } else {
-        setErrorMessage(result.error || 'Something went wrong. Please try again.');
-        setBuyState('idle');
-      }
-    } catch {
-      setErrorMessage('Something went wrong. Please try again.');
-      setBuyState('idle');
-    }
-  }, [selectedProvider, selectedBouquet, smartcardNumber, authorize]);
+    // Go STRAIGHT to the result screen — it runs the purchase itself and shows
+    // Processing -> Successful. No spinner on the Pay button first.
+    navigation.navigate('TransactionStatus', {
+      title: 'TV Subscription',
+      amount: selectedBouquet.amount,
+      recipient: digits,
+      paymentMethod: 'Balance',
+      request: {
+        kind: 'tv',
+        providerId: selectedProvider.id,
+        smartcardNumber: digits,
+        bouquetId: selectedBouquet.id,
+        amount: selectedBouquet.amount,
+        authToken: authResult.token,
+      },
+    });
+  }, [selectedProvider, selectedBouquet, smartcardNumber, navigation, authorize]);
 
   const handleDismissResult = useCallback(() => {
     setBuyState('idle');

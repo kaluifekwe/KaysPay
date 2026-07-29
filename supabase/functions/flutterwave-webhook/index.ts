@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient } from "../_shared/auth.ts";
+import { redactSecrets } from "../_shared/redact.ts";
 
 const FLW_WEBHOOK_SECRET = Deno.env.get("FLUTTERWAVE_WEBHOOK_SECRET");
 
@@ -79,7 +80,7 @@ serve(async (req: Request) => {
       headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Flutterwave webhook processing error:", (error as Error).message);
+    console.error("Flutterwave webhook processing error:", redactSecrets(error));
     return new Response(JSON.stringify({ error: "Processing error" }), { status: 500 });
   }
 });

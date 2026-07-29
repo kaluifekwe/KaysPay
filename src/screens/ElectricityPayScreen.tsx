@@ -69,32 +69,25 @@ export default function ElectricityPayScreen(props: any) {
     if (!authResult) return;
 
     setErrorMessage('');
-    setBuyState('processing');
-
-    try {
-      const result = await vtuService.buyElectricity(
-        provider.id,
-        meterNumber.trim(),
-        numericAmount,
-        provider.type,
-        authResult.token,
-      );
-
-      if (result.success) {
-        setResultToken(result.token || null);
-        setResultUnits(result.units || null);
-        setResultPending(!!result.pending);
-        setResultOrderId(result.order_id || null);
-        setBuyState('success');
-      } else {
-        setErrorMessage(result.error || 'Electricity purchase failed. Please try again.');
-        setBuyState('error');
-      }
-    } catch {
-      setErrorMessage('An unexpected error occurred. Please check your connection and try again.');
-      setBuyState('error');
-    }
-  }, [canProceed, provider, meterNumber, numericAmount, authorize]);
+    // Go STRAIGHT to the result screen — it runs the purchase itself and shows
+    // Processing -> Successful (with the meter token, units, and Download/Share
+    // Receipt). No spinner on the Pay button first.
+    navigation.navigate('TransactionStatus', {
+      title: 'Electricity',
+      amount: numericAmount,
+      recipient: meterNumber.trim(),
+      paymentMethod: 'Balance',
+      electricity: { providerName: provider.name, meterType: provider.type },
+      request: {
+        kind: 'electricity',
+        providerId: provider.id,
+        meterNumber: meterNumber.trim(),
+        amount: numericAmount,
+        type: provider.type,
+        authToken: authResult.token,
+      },
+    });
+  }, [canProceed, provider, meterNumber, numericAmount, navigation, authorize]);
 
   const buildReceiptHtml = useCallback(
     () =>

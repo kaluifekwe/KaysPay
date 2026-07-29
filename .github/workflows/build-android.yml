@@ -1,0 +1,59 @@
+name: Build Android AAB
+
+# Builds a signed Android App Bundle (.aab) FOR FREE on GitHub's runners using
+# `eas build --local` — no EAS cloud queue, no build credits. Credentials (the
+# Play upload keystore) are pulled from EAS automatically via EXPO_TOKEN, so the
+# .aab is signed with the same key as before and Google accepts it.
+#
+# Setup (one time):
+#   1. Add repo secret EXPO_TOKEN = an Expo access token
+#      (expo.dev -> account settings -> Access tokens -> Create).
+# Run it: Actions tab -> "Build Android AAB" -> Run workflow.
+# Download: the finished run's Artifacts -> kayspay-android-aab.
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'EAS build profile'
+        default: 'production'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build AAB locally (free, no EAS queue)
+        run: eas build --platform android --profile ${{ github.event.inputs.profile }} --local --non-interactive --output "${{ github.workspace }}/kayspay-release.aab"
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kayspay-android-aab
+          path: kayspay-release.aab
+          retention-days: 14

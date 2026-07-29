@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, StyleSheet, Text, ScrollView, TouchableOpacity, Alert, Image } from 'react-native';
+import { View, StyleSheet, Text, ScrollView, TouchableOpacity, Alert, Image, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -14,6 +14,7 @@ interface Row {
   label: string;
   screen?: string;
   params?: any;
+  action?: 'support';
 }
 
 // The "Account" tab — a hub linking to the account/settings screens that
@@ -23,17 +24,10 @@ const SECTIONS: { title: string; rows: Row[] }[] = [
   {
     title: 'Account',
     rows: [
-      { icon: 'person-outline', label: 'Profile', screen: 'Profile' },
       { icon: 'shield-checkmark-outline', label: 'Verification (KYC)', screen: 'Kyc' },
       { icon: 'key-outline', label: 'Change PIN', screen: 'ChangePin' },
       { icon: 'settings-outline', label: 'Settings', screen: 'Settings' },
-    ],
-  },
-  {
-    title: 'Activity',
-    rows: [
-      { icon: 'receipt-outline', label: 'Transaction History', screen: 'TransactionHistory' },
-      { icon: 'notifications-outline', label: 'Notifications', screen: 'Notifications' },
+      { icon: 'chatbubble-ellipses-outline', label: 'Contact Support', action: 'support' },
     ],
   },
   {
@@ -71,6 +65,14 @@ export default function MoreScreen({ navigation }: any) {
       };
     }, []),
   );
+
+  // wa.me works whether or not WhatsApp is installed (falls back to the
+  // Play Store / WhatsApp Web), so no need to check canOpenURL first.
+  const handleOpenSupport = useCallback(() => {
+    Linking.openURL('https://wa.me/2348028387709').catch(() =>
+      Alert.alert('Could not open WhatsApp', 'Please make sure WhatsApp is installed.'),
+    );
+  }, []);
 
   const handleLogout = useCallback(() => {
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
@@ -132,7 +134,13 @@ export default function MoreScreen({ navigation }: any) {
                   key={row.label}
                   style={[styles.row, i < section.rows.length - 1 && styles.rowBorder]}
                   activeOpacity={0.6}
-                  onPress={() => row.screen && navigation.navigate(row.screen, row.params)}
+                  onPress={() => {
+                    if (row.action === 'support') {
+                      handleOpenSupport();
+                    } else if (row.screen) {
+                      navigation.navigate(row.screen, row.params);
+                    }
+                  }}
                 >
                   <Ionicons name={row.icon} size={20} color={Colors.GREEN} style={styles.rowIcon} />
                   <Text style={styles.rowLabel}>{row.label}</Text>

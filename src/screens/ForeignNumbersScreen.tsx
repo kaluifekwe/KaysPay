@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
@@ -32,6 +33,13 @@ type Step = 'service' | 'country' | 'confirm' | 'waiting' | 'done';
 
 const POLL_INTERVAL_MS = 4000;
 
+// 2-letter country code → flag emoji (SMSPVA uses "UK" for the UK, not "GB").
+function countryFlag(code: string): string {
+  const cc = (code === 'UK' ? 'GB' : code || '').toUpperCase();
+  if (!/^[A-Z]{2}$/.test(cc)) return '';
+  return String.fromCodePoint(...[...cc].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65));
+}
+
 export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScreenProps) {
   const { authorize } = useTransactionAuth();
   const insets = useSafeAreaInsets();
@@ -48,6 +56,8 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
   const [selectedCountry, setSelectedCountry] = useState<ForeignNumberCountry | null>(null);
   const [serviceSearch, setServiceSearch] = useState('');
   const [countrySearch, setCountrySearch] = useState('');
+  const [countrySort, setCountrySort] = useState<'cheapest' | 'az'>('cheapest');
+  const [fromPrices, setFromPrices] = useState<Record<string, number>>({});
 
   const [showAllServices, setShowAllServices] = useState(false);
   const [allServices, setAllServices] = useState<FNService[]>([]);
@@ -70,11 +80,18 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Load each service's "from ₦X" starting price once, for the service picker.
+  useEffect(() => {
+    foreignNumberService.getServiceFromPrices().then(setFromPrices).catch(() => {});
+  }, []);
+
   const filteredCountries = useMemo(() => {
     const q = countrySearch.trim().toLowerCase();
-    if (!q) return availableCountries;
-    return availableCountries.filter((c) => c.name.toLowerCase().includes(q));
-  }, [availableCountries, countrySearch]);
+    const base = q ? availableCountries.filter((c) => c.name.toLowerCase().includes(q)) : availableCountries;
+    return [...base].sort((a, b) =>
+      countrySort === 'cheapest' ? a.priceKobo - b.priceKobo : a.name.localeCompare(b.name),
+    );
+  }, [availableCountries, countrySearch, countrySort]);
 
   // Curated popular list, or (in "browse all" mode) the full ~2,400-service
   // catalog filtered by search and capped so we never render thousands of
@@ -145,15 +162,25 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
     setAvailableCountries(result.countries || []);
   }, []);
 
-  // The country row already carries its live price, so we go straight to
-  // confirm — no extra price call needed.
-  const handleCountrySelect = useCallback((country: AvailableCountry) => {
+  // The list is served from a price cache (fast), so a country can be listed
+  // but momentarily out of stock. Re-check LIVE at selection so a sold-out
+  // country is caught here — before the user pays — not at purchase.
+  const handleCountrySelect = useCallback(async (country: AvailableCountry) => {
     setSelectedCountry({ id: country.id, name: country.name });
-    setPriceKobo(country.priceKobo);
-    setAvailable(country.available);
+    setPriceKobo(country.priceKobo); // show the list price immediately
+    setAvailable(null);
     setPriceError('');
     setStep('confirm');
-  }, []);
+    setLoadingPrice(true);
+    const result = await foreignNumberService.getPrice(selectedService?.id ?? '', country.id);
+    setLoadingPrice(false);
+    if (result.success && result.priceKobo != null) {
+      setPriceKobo(result.priceKobo);
+      setAvailable(result.available ?? null);
+    } else {
+      setPriceError(result.error || 'This country just sold out. Please pick another.');
+    }
+  }, [selectedService]);
 
   const startPolling = useCallback((id: string) => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -164,7 +191,11 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
       if (pollRef.current) clearInterval(pollRef.current);
 
       if (result.cancelled) {
-        setWaitMessage('This number was cancelled by the provider.');
+        setWaitMessage(
+          result.refunded
+            ? 'No code arrived, so this number was cancelled and your wallet has been refunded. You can try another number or country.'
+            : 'This number was cancelled by the provider. If you were charged, tap cancel to request a refund.',
+        );
         return;
       }
       if (result.code) {
@@ -184,7 +215,7 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
     setPurchasing(true);
 
     try {
-      const result = await foreignNumberService.purchase(selectedService.id, selectedCountry.id, authResult.token, selectedService.name);
+      const result = await foreignNumberService.purchase(selectedService.id, selectedCountry.id, authResult.token, selectedService.name, priceKobo ?? undefined);
 
       if (result.success && result.activation_id && result.phone_number) {
         setActivationId(result.activation_id);
@@ -271,6 +302,19 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
     navigation.goBack();
   }, [step, navigation, showAllServices, handleBackToPopular]);
 
+  // Make the phone's hardware/gesture back button step BACK through the flow
+  // (like the on-screen "<"), instead of popping the whole screen to Home. It
+  // only leaves the screen when already at the first step (service picker).
+  useEffect(() => {
+    const onHardwareBack = () => {
+      if (step === 'service' && !showAllServices) return false; // let it exit to Home
+      handleBack();
+      return true; // consumed — we handled it in-screen
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+    return () => sub.remove();
+  }, [step, showAllServices, handleBack]);
+
   if (step === 'done') {
     return (
       <SafeAreaView style={styles.container}>
@@ -280,7 +324,7 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
           </View>
           <Text style={styles.resultTitle}>Code Received</Text>
           <Text style={styles.resultDetail}>{selectedService?.name} · {selectedCountry?.name}</Text>
-          <Text style={styles.resultDetail}>{phoneNumber}</Text>
+          <Text style={styles.resultDetail}>{`+${phoneNumber.replace(/^\++/, '')}`}</Text>
           <View style={styles.codeContainer}>
             <Text style={styles.codeLabel}>Verification Code</Text>
             <Text style={styles.codeValue}>{receivedCode}</Text>
@@ -302,10 +346,10 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
           <Text style={styles.resultDetail}>{selectedService?.name} · {selectedCountry?.name}</Text>
           <View style={styles.phoneContainer}>
             <Text style={styles.codeLabel}>Your Temporary Number</Text>
-            <Text style={styles.phoneValue} selectable>{`+${phoneNumber}`}</Text>
+            <Text style={styles.phoneValue} selectable>{`+${phoneNumber.replace(/^\++/, '')}`}</Text>
           </View>
           <Text style={styles.waitHint}>
-            Use this number to request a verification code on {selectedService?.name}. It'll appear here automatically once it arrives. If no code comes, wait about 2 minutes, then cancel for a refund.
+            Use this number to request a verification code on {selectedService?.name}. It'll appear here automatically once it arrives. If no code comes within a few minutes, tap below to cancel and get an instant refund.
           </Text>
           {waitMessage ? <Text style={styles.amountError}>{waitMessage}</Text> : null}
           <TouchableOpacity
@@ -373,7 +417,12 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
                     activeOpacity={0.7}
                   >
                     <Text style={styles.countryName}>{service.name}</Text>
-                    <Text style={styles.countryArrow}>{'>'}</Text>
+                    <View style={styles.countryRight}>
+                      {fromPrices[service.id] ? (
+                        <Text style={styles.fromPrice}>from {formatNaira(fromPrices[service.id] / 100)}</Text>
+                      ) : null}
+                      <Text style={styles.countryArrow}>{'>'}</Text>
+                    </View>
                   </TouchableOpacity>
                 ))}
                 {filteredServices.length === 0 && (
@@ -445,6 +494,23 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
                   placeholder="Search country..."
                   placeholderTextColor={Colors.GRAY}
                 />
+                <View style={styles.sortRow}>
+                  <Text style={styles.sortLabel}>Sort:</Text>
+                  <TouchableOpacity
+                    style={[styles.sortChip, countrySort === 'cheapest' && styles.sortChipActive]}
+                    onPress={() => setCountrySort('cheapest')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.sortChipText, countrySort === 'cheapest' && styles.sortChipTextActive]}>Cheapest</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.sortChip, countrySort === 'az' && styles.sortChipActive]}
+                    onPress={() => setCountrySort('az')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.sortChipText, countrySort === 'az' && styles.sortChipTextActive]}>A–Z</Text>
+                  </TouchableOpacity>
+                </View>
                 <View style={styles.countryList}>
                   {filteredCountries.map((country) => (
                     <TouchableOpacity
@@ -453,7 +519,7 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
                       onPress={() => handleCountrySelect(country)}
                       activeOpacity={0.7}
                     >
-                      <Text style={styles.countryName}>{country.name}</Text>
+                      <Text style={styles.countryName}>{countryFlag(country.id)}  {country.name}</Text>
                       <View style={styles.countryRight}>
                         <Text style={styles.countryPrice}>{formatNaira(country.priceKobo / 100)}</Text>
                         <Text style={styles.countryArrow}>{'>'}</Text>
@@ -504,7 +570,7 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
                   </Text>
                 )}
                 <Text style={styles.disclaimer}>
-                  Single-use number. If no code arrives, you can cancel for a refund (wait about 2 minutes before cancelling so the provider accepts it). Once a code is received, the purchase can't be refunded.
+                  One-time number — it receives a single code, then expires in about 15 minutes. If no code arrives, you're refunded automatically. Once a code is received, the purchase can't be refunded.
                 </Text>
               </>
             ) : null}
@@ -613,6 +679,44 @@ const styles = StyleSheet.create({
     color: Colors.GREEN,
     fontWeight: '600',
     marginRight: Spacing.M,
+  },
+  fromPrice: {
+    ...Typography.CAPTION,
+    color: Colors.GREEN,
+    fontWeight: '600',
+    marginRight: Spacing.M,
+  },
+  sortRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Spacing.S,
+    marginBottom: Spacing.S,
+  },
+  sortLabel: {
+    ...Typography.CAPTION,
+    color: Colors.GRAY,
+    marginRight: Spacing.S,
+  },
+  sortChip: {
+    paddingHorizontal: Spacing.M,
+    paddingVertical: Spacing.XS,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.BORDER,
+    marginRight: Spacing.S,
+    backgroundColor: Colors.WHITE,
+  },
+  sortChipActive: {
+    backgroundColor: Colors.GREEN_LIGHT,
+    borderColor: Colors.GREEN,
+  },
+  sortChipText: {
+    ...Typography.CAPTION,
+    color: Colors.GRAY,
+    fontWeight: '600',
+  },
+  sortChipTextActive: {
+    color: Colors.GREEN_DARK,
   },
   emptyTitle: {
     ...Typography.SECTION_HEADING,

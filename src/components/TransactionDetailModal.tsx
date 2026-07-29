@@ -9,7 +9,7 @@ import { safeErrorMessage } from '../utils/errorMessages';
 import { downloadPdf, sharePdf } from '../utils/pdf';
 import { buildElectricityReceiptHtml } from '../utils/receipts';
 import { vtuService } from '../services/vtu.service';
-import { buildBvnSlipTraditionalHtml, getEmblemBase64 } from '../screens/NinServicesScreen';
+import { buildBvnSlipTraditionalHtml, buildBvnCardHtml, getEmblemBase64 } from '../screens/NinServicesScreen';
 import type { BvnRecord } from '../services/nin.service';
 
 export interface TransactionDetailItem {
@@ -137,6 +137,13 @@ export default function TransactionDetailModal({
   const electricityToken: string | undefined = transaction.metadata?.token;
   const electricityRequest = transaction.metadata?.request;
 
+  // Exam PIN(s) are persisted into the transaction at completion so they can be
+  // re-read here anytime — the user must be able to SEE them (to use), so they
+  // render as selectable text, not just a receipt.
+  const examPins: string[] | undefined = Array.isArray(transaction.metadata?.pins)
+    ? (transaction.metadata?.pins as string[]).filter((x) => typeof x === 'string')
+    : undefined;
+
   // Re-downloadable BVN slip: a successful BVN verification stores the full
   // record in its metadata, so the slip can be rebuilt any time from History —
   // no re-verification, no charge.
@@ -145,6 +152,12 @@ export default function TransactionDetailModal({
       ? (transaction.metadata?.record as BvnRecord | undefined)
       : undefined;
   const bvnSlipNumber = String(bvnSlipRecord?.bvn || transaction.recipientPhone || '');
+  // Rebuild the SAME slip type the user paid for (regular slip vs card).
+  const bvnSlipIsCard = transaction.metadata?.slip_tier === 'card';
+  const buildBvnSlipHtml = async () =>
+    bvnSlipIsCard
+      ? buildBvnCardHtml(bvnSlipRecord!, bvnSlipNumber)
+      : buildBvnSlipTraditionalHtml(bvnSlipRecord!, bvnSlipNumber, await getEmblemBase64());
 
   const buildElectricityReceipt = () =>
     buildElectricityReceiptHtml({
@@ -188,9 +201,8 @@ export default function TransactionDetailModal({
     if (!bvnSlipRecord) return;
     setGeneratingPdf(true);
     try {
-      const emblem = await getEmblemBase64();
-      const html = buildBvnSlipTraditionalHtml(bvnSlipRecord, bvnSlipNumber, emblem);
-      await downloadPdf(html, `BVN_Slip_${bvnSlipNumber || transaction.id}`);
+      const html = await buildBvnSlipHtml();
+      await downloadPdf(html, `BVN_${bvnSlipIsCard ? 'Card' : 'Slip'}_${bvnSlipNumber || transaction.id}`);
       Alert.alert(
         Platform.OS === 'android' ? 'Downloaded' : 'Saved',
         Platform.OS === 'android' ? 'Slip saved to the folder you selected.' : 'Choose "Save to Files" to store it on your device.',
@@ -206,9 +218,8 @@ export default function TransactionDetailModal({
     if (!bvnSlipRecord) return;
     setGeneratingPdf(true);
     try {
-      const emblem = await getEmblemBase64();
-      const html = buildBvnSlipTraditionalHtml(bvnSlipRecord, bvnSlipNumber, emblem);
-      await sharePdf(html, 'Share your BVN slip');
+      const html = await buildBvnSlipHtml();
+      await sharePdf(html, bvnSlipIsCard ? 'Share your BVN card' : 'Share your BVN slip');
     } catch (e) {
       Alert.alert('Error', safeErrorMessage(e, 'Could not generate the slip. Please try again.'));
     } finally {
@@ -282,6 +293,13 @@ export default function TransactionDetailModal({
                 >
                   <Text style={styles.receiptButtonSecondaryText}>Share Receipt</Text>
                 </TouchableOpacity>
+              </View>
+            )}
+
+            {examPins && examPins.length > 0 && (
+              <View style={styles.receiptSection}>
+                <Text style={styles.sectionTitle}>{examPins.length > 1 ? 'Your PINs' : 'Your PIN'}</Text>
+                <Text style={styles.pinValue} selectable>{examPins.join('\n')}</Text>
               </View>
             )}
 
@@ -499,6 +517,13 @@ const styles = StyleSheet.create({
     ...Typography.SECTION_HEADING,
     color: Colors.DARK,
     marginBottom: Spacing.S,
+  },
+  pinValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.DARK,
+    letterSpacing: 1,
+    lineHeight: 28,
   },
   closeButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
