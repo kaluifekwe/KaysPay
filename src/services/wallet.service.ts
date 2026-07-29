@@ -31,9 +31,28 @@ export const walletService = {
         .from('wallets')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
+
+      // A brand-new user's wallet row may not exist yet — it's created
+      // server-side on the first credit. That's a genuinely empty wallet (₦0),
+      // NOT a load failure, so return zero instead of surfacing "Couldn't load
+      // balance". A real network/RLS error still throws above and keeps the
+      // retry state, so "empty" and "couldn't check" don't get conflated.
+      if (!data) {
+        return {
+          success: true,
+          wallet: {
+            id: '',
+            user_id: user.id,
+            balance: 0,
+            locked_amount: 0,
+            available_balance: 0,
+            updated_at: new Date().toISOString(),
+          },
+        };
+      }
 
       // Server stores kobo; expose naira to the rest of the app.
       const wallet = {
