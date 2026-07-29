@@ -104,8 +104,12 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
   }, [phoneNumber, isManualNetwork]);
 
   const handlePhoneChange = useCallback((text: string) => {
-    const cleaned = text.replace(/[^0-9]/g, '').slice(0, 11);
-    setPhoneNumber(cleaned);
+    let digits = text.replace(/[^0-9]/g, '');
+    // A pasted international format (+234 803… or 234 803…) normalizes to the
+    // local 0-prefixed form, so copy-pasting a full number keeps all 11 digits
+    // instead of losing the country code (or being cut mid-number).
+    if (digits.startsWith('234')) digits = '0' + digits.slice(3);
+    setPhoneNumber(digits.slice(0, 11));
     setIsManualNetwork(false);
   }, []);
 
@@ -232,7 +236,6 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
               placeholder={Strings.PHONE_INPUT_PLACEHOLDER}
               placeholderTextColor={Colors.GRAY}
               keyboardType="phone-pad"
-              maxLength={11}
               editable={!isProcessing}
             />
             {phoneNumber.length > 0 && (

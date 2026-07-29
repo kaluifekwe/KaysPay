@@ -16,7 +16,7 @@ export const Strings = {
   // Auth
   PHONE_INPUT_TITLE: "Enter Your Phone Number",
   PHONE_INPUT_SUBTITLE: "We'll send you a 6-digit verification code",
-  PHONE_INPUT_PLACEHOLDER: "0803 123 4567",
+  PHONE_INPUT_PLACEHOLDER: "Enter phone number",
   PHONE_INPUT_BUTTON: "Send OTP",
   OTP_TITLE: "Verify Your Number",
   OTP_SUBTITLE: "Enter the 6-digit code sent to",
