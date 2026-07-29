@@ -400,35 +400,22 @@ serve(async (req: Request) => {
       }
     };
 
-    // Run the provider call in the BACKGROUND and return to the phone right
-    // away. VTUAfrica's purchase endpoint holds the connection open for the
-    // whole 2-13s (up to 20s) it takes to reach the telco — and keeping one
-    // long HTTPS connection open for that long is exactly what stalls and
-    // drops on poor Nigerian mobile networks. The debit is already recorded,
-    // so nothing about the money outcome depends on the phone staying
-    // connected: the result screen polls the transaction row to flip
-    // Processing -> Successful/Failed, and vtuafrica-reconcile is the backstop.
-    // The one-time meter token / exam PIN(s) are persisted to the transaction
-    // metadata inside settle(), so the poll path surfaces them on completion.
+    // Await the provider call fully before responding. The worker MUST stay
+    // alive until the airtime/data order actually settles.
     //
-    // EdgeRuntime.waitUntil keeps the background task alive after this response
-    // is sent. A plain fire-and-forget promise gets killed the moment the
-    // response returns — that's why the earlier "finish in the background"
-    // attempt left slow orders stuck 'pending'. waitUntil is the correct
-    // primitive and does not have that problem.
-    const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime;
-    if (runtime?.waitUntil) {
-      runtime.waitUntil(settle());
-      return json({
-        success: true,
-        pending: true,
-        transaction_id: txId,
-        message: "Your order is processing. You'll be notified once it completes.",
-      });
-    }
-
-    // Fallback for any runtime without waitUntil (e.g. local dev): keep the
-    // old synchronous behaviour so the outcome is never lost.
+    // Do NOT return early and finish the provider call in the background via
+    // EdgeRuntime.waitUntil: this runtime EarlyDrops the worker the instant the
+    // response is sent (confirmed 2026-07-30 via a Shutdown log, reason
+    // "EarlyDrop", cpu_time 49ms), which kills the in-flight VTUAfrica call —
+    // leaving the user DEBITED WITH NO AIRTIME and the transaction stuck
+    // 'pending' until reconcile. Keeping the request in-flight (awaiting settle)
+    // is what guarantees the provider call completes; the worker isn't dropped
+    // while a request is still open.
+    //
+    // The result screen shows "Processing" with a spinner while this resolves
+    // (~2-13s, the provider's own latency) and then flips to Successful/Failed.
+    // Genuinely async provider "Processing" replies are still held 'pending'
+    // inside settle() and finalized by vtuafrica-reconcile.
     return await settle();
   }
 
