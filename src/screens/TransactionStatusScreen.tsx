@@ -47,18 +47,18 @@ const POLL_MAX_MS = 45000; // after this, reconcile + notifications take over
 
 type FullResult = VTUResult & { token?: string; pins?: string[]; units?: string };
 
-async function runRequest(req: PurchaseRequest): Promise<FullResult> {
+async function runRequest(req: PurchaseRequest, key: string): Promise<FullResult> {
   switch (req.kind) {
     case 'airtime':
-      return vtuService.buyAirtime(req.phone, req.network, req.amount, req.authToken);
+      return vtuService.buyAirtime(req.phone, req.network, req.amount, req.authToken, key);
     case 'data':
-      return vtuService.buyData(req.phone, req.network, req.bundle, req.authToken);
+      return vtuService.buyData(req.phone, req.network, req.bundle, req.authToken, key);
     case 'electricity':
-      return vtuService.buyElectricity(req.providerId, req.meterNumber, req.amount, req.type, req.authToken);
+      return vtuService.buyElectricity(req.providerId, req.meterNumber, req.amount, req.type, req.authToken, key);
     case 'tv':
-      return vtuService.buyTVSubscription(req.providerId, req.smartcardNumber, req.bouquetId, req.amount, req.authToken);
+      return vtuService.buyTVSubscription(req.providerId, req.smartcardNumber, req.bouquetId, req.amount, req.authToken, key);
     case 'exam':
-      return vtuService.buyExamPin(req.examType, req.quantity, req.authToken, req.profileCode);
+      return vtuService.buyExamPin(req.examType, req.quantity, req.authToken, req.profileCode, key);
   }
 }
 
@@ -81,6 +81,13 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
   const startedRef = useRef(Date.now());
   const ranRef = useRef(false);
   const mountedRef = useRef(true);
+  // The idempotency key is minted HERE, before firing the purchase, so the
+  // screen can watch the resulting transaction by key without waiting on the
+  // purchase call's (poor-network-slow) response — see the fire-and-watch note.
+  const keyRef = useRef<string>(vtuService.newRequestKey());
+  // First writer of a terminal state wins — the fired purchase's response and
+  // the poll race each other; whichever confirms success/failure first settles.
+  const settledRef = useRef(false);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -88,6 +95,25 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
       pollRef.current = null;
     }
   }, []);
+
+  const settleSuccess = useCallback((m?: { token?: string; pins?: string[]; order_id?: string; units?: string }) => {
+    if (settledRef.current || !mountedRef.current) return;
+    settledRef.current = true;
+    stopPolling();
+    if (m?.token) setToken(m.token);
+    if (m?.units) setUnits(m.units);
+    if (m?.order_id) setOrderId(m.order_id);
+    if (m?.pins && m.pins.length) setPins(m.pins);
+    setStatus('success');
+  }, [stopPolling]);
+
+  const settleFailed = useCallback((msg?: string) => {
+    if (settledRef.current || !mountedRef.current) return;
+    settledRef.current = true;
+    stopPolling();
+    setStatus('failed');
+    setNote(msg || 'This did not go through. Any charge has been refunded to your wallet.');
+  }, [stopPolling]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -97,93 +123,95 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
     };
   }, [stopPolling]);
 
-  // Run the purchase once, on mount.
+  // FIRE the purchase, but do NOT block the UI on its response. On a poor
+  // Nigerian network, waiting on the long provider round-trip is exactly what
+  // left the screen stuck on "Processing" for minutes. Instead the poll below
+  // watches the transaction by our idempotency key and settles the screen the
+  // moment the order lands server-side — the phone only ever makes small, quick
+  // reads. We still consume THIS result for the fast-fail cases (insufficient
+  // balance / re-auth / validation) that resolve before any transaction row
+  // exists, which the poll alone would never see.
   useEffect(() => {
     if (!p.request || ranRef.current) return;
     ranRef.current = true;
-    (async () => {
-      let result: FullResult;
-      try {
-        result = await runRequest(p.request!);
-      } catch {
-        result = { success: false, error: 'Something went wrong. Please try again.' };
-      }
-      if (!mountedRef.current) return;
-      if (result.success) {
-        if (result.token) setToken(result.token);
-        if (result.units) setUnits(result.units);
-        if (result.order_id) setOrderId(result.order_id);
-        if (result.pins && result.pins.length) setPins(result.pins);
-        if (result.pending) {
+    runRequest(p.request, keyRef.current)
+      .then((result) => {
+        if (!mountedRef.current || settledRef.current) return;
+        if (result.success) {
+          // Stash any one-time values from the response so the success screen
+          // shows them even if the poll is what settles us.
+          if (result.token) setToken(result.token);
+          if (result.units) setUnits(result.units);
+          if (result.order_id) setOrderId(result.order_id);
+          if (result.pins && result.pins.length) setPins(result.pins);
           if (result.transaction_id) setTxId(result.transaction_id);
-          else setNote("Your order is on the way. We'll confirm it shortly.");
+          if (!result.pending) settleSuccess();
         } else {
-          setStatus('success');
+          // A definitive decline, or the request never placed an order (in
+          // which case nothing was charged). Either way, safe to show failed;
+          // the money layer is idempotent + reconciled regardless.
+          settleFailed(result.error);
         }
-      } else {
-        setStatus('failed');
-        setNote(result.error || 'This did not go through. Any charge has been refunded to your wallet.');
-      }
-    })();
-  }, [p.request]);
+      })
+      .catch(() => {
+        // Couldn't even get a response — that's NOT proof of failure (the order
+        // may have landed). Leave it to the poll / reconcile to settle.
+      });
+  }, [p.request, settleSuccess, settleFailed]);
 
-  // Poll the transaction while it's still processing.
+  // Watch the order settle by idempotency key — small, cheap reads that survive
+  // bad networks, plus an on-demand provider verify so it flips the instant
+  // VTUAfrica confirms rather than waiting on the 30s reconcile sweep.
   useEffect(() => {
-    if (status !== 'processing' || !txId) return;
+    if (status !== 'processing' || !p.request) return;
     startedRef.current = Date.now();
-    // Guards an on-demand provider verification (below) from stacking up
-    // parallel calls when VTUAfrica's verify endpoint is slow.
     let verifyInFlight = false;
     let tick = 0;
     pollRef.current = setInterval(async () => {
+      if (settledRef.current) {
+        stopPolling();
+        return;
+      }
       if (Date.now() - startedRef.current > POLL_MAX_MS) {
         stopPolling();
         setNote("Still processing. We'll notify you the moment it completes.");
         return;
       }
 
-      // Roughly every 3s, ask the server to verify THIS order with VTUAfrica
-      // right now and settle it — so it flips the instant the provider
-      // confirms, instead of waiting for the 30s reconcile sweep. It settles
-      // the transaction row server-side; the cheap read below then picks up
-      // the new status (and any token / PINs). Fire-and-forget + guarded so a
-      // slow verify never blocks or stacks.
-      tick += 1;
-      if (tick % 2 === 1 && !verifyInFlight) {
-        verifyInFlight = true;
-        vtuService.verifyOrder(txId).finally(() => {
-          verifyInFlight = false;
-        });
-      }
-
       try {
         const { data } = await supabase
           .from('transactions')
-          .select('status, metadata')
-          .eq('id', txId)
+          .select('id, status, metadata')
+          .eq('metadata->>idempotency_key', keyRef.current)
           .maybeSingle();
-        const s = data?.status;
+
+        if (!data) return; // order not recorded yet — keep watching
+
+        const s = data.status;
+        const m = (data.metadata ?? {}) as { token?: string; pins?: string[]; order_id?: string };
+
         if (s === 'completed') {
-          stopPolling();
-          // Pull the token / exam PIN(s) / provider reference the server
-          // persisted, so they show even when we only saw the settled
-          // transaction (pending -> poll) rather than the purchase response.
-          const m = (data?.metadata ?? {}) as { token?: string; pins?: string[]; order_id?: string };
-          if (m.token) setToken(m.token);
-          if (m.pins && m.pins.length) setPins(m.pins);
-          if (m.order_id) setOrderId(m.order_id);
-          setStatus('success');
+          settleSuccess(m);
         } else if (s === 'failed' || s === 'refunded') {
-          stopPolling();
-          setStatus('failed');
-          setNote('This did not go through. Any charge has been refunded to your wallet.');
+          settleFailed();
+        } else {
+          // Still pending — roughly every 3s, ask the server to verify THIS
+          // order with VTUAfrica now and settle it. Guarded so a slow verify
+          // never stacks parallel calls.
+          tick += 1;
+          if (tick % 2 === 1 && !verifyInFlight) {
+            verifyInFlight = true;
+            vtuService.verifyOrder(data.id).finally(() => {
+              verifyInFlight = false;
+            });
+          }
         }
       } catch {
-        /* transient — keep polling */
+        /* transient — keep watching */
       }
     }, POLL_INTERVAL_MS);
     return stopPolling;
-  }, [status, txId, stopPolling]);
+  }, [status, p.request, settleSuccess, settleFailed, stopPolling]);
 
   const goHome = useCallback(() => {
     stopPolling();

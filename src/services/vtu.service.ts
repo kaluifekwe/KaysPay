@@ -326,6 +326,7 @@ function newIdempotencyKey(): string {
 async function purchase(
   body: Record<string, unknown>,
   authToken: string,
+  idempotencyKey: string = newIdempotencyKey(),
 ): Promise<VTUResult & { token?: string; pins?: string[]; units?: string }> {
   try {
     // Generated ONCE, before the call — invokeWithRetry uses this to check
@@ -334,7 +335,11 @@ async function purchase(
     // moment a request reaches the server, so blindly resubmitting on an
     // ambiguous network failure can hit "already used" even when the
     // original attempt actually went through — see network.ts).
-    const idempotencyKey = newIdempotencyKey();
+    //
+    // The caller may pass its own key so it can watch the resulting transaction
+    // by `metadata->>idempotency_key` WITHOUT waiting for this call's response
+    // — the "fire-and-watch" flow that keeps the UI responsive on poor networks
+    // (the phone never blocks on the long provider round-trip).
     const { data, error } = await invokeWithRetry<any>(
       () =>
         withTimeout(
@@ -394,6 +399,15 @@ export const vtuService = {
     }
   },
 
+  /**
+   * A fresh idempotency key the caller can hold BEFORE firing a purchase, so it
+   * can watch the resulting transaction by `metadata->>idempotency_key` without
+   * waiting for the purchase call's (slow, on poor networks) response.
+   */
+  newRequestKey(): string {
+    return newIdempotencyKey();
+  },
+
   getDataBundles(network: NetworkProvider): DataBundle[] {
     return dataBundles.filter((b) => b.network === network);
   },
@@ -419,13 +433,13 @@ export const vtuService = {
     return examTypes;
   },
 
-  buyAirtime(phone: string, network: NetworkProvider, amount: number, authToken: string): Promise<VTUResult> {
+  buyAirtime(phone: string, network: NetworkProvider, amount: number, authToken: string, idempotencyKey?: string): Promise<VTUResult> {
     // amount is naira from the UI; the server ledger works in kobo.
-    return purchase({ service: 'airtime', phone, network, amount: nairaToKobo(amount) }, authToken);
+    return purchase({ service: 'airtime', phone, network, amount: nairaToKobo(amount) }, authToken, idempotencyKey);
   },
 
-  buyData(phone: string, network: NetworkProvider, bundle: DataBundle, authToken: string): Promise<VTUResult> {
-    return purchase({ service: 'data', phone, network, bundle_id: bundle.id }, authToken);
+  buyData(phone: string, network: NetworkProvider, bundle: DataBundle, authToken: string, idempotencyKey?: string): Promise<VTUResult> {
+    return purchase({ service: 'data', phone, network, bundle_id: bundle.id }, authToken, idempotencyKey);
   },
 
   /**
@@ -489,6 +503,7 @@ export const vtuService = {
     amount: number,
     type: 'prepaid' | 'postpaid',
     authToken: string,
+    idempotencyKey?: string,
   ): Promise<VTUResult & { token?: string; units?: string }> {
     return purchase({
       service: 'electricity',
@@ -496,7 +511,7 @@ export const vtuService = {
       meter_number: meterNumber,
       amount: nairaToKobo(amount),
       type,
-    }, authToken);
+    }, authToken, idempotencyKey);
   },
 
   buyTVSubscription(
@@ -505,6 +520,7 @@ export const vtuService = {
     bouquetId: string,
     _amount: number,
     authToken: string,
+    idempotencyKey?: string,
   ): Promise<VTUResult> {
     // Price is resolved server-side from bouquetId; client amount is ignored.
     return purchase({
@@ -512,7 +528,7 @@ export const vtuService = {
       provider_id: providerId,
       smartcard_number: smartcardNumber,
       bouquet_id: bouquetId,
-    }, authToken);
+    }, authToken, idempotencyKey);
   },
 
   buyExamPin(
@@ -520,12 +536,13 @@ export const vtuService = {
     quantity: number,
     authToken: string,
     profileCode?: string,
+    idempotencyKey?: string,
   ): Promise<VTUResult & { pins?: string[] }> {
     return purchase({
       service: 'exam_pin',
       exam_id: examType.id,
       quantity,
       ...(profileCode ? { profile_code: profileCode } : {}),
-    }, authToken);
+    }, authToken, idempotencyKey);
   },
 };
