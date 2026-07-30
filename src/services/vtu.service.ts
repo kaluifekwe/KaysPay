@@ -375,6 +375,25 @@ async function purchase(
 }
 
 export const vtuService = {
+  /**
+   * Ask the server to verify a single pending order with VTUAfrica right now
+   * and settle it if there's a final answer — so the result screen flips to
+   * Successful/Failed the moment the provider confirms, instead of waiting for
+   * the periodic reconcile sweep. Returns the order's status; falls back to
+   * 'pending' on any error so the caller simply keeps polling.
+   */
+  async verifyOrder(transactionId: string): Promise<'completed' | 'failed' | 'pending'> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('vtu-verify-order', { body: { transaction_id: transactionId } }),
+      );
+      if (error || !data?.status) return 'pending';
+      return data.status === 'completed' || data.status === 'failed' ? data.status : 'pending';
+    } catch {
+      return 'pending';
+    }
+  },
+
   getDataBundles(network: NetworkProvider): DataBundle[] {
     return dataBundles.filter((b) => b.network === network);
   },

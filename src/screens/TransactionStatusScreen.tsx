@@ -131,12 +131,31 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (status !== 'processing' || !txId) return;
     startedRef.current = Date.now();
+    // Guards an on-demand provider verification (below) from stacking up
+    // parallel calls when VTUAfrica's verify endpoint is slow.
+    let verifyInFlight = false;
+    let tick = 0;
     pollRef.current = setInterval(async () => {
       if (Date.now() - startedRef.current > POLL_MAX_MS) {
         stopPolling();
         setNote("Still processing. We'll notify you the moment it completes.");
         return;
       }
+
+      // Roughly every 3s, ask the server to verify THIS order with VTUAfrica
+      // right now and settle it — so it flips the instant the provider
+      // confirms, instead of waiting for the 30s reconcile sweep. It settles
+      // the transaction row server-side; the cheap read below then picks up
+      // the new status (and any token / PINs). Fire-and-forget + guarded so a
+      // slow verify never blocks or stacks.
+      tick += 1;
+      if (tick % 2 === 1 && !verifyInFlight) {
+        verifyInFlight = true;
+        vtuService.verifyOrder(txId).finally(() => {
+          verifyInFlight = false;
+        });
+      }
+
       try {
         const { data } = await supabase
           .from('transactions')

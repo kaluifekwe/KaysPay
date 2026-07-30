@@ -120,3 +120,9 @@ verify_jwt = true
 
 [functions.vtu-purchase]
 verify_jwt = true
+
+# On-demand single-order settlement, called by the result screen while it
+# shows "Processing" — identity from JWT, and it only settles the caller's
+# own order.
+[functions.vtu-verify-order]
+verify_jwt = true
