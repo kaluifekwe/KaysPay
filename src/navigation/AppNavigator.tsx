@@ -69,7 +69,10 @@ export default function AppNavigator() {
   const [isAuth, setIsAuth] = useState(false);
   // Whether the signed-in user's email has been verified via our own
   // Resend-based code (replaces Supabase's link-based "Confirm email").
-  // Checked before hasPin so a brand-new signup verifies email first.
+  // Tracked with the app-owned `email_otp_verified` metadata key, NOT
+  // `email_verified` — Supabase auto-stamps the latter true at signup (with
+  // "Confirm email" off), which would skip our whole flow. Checked before
+  // hasPin so a brand-new signup verifies email first.
   const [hasVerifiedEmail, setHasVerifiedEmail] = useState(false);
   const [userEmail, setUserEmail] = useState('');
   // Whether the signed-in user has created a transaction PIN yet. A session
@@ -84,7 +87,7 @@ export default function AppNavigator() {
       const authed = !!session;
       setIsAuth(authed);
       setUserEmail(session?.user?.email || '');
-      setHasVerifiedEmail(authed ? session.user.user_metadata?.email_verified === true : false);
+      setHasVerifiedEmail(authed ? session.user.user_metadata?.email_otp_verified === true : false);
       setHasPin(authed ? await authService.hasPIN() : false);
     });
 
@@ -127,7 +130,7 @@ export default function AppNavigator() {
       setIsAuth(authed);
       if (authed) {
         setUserEmail(session.user.email || '');
-        setHasVerifiedEmail(session.user.user_metadata?.email_verified === true);
+        setHasVerifiedEmail(session.user.user_metadata?.email_otp_verified === true);
         setHasPin(await authService.hasPIN());
       }
     } catch (error) {

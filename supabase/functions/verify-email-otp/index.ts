@@ -52,8 +52,14 @@ serve(async (req: Request) => {
 
   // Code confirmed — never let the client apply its own "verified" state;
   // this is the only place that does.
+  //
+  // Use an APP-OWNED key (email_otp_verified), NOT `email_verified`: Supabase
+  // Auth itself stamps `email_verified: true` in user_metadata at signup when
+  // "Confirm email" is off, so gating on it means the app thinks every new
+  // signup is already verified and skips this whole flow (no OTP is ever sent).
+  // email_otp_verified is set ONLY here, so it reliably means "passed our code".
   await supabase.auth.admin.updateUserById(user.id, {
-    user_metadata: { ...user.user_metadata, email_verified: true },
+    user_metadata: { ...user.user_metadata, email_verified: true, email_otp_verified: true },
   });
 
   return json({ success: true });
