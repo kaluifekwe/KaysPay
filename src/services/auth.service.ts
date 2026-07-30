@@ -7,6 +7,11 @@ export interface AuthResult {
   error?: string;
 }
 
+// SecureStore key holding the PIN captured during signup until it can be
+// persisted server-side once the session is fully established (see
+// stashSignupPin / ensurePinSaved).
+const PENDING_PIN_KEY = 'pending_signup_pin';
+
 export interface PINVerifyResult {
   valid: boolean;
   locked: boolean;
@@ -157,6 +162,48 @@ export const authService = {
       const { data, error } = await supabase.rpc('has_user_pin');
       if (error) return false;
       return !!data;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Stash the PIN entered during signup so it can be persisted once the auth
+   * session is fully established. Right after supabase.auth.signUp() the new
+   * access token often isn't attached to RPC calls yet, so set_user_pin runs
+   * unauthenticated and fails — which strands users on a redundant "Create PIN"
+   * gate. Encrypted at rest (SecureStore / Keychain-Keystore).
+   */
+  async stashSignupPin(pin: string): Promise<void> {
+    try {
+      if (/^\d{4}$/.test(pin)) await SecureStore.setItemAsync(PENDING_PIN_KEY, pin);
+    } catch {
+      // best-effort — the immediate savePIN attempt may still succeed
+    }
+  },
+
+  /**
+   * Ensures the account has a transaction PIN, saving one stashed at signup if
+   * the immediate save didn't land. Meant to run once the session is fully
+   * established (after email verification) — the same condition under which
+   * PINSetupScreen's save reliably works. Returns whether a PIN now exists,
+   * and clears the stash once saved so the PIN is never left on the device.
+   */
+  async ensurePinSaved(): Promise<boolean> {
+    try {
+      if (await authService.hasPIN()) {
+        try { await SecureStore.deleteItemAsync(PENDING_PIN_KEY); } catch {}
+        return true;
+      }
+      let pending: string | null = null;
+      try { pending = await SecureStore.getItemAsync(PENDING_PIN_KEY); } catch {}
+      if (!pending) return false;
+      const res = await authService.savePIN(pending);
+      if (res.success) {
+        try { await SecureStore.deleteItemAsync(PENDING_PIN_KEY); } catch {}
+        return true;
+      }
+      return false;
     } catch {
       return false;
     }

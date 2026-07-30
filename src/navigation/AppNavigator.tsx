@@ -101,6 +101,25 @@ export default function AppNavigator() {
     }
   }, [isAuth, hasVerifiedEmail, hasPin]);
 
+  // Catch-all guarantee against being asked to create a PIN twice: if we're
+  // about to show the PIN gate (signed in, email verified, but no PIN on
+  // record), first try to persist the PIN the user already entered at signup.
+  // By this point the session is fully established, so set_user_pin reliably
+  // works — unlike the split second right after signUp. If it saves, we skip
+  // the gate entirely. Covers every path (email-verify completion, app
+  // relaunch mid-flow), not just the happy one.
+  useEffect(() => {
+    if (isAuth && hasVerifiedEmail && !hasPin) {
+      let cancelled = false;
+      authService.ensurePinSaved().then((ok) => {
+        if (ok && !cancelled) setHasPin(true);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+  }, [isAuth, hasVerifiedEmail, hasPin]);
+
   const checkAuth = async () => {
     try {
       const session = await authService.getCurrentSession();

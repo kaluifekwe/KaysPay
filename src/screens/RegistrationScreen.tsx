@@ -300,20 +300,23 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
         return;
       }
 
-      // Save the PIN captured in step 2 right away, so there's no separate
-      // "set up your PIN" screen after email verify.
-      //
-      // Root cause of the redundant PIN gate: right after signUp the new access
-      // token isn't yet attached to database calls, so set_user_pin runs with
-      // no authenticated user (auth.uid() is null) and fails. A plain retry
-      // didn't help because the token still wasn't there. Forcing the session
-      // to materialize first (refreshSession) guarantees a valid token is
-      // attached before we save. Retries then cover any brief network miss. The
-      // PIN gate after email verify remains the ultimate fallback.
+      // Stash the PIN first so it can be saved reliably after email
+      // verification even if every immediate attempt below fails — this is the
+      // guarantee that the user is never asked to create a PIN again (see
+      // authService.ensurePinSaved, called from AppNavigator once the session
+      // is fully established).
+      await authService.stashSignupPin(pinString);
+
+      // Best-effort immediate save so the PIN is usually persisted before email
+      // verify even completes. Root cause of the redundant PIN gate: right after
+      // signUp the new access token isn't yet attached to database calls, so
+      // set_user_pin runs with no authenticated user (auth.uid() is null) and
+      // fails. Forcing the session to materialize first (refreshSession) helps,
+      // but the stash above is what actually guarantees it.
       try {
         await supabase.auth.refreshSession();
       } catch {
-        // ignore — the save + retries below still guard the common case
+        // ignore — the stash + ensurePinSaved after email verify still guard it
       }
       let pinSaved = false;
       let lastPinError: string | undefined;
