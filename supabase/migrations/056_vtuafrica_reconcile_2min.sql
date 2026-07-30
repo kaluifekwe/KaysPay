@@ -1,16 +1,19 @@
--- Kay's Pay: speed up VTUAfrica reconciliation from every 5 min to every 2 min
+-- Kay's Pay: speed up VTUAfrica reconciliation from every 5 min to every 30s
 -- =====================================================================
 -- VTUAfrica returns an async "Processing" status for some orders (e.g. Glo
 -- airtime, confirmed live 2026-07-30) — those are held 'pending' by
 -- vtu-purchase and only confirmed by this sweep. At every-5-min the user saw a
--- long "Processing" state; every-2-min settles it ~2.5x sooner. Same job name
--- (upserts the schedule from migration 034), same URL/headers, just a tighter
--- cadence. withJobLock in the function still prevents overlapping runs.
+-- long "Processing" state; every-30s settles it as soon as VTUAfrica finishes.
+-- Same job name (upserts the schedule from migration 034), same URL/headers,
+-- just a tighter cadence. withJobLock in the function still prevents
+-- overlapping runs, so a slow verify can't stack up parallel sweeps.
+-- NOTE: the hard floor is VTUAfrica's own processing time — this detects
+-- completion sooner, it can't make the provider deliver faster.
 -- =====================================================================
 
 SELECT cron.schedule(
   'vtuafrica-reconcile-pending-orders',
-  '*/2 * * * *',
+  '30 seconds',
   $$
   SELECT net.http_post(
     url := 'https://xswlrzhtxrzugoxdonjc.supabase.co/functions/v1/vtuafrica-reconcile',
