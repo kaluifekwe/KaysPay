@@ -15,7 +15,7 @@ import {
   AIRTIME_MIN,
   BILL_MAX,
   BILL_MIN,
-  DATA_BUNDLES,
+  VTUNG_DATA_BUNDLES,
   ELECTRICITY_PROVIDERS,
   EXAM_PIN_TYPES,
   KOBO,
@@ -106,9 +106,9 @@ function resolvePurchase(body: any): {
         txType: "airtime",
         network,
         recipient: phone,
-        provider: "vtuafrica",
+        provider: "vtu_ng",
         endpoint: "/airtime",
-        providerPayload: { network, phone, amount: amount / KOBO },
+        providerPayload: { service_id: network, phone, amount: amount / KOBO },
       };
     }
 
@@ -120,20 +120,19 @@ function resolvePurchase(body: any): {
       if (!VALID_NETWORKS.includes(network)) throw "INVALID_NETWORK";
       if (!/^0\d{10}$/.test(phone)) throw "INVALID_PHONE";
 
-      const bundle = DATA_BUNDLES[bundleId];
+      const bundle = VTUNG_DATA_BUNDLES[bundleId];
       if (!bundle || bundle.network !== network) throw "INVALID_BUNDLE";
       return {
         amount: bundle.amount, // kobo
         txType: "data",
         network,
         recipient: phone,
-        provider: "vtuafrica",
+        provider: "vtu_ng",
         endpoint: "/data",
         providerPayload: {
-          MobileNumber: phone,
-          service: bundle.serviceCode,
-          DataPlan: bundle.planCode,
-          maxamount: bundle.amount / KOBO,
+          phone,
+          service_id: network,
+          variation_id: bundle.variationId,
         },
       };
     }
@@ -344,7 +343,8 @@ serve(async (req: Request) => {
           unknown
         >;
       return body.service === "data"
-        ? req.service === pp.service && req.DataPlan === pp.DataPlan
+        ? (req.service_id === pp.service_id && req.variation_id === pp.variation_id) ||
+          (req.service === pp.service && req.DataPlan === pp.DataPlan)
         : req.service === pp.service && req.variation === pp.variation;
     });
     if (isSamePlan) {
@@ -371,6 +371,7 @@ serve(async (req: Request) => {
       p_metadata: {
         service: body.service,
         request: plan.providerPayload,
+        provider: plan.provider,
         provider_reference: stripRef(requestId),
       },
       p_idempotency_key: requestId,
@@ -462,6 +463,7 @@ serve(async (req: Request) => {
                 metadata: {
                   service: body.service,
                   request: plan.providerPayload,
+                  provider: plan.provider,
                   idempotency_key: requestId,
                   provider_reference: stripRef(requestId),
                   ...(electricityToken ? { token: electricityToken } : {}),
@@ -525,6 +527,7 @@ serve(async (req: Request) => {
               metadata: {
                 service: body.service,
                 request: plan.providerPayload,
+                provider: plan.provider,
                 idempotency_key: requestId,
                 provider_reference: stripRef(requestId),
                 provider_failure_observation: {
@@ -694,18 +697,24 @@ serve(async (req: Request) => {
       error: "Purchase failed. You were not charged.",
     });
   } catch (e) {
-    const isAuthError = e instanceof VTUAuthError;
-    await supabase.rpc("refund_service_transaction", {
-      p_tx_id: txId,
-      p_reason: isAuthError
-        ? `vtu_auth_failed: ${e.message}`
-        : "provider_unreachable",
-    });
+    if (e instanceof VTUAuthError) {
+      // Authentication fails before an order can be created, so refunding is
+      // safe. Generic timeouts are ambiguous and remain pending because the
+      // provider may have accepted the order before its response was lost.
+      await supabase.rpc("refund_service_transaction", {
+        p_tx_id: txId,
+        p_reason: `vtu_auth_failed: ${e.message}`,
+      });
+      return json({
+        success: false,
+        error: "The VTU provider is temporarily unavailable. You were not charged.",
+      });
+    }
     return json({
-      success: false,
-      error: isAuthError
-        ? `VTU.ng login failed: ${e.message}`
-        : "Network error. Please try again. You were not charged.",
+      success: true,
+      pending: true,
+      transaction_id: txId,
+      message: "Your order is still processing. You'll be notified once it completes.",
     });
   }
 });

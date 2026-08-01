@@ -36,6 +36,7 @@ serve(async (req: Request) => {
       .select("id, metadata")
       .eq("status", "pending")
       .in("type", ["airtime", "data", "bill", "exam_pin"])
+      .or("metadata->>provider.eq.vtuafrica,metadata->>provider.is.null")
       .not("metadata->>idempotency_key", "is", null)
       .order("created_at", { ascending: true })
       .limit(15);
@@ -49,6 +50,7 @@ serve(async (req: Request) => {
     let stillPending = 0;
 
     for (const tx of pending || []) {
+      if (tx.metadata?.provider && tx.metadata.provider !== "vtuafrica") continue;
       const ref = tx.metadata?.idempotency_key;
       if (!ref) continue;
 

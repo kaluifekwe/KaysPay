@@ -27,14 +27,14 @@ serve(async (req: Request) => {
     // in metadata; withdrawals/paystack funding use different tables/flows).
     // Cap the age at 48h — anything older is treated as permanently stuck and
     // left for manual review rather than requeried forever.
-    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
     const { data: pending, error } = await supabase
       .from("transactions")
       .select("id, metadata")
       .eq("status", "pending")
       .in("type", ["airtime", "data", "bill"])
+      .eq("metadata->>provider", "vtu_ng")
       .not("metadata->>idempotency_key", "is", null)
-      .gte("created_at", cutoff)
+      .order("created_at", { ascending: true })
       .limit(50);
 
     if (error) {

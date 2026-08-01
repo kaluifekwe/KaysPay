@@ -48,7 +48,7 @@ interface Advert {
 // for now — can be moved to a Supabase table later so promos are editable
 // without an app update.
 const ADVERTS: Advert[] = [
-  { icon: 'phone-portrait-outline', title: 'Instant airtime, any network', sub: 'MTN, Airtel, Glo, 9mobile in seconds', screen: 'Airtime' },
+  { icon: 'phone-portrait-outline', title: 'Instant airtime', sub: 'MTN, Airtel and Glo in seconds', screen: 'Airtime' },
   { icon: 'cellular-outline', title: 'Cheap data bundles', sub: 'Every network, delivered instantly', screen: 'Data' },
   { icon: 'globe-outline', title: 'Travel eSIMs', sub: 'Stay online in 190+ countries', screen: 'TravelEsim' },
   { icon: 'id-card-outline', title: 'Get your BVN slip', sub: 'Verify and download in seconds', screen: 'NinServices' },

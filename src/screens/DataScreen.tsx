@@ -9,6 +9,7 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
@@ -42,7 +43,6 @@ const NETWORKS: { key: NetworkProvider; label: string }[] = [
   { key: 'mtn', label: 'MTN' },
   { key: 'airtel', label: 'Airtel' },
   { key: 'glo', label: 'Glo' },
-  { key: '9mobile', label: '9mobile' },
 ];
 
 const NETWORK_COLORS: Record<NetworkProvider, string> = {
@@ -78,7 +78,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   const autoDetectedNetwork = useMemo(() => {
     if (!detectedNetwork || detectedNetwork.network === 'Unknown') return null;
     const lower = detectedNetwork.network.toLowerCase();
-    if (lower === 'mtn' || lower === 'airtel' || lower === 'glo' || lower === '9mobile') {
+    if (lower === 'mtn' || lower === 'airtel' || lower === 'glo') {
       return lower as NetworkProvider;
     }
     return null;
@@ -111,6 +111,10 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   }, []);
 
   const handleContactSelect = useCallback((c: PickedContact) => {
+    if (c.network === '9mobile') {
+      Alert.alert('Network unavailable', '9mobile purchases are currently unavailable.');
+      return;
+    }
     setPhoneNumber(formatNigerianPhone(c.phone));
     setSelectedNetwork(c.network);
     setSelectedBundle(null);
@@ -120,12 +124,16 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   const handleBulkContactsSelected = useCallback(
     (contacts: PickedContact[]) => {
       setPickerMode('closed');
-      if (contacts.length === 0) return;
-      if (contacts.length === 1) {
-        handleContactSelect(contacts[0]);
+      const supported = contacts.filter((contact) => contact.network !== '9mobile');
+      if (supported.length !== contacts.length) {
+        Alert.alert('9mobile removed', '9mobile contacts were excluded from this purchase.');
+      }
+      if (supported.length === 0) return;
+      if (supported.length === 1) {
+        handleContactSelect(supported[0]);
         return;
       }
-      navigation.navigate('BulkSendReview', { type: 'data', recipients: contacts });
+      navigation.navigate('BulkSendReview', { type: 'data', recipients: supported });
     },
     [navigation, handleContactSelect],
   );

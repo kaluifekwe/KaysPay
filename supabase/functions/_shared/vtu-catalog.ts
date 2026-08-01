@@ -220,6 +220,58 @@ export const DATA_BUNDLES: Record<string, DataBundle> = Object.fromEntries(
   }),
 );
 
+// VTU.ng v2 plans currently marked Available by its public variations API.
+// `amount` is the customer/API price; the lower reseller debit remains the
+// app's margin. The server owns this mapping so a modified client cannot pick
+// a cheaper amount or an unavailable variation.
+export interface VTUNGDataBundle {
+  id: string;
+  amount: number;
+  network: NetworkProvider;
+  variationId: string;
+}
+
+export const VTUNG_DATA_BUNDLES: Record<string, VTUNGDataBundle> = Object.fromEntries(
+  (
+    [
+      { network: "mtn", variationId: "244540", amount: 6699 },
+      { network: "mtn", variationId: "5506674", amount: 499 },
+      { network: "mtn", variationId: "244538", amount: 3699 },
+      { network: "mtn", variationId: "2673", amount: 11999 },
+      { network: "mtn", variationId: "5506738", amount: 2599 },
+      { network: "mtn", variationId: "2677", amount: 4799 },
+      { network: "mtn", variationId: "244542", amount: 1599 },
+      { network: "mtn", variationId: "2676", amount: 819 },
+      { network: "mtn", variationId: "2667", amount: 19999 },
+
+      { network: "airtel", variationId: "244698", amount: 819 },
+      { network: "airtel", variationId: "2669", amount: 10499 },
+      { network: "airtel", variationId: "2672", amount: 1519 },
+      { network: "airtel", variationId: "2675", amount: 3199 },
+      { network: "airtel", variationId: "244721", amount: 2099 },
+      { network: "airtel", variationId: "2668", amount: 15599 },
+      { network: "airtel", variationId: "2674", amount: 4299 },
+      { network: "airtel", variationId: "2670", amount: 6399 },
+
+      { network: "glo", variationId: "5580757", amount: 249 },
+      { network: "glo", variationId: "5580758", amount: 149 },
+      { network: "glo", variationId: "244659", amount: 549 },
+      { network: "glo", variationId: "2660", amount: 1099 },
+      { network: "glo", variationId: "244658", amount: 1599 },
+      { network: "glo", variationId: "244668", amount: 2599 },
+      { network: "glo", variationId: "2665", amount: 3199 },
+      { network: "glo", variationId: "2663", amount: 5299 },
+      { network: "glo", variationId: "2251529", amount: 299 },
+      { network: "glo", variationId: "2661", amount: 10599 },
+      { network: "glo", variationId: "2251528", amount: 549 },
+      { network: "glo", variationId: "2251526", amount: 1099 },
+    ] as { network: NetworkProvider; variationId: string; amount: number }[]
+  ).map((bundle) => {
+    const id = `vtung-${bundle.network}-${bundle.variationId}`;
+    return [id, { ...bundle, id, amount: bundle.amount * KOBO }];
+  }),
+);
+
 export type TVServiceProvider = "dstv" | "gotv" | "startimes";
 
 interface TVBouquet {
@@ -311,4 +363,4 @@ export const EXAM_PIN_TYPES: Record<string, ExamPinType> = Object.fromEntries(
   ).map((e) => [e.id, { ...e, amount: e.amount * KOBO }]),
 );
 
-export const VALID_NETWORKS: NetworkProvider[] = ["mtn", "airtel", "glo", "9mobile"];
+export const VALID_NETWORKS: NetworkProvider[] = ["mtn", "airtel", "glo"];

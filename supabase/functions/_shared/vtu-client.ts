@@ -9,6 +9,9 @@ const VTU_NG_AUTH_URL = "https://vtu.ng/wp-json/jwt-auth/v1/token";
 const VTU_NG_API_BASE = "https://vtu.ng/wp-json/api/v2";
 const VTU_NG_USERNAME = Deno.env.get("VTU_NG_USERNAME");
 const VTU_NG_PASSWORD = Deno.env.get("VTU_NG_PASSWORD");
+const TOKEN_REFRESH_LOCK = "vtu-ng-token-refresh";
+const TOKEN_REFRESH_WAIT_MS = 250;
+const TOKEN_REFRESH_WAIT_ATTEMPTS = 20;
 
 export class VTUAuthError extends Error {}
 
@@ -28,22 +31,66 @@ async function fetchFreshToken(): Promise<string> {
 }
 
 /** Shared, cached token — see the comment on VTU_NG_AUTH_URL above for why. */
-export async function getToken(supabase: ReturnType<typeof adminClient>, forceRefresh = false): Promise<string> {
-  if (!forceRefresh) {
-    const { data } = await supabase
-      .from("vtu_ng_auth")
-      .select("token, expires_at")
-      .eq("id", 1)
-      .maybeSingle();
-    if (data?.token && new Date(data.expires_at) > new Date(Date.now() + 12 * 60 * 60 * 1000)) {
-      return data.token as string;
+async function readCachedToken(supabase: ReturnType<typeof adminClient>) {
+  const { data } = await supabase
+    .from("vtu_ng_auth")
+    .select("token, expires_at")
+    .eq("id", 1)
+    .maybeSingle();
+  return data;
+}
+
+function isUsableToken(
+  data: { token?: string; expires_at?: string } | null,
+  minimumLifetimeMs: number,
+  rejectedToken?: string,
+): data is { token: string; expires_at: string } {
+  return !!data?.token && data.token !== rejectedToken &&
+    new Date(data.expires_at ?? 0).getTime() > Date.now() + minimumLifetimeMs;
+}
+
+/**
+ * Returns the shared JWT. VTU.ng invalidates older JWTs whenever a new one is
+ * issued, so a database lock prevents concurrent cold starts from repeatedly
+ * invalidating one another's tokens.
+ */
+export async function getToken(
+  supabase: ReturnType<typeof adminClient>,
+  forceRefresh = false,
+  rejectedToken?: string,
+): Promise<string> {
+  const cached = await readCachedToken(supabase);
+  if (!forceRefresh && isUsableToken(cached, 12 * 60 * 60 * 1000)) return cached.token;
+
+  const { data: acquired, error: lockError } = await supabase.rpc("try_acquire_job_lock", {
+    p_job_name: TOKEN_REFRESH_LOCK,
+    p_hold_seconds: 30,
+  });
+  if (lockError) throw new VTUAuthError("VTU provider authentication is temporarily unavailable");
+
+  if (!acquired) {
+    for (let attempt = 0; attempt < TOKEN_REFRESH_WAIT_ATTEMPTS; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, TOKEN_REFRESH_WAIT_MS));
+      const refreshed = await readCachedToken(supabase);
+      if (isUsableToken(refreshed, 60_000, rejectedToken)) return refreshed.token;
     }
+    throw new VTUAuthError("VTU provider authentication is busy; please retry");
   }
-  const token = await fetchFreshToken();
-  // Refresh a bit before the real 7-day expiry to stay safely ahead of it.
-  const expiresAt = new Date(Date.now() + 6.5 * 24 * 60 * 60 * 1000).toISOString();
-  await supabase.from("vtu_ng_auth").upsert({ id: 1, token, expires_at: expiresAt });
-  return token;
+
+  try {
+    const latest = await readCachedToken(supabase);
+    if (isUsableToken(latest, 60_000, forceRefresh ? rejectedToken : undefined)) return latest.token;
+
+    const token = await fetchFreshToken();
+    const expiresAt = new Date(Date.now() + 6.5 * 24 * 60 * 60 * 1000).toISOString();
+    const { error: saveError } = await supabase
+      .from("vtu_ng_auth")
+      .upsert({ id: 1, token, expires_at: expiresAt });
+    if (saveError) throw new VTUAuthError("VTU provider authentication could not be cached");
+    return token;
+  } finally {
+    await supabase.rpc("release_job_lock", { p_job_name: TOKEN_REFRESH_LOCK });
+  }
 }
 
 export function isVtuConfigured(): boolean {
@@ -73,7 +120,7 @@ export async function callVTUNG(
   let result = await doCall(token);
 
   if (result.status === 403 && ["jwt_auth_invalid_token", "rest_forbidden"].includes(result.data?.code)) {
-    token = await getToken(supabase, true);
+    token = await getToken(supabase, true, token);
     result = await doCall(token);
   }
 

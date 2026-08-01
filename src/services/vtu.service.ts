@@ -223,6 +223,40 @@ const dataBundles: DataBundle[] = [
   { id: '9mobile-gift-25000', name: '25GB (Gifting)', amount: 17820, validity: '30 Days', network: '9mobile' },
 ];
 
+// VTU.ng v2 plans marked Available on 2026-08-02. IDs and customer prices
+// match the server-authoritative catalog exactly.
+const vtuNgDataBundles: DataBundle[] = [
+  { id: 'vtung-mtn-244540', name: '16.5GB', amount: 6699, validity: '30 Days', network: 'mtn' },
+  { id: 'vtung-mtn-5506674', name: '1GB + 1.5 mins', amount: 499, validity: '1 Day', network: 'mtn' },
+  { id: 'vtung-mtn-244538', name: '7GB', amount: 3699, validity: '30 Days', network: 'mtn' },
+  { id: 'vtung-mtn-2673', name: '36GB', amount: 11999, validity: '30 Days', network: 'mtn' },
+  { id: 'vtung-mtn-5506738', name: '3.5GB + 5 mins', amount: 2599, validity: '30 Days', network: 'mtn' },
+  { id: 'vtung-mtn-2677', name: '10GB + 10 mins', amount: 4799, validity: '30 Days', network: 'mtn' },
+  { id: 'vtung-mtn-244542', name: '2GB + 2 mins', amount: 1599, validity: '30 Days', network: 'mtn' },
+  { id: 'vtung-mtn-2676', name: '1GB + 5 mins', amount: 819, validity: '7 Days', network: 'mtn' },
+  { id: 'vtung-mtn-2667', name: '75GB', amount: 19999, validity: '30 Days', network: 'mtn' },
+  { id: 'vtung-airtel-244698', name: '1GB', amount: 819, validity: '7 Days', network: 'airtel' },
+  { id: 'vtung-airtel-2669', name: '35GB', amount: 10499, validity: '30 Days', network: 'airtel' },
+  { id: 'vtung-airtel-2672', name: '2GB', amount: 1519, validity: '30 Days', network: 'airtel' },
+  { id: 'vtung-airtel-2675', name: '8GB', amount: 3199, validity: '30 Days', network: 'airtel' },
+  { id: 'vtung-airtel-244721', name: '3GB', amount: 2099, validity: '30 Days', network: 'airtel' },
+  { id: 'vtung-airtel-2668', name: '60GB', amount: 15599, validity: '30 Days', network: 'airtel' },
+  { id: 'vtung-airtel-2674', name: '10GB', amount: 4299, validity: '30 Days', network: 'airtel' },
+  { id: 'vtung-airtel-2670', name: '18GB', amount: 6399, validity: '30 Days', network: 'airtel' },
+  { id: 'vtung-glo-5580757', name: '1.75GB (Sunday)', amount: 249, validity: 'Sunday', network: 'glo' },
+  { id: 'vtung-glo-5580758', name: '125MB', amount: 149, validity: '1 Day', network: 'glo' },
+  { id: 'vtung-glo-244659', name: '2.2GB (Weekend)', amount: 549, validity: 'Weekend', network: 'glo' },
+  { id: 'vtung-glo-2660', name: '2.6GB', amount: 1099, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-244658', name: '5GB', amount: 1599, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-244668', name: '7.5GB', amount: 2599, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-2665', name: '11GB', amount: 3199, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-2663', name: '18GB', amount: 5299, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-2251529', name: '500MB (Gift)', amount: 299, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-2661', name: '40GB', amount: 10599, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-2251528', name: '1GB (Gift)', amount: 549, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-2251526', name: '2GB (Gift)', amount: 1099, validity: '30 Days', network: 'glo' },
+];
+
 // Same 12 DISCO codes VTUAfrica's own pricing page confirms it supports
 // (cross-checked live, 2026-07-03) — electricity now routes through
 // VTUAfrica rather than VTU.ng.
@@ -409,7 +443,7 @@ export const vtuService = {
   },
 
   getDataBundles(network: NetworkProvider): DataBundle[] {
-    return dataBundles.filter((b) => b.network === network);
+    return vtuNgDataBundles.filter((b) => b.network === network);
   },
 
   getAirtimeAmounts(): number[] {
