@@ -1,4 +1,4 @@
-export const MIN_PASSWORD_LENGTH = 10;
+export const MIN_PASSWORD_LENGTH = 8;
 
 /** A length-first policy supports memorable passphrases without arbitrary symbols. */
 export function passwordValidationError(password: string): string | null {

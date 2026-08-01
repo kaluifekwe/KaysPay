@@ -30,7 +30,7 @@ serve(async (req: Request) => {
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ success: false, error: "Enter a valid email address" }, 400);
   if (!/^\d{6}$/.test(code)) return json({ success: false, error: "Enter the 6-digit code" }, 400);
-  if (newPassword.length < 10) return json({ success: false, error: "Password must be at least 10 characters" }, 400);
+  if (newPassword.length < 8) return json({ success: false, error: "Password must be at least 8 characters" }, 400);
 
   const supabase = adminClient();
 
