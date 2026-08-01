@@ -19,7 +19,8 @@ import {
 // explicit failure status word. Anything ambiguous ("Does not Exist", an
 // unrecognized status, a network blip, or a VTU.ng order this sweep can't
 // recognize) is LEFT pending — never wrongly refunded or double-settled.
-// Orders older than 48h are left for manual review rather than swept forever.
+// Old orders remain eligible: abandoning them after 48h left customer money
+// permanently pending. Financial monitoring separately alerts operators.
 
 serve(async (req: Request) => {
   if (!verifyCronSecret(req)) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
@@ -30,15 +31,14 @@ serve(async (req: Request) => {
   const supabase = adminClient();
 
   const result = await withJobLock(supabase, "vtuafrica-reconcile", async () => {
-    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
     const { data: pending, error } = await supabase
       .from("transactions")
       .select("id, metadata")
       .eq("status", "pending")
       .in("type", ["airtime", "data", "bill", "exam_pin"])
       .not("metadata->>idempotency_key", "is", null)
-      .gte("created_at", cutoff)
-      .limit(50);
+      .order("created_at", { ascending: true })
+      .limit(15);
 
     if (error) {
       return { checked: 0, error: error.message };
@@ -53,7 +53,9 @@ serve(async (req: Request) => {
       if (!ref) continue;
 
       try {
-        const vtuResult = await queryVTUAfrica(ref);
+        // The cron repeats every 30 seconds, so one bounded attempt per order
+        // is preferable to five nested retries that can monopolize the sweep.
+        const vtuResult = await queryVTUAfrica(ref, 1, 7000);
         const outcome = vtuAfricaOutcome(vtuResult);
         const normalized = normalizeVTUAfricaResult(vtuResult);
 
@@ -118,7 +120,7 @@ serve(async (req: Request) => {
           .from("transactions")
           .update({ metadata: { ...tx.metadata, last_reconcile_check: { at: new Date().toISOString(), status: "verify_failed" } } })
           .eq("id", tx.id);
-        stillPending++; // network hiccup this round — next sweep retries (queryVTUAfrica itself already retries transient DNS blips)
+        stillPending++; // network hiccup this round; the next scheduled sweep retries.
       }
     }
 

@@ -37,7 +37,11 @@ import {
   queryVTUAfrica,
   VTUAfricaError,
   vtuAfricaOutcome,
+  stripRef,
 } from "../_shared/vtuafrica-client.ts";
+
+// VTUAfrica posts terminal provider outcomes here when the initial request times out.
+const VTUAFRICA_WEBHOOK_URL = `${Deno.env.get("SUPABASE_URL")}/functions/v1/vtuafrica-webhook`;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -189,17 +193,17 @@ function resolvePurchase(body: any): {
       if (!exam) throw "INVALID_EXAM_TYPE";
       if (!exam.quantityOptions.includes(quantity)) throw "INVALID_QUANTITY";
 
+      // VTUAfrica requires profilecode + recipient email (`sender`) + phone
+      // for JAMB. The current app collects only profilecode, so accepting this
+      // purchase would debit a user for a request the provider may reject.
+      // Keep JAMB fail-closed until the mobile form and server validation ship.
+      if (exam.requiresProfileCode) throw "JAMB_TEMPORARILY_UNAVAILABLE";
+
       const providerPayload: Record<string, unknown> = {
         service: exam.serviceCode,
         product_code: exam.productCode,
         quantity,
       };
-
-      if (exam.requiresProfileCode) {
-        const profileCode = String(body.profile_code || "").trim();
-        if (!profileCode) throw "INVALID_PROFILE_CODE";
-        providerPayload.profilecode = profileCode;
-      }
 
       return {
         amount: exam.amount * quantity, // kobo
@@ -232,6 +236,7 @@ const VALIDATION_MESSAGES: Record<string, string> = {
   INVALID_EXAM_TYPE: "Please choose a valid exam type.",
   INVALID_QUANTITY: "Please choose a valid quantity.",
   INVALID_PROFILE_CODE: "Please enter your JAMB profile code.",
+  JAMB_TEMPORARILY_UNAVAILABLE: "JAMB PIN purchases are temporarily unavailable while we complete a provider update.",
   UNKNOWN_SERVICE: "This service isn't available right now.",
 };
 function friendlyValidation(code: string): string {
@@ -363,7 +368,11 @@ serve(async (req: Request) => {
       p_type: plan.txType,
       p_network: plan.network,
       p_recipient: plan.recipient,
-      p_metadata: { service: body.service, request: plan.providerPayload },
+      p_metadata: {
+        service: body.service,
+        request: plan.providerPayload,
+        provider_reference: stripRef(requestId),
+      },
       p_idempotency_key: requestId,
     },
   );
@@ -403,6 +412,7 @@ serve(async (req: Request) => {
         const result = await callVTUAfrica(plan.endpoint, {
           ...plan.providerPayload,
           ref: requestId,
+          webhookURL: VTUAFRICA_WEBHOOK_URL,
         });
         providerCompletedAt = performance.now();
         const outcome = vtuAfricaOutcome(result);
@@ -452,6 +462,8 @@ serve(async (req: Request) => {
                 metadata: {
                   service: body.service,
                   request: plan.providerPayload,
+                  idempotency_key: requestId,
+                  provider_reference: stripRef(requestId),
                   ...(electricityToken ? { token: electricityToken } : {}),
                   ...(pins ? { pins } : {}),
                   ...(orderId ? { order_id: orderId } : {}),
@@ -514,6 +526,7 @@ serve(async (req: Request) => {
                 service: body.service,
                 request: plan.providerPayload,
                 idempotency_key: requestId,
+                provider_reference: stripRef(requestId),
                 provider_failure_observation: {
                   at: new Date().toISOString(),
                   status: normalized.status,

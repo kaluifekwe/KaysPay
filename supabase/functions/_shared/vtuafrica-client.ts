@@ -48,6 +48,7 @@ export function isVtuAfricaConfigured(): boolean {
 export async function callVTUAfrica(
   endpoint: string,
   params: Record<string, string | number>,
+  timeoutMs = 20000,
 ): Promise<any> {
   if (!VTUAFRICA_API_KEY) throw new VTUAfricaError("VTUAfrica API key not configured");
 
@@ -64,7 +65,7 @@ export async function callVTUAfrica(
   // checked, not just the one that hung). A hard timeout means one bad
   // provider response can only ever cost this one call, never the whole run.
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(`${VTUAFRICA_BASE_URL}${endpoint}/?${query.toString()}`, { signal: controller.signal });
@@ -108,11 +109,12 @@ export async function callVTUAfricaWithRetry(
   endpoint: string,
   params: Record<string, string | number>,
   attempts = 5,
+  timeoutMs = 20000,
 ): Promise<any> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
     try {
-      return await callVTUAfrica(endpoint, params);
+      return await callVTUAfrica(endpoint, params, timeoutMs);
     } catch (e) {
       lastErr = e;
       if (i < attempts - 1) await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, i)));
@@ -181,6 +183,11 @@ export function stripRef(ref: string): string {
   return ref.replace(/[^a-zA-Z0-9]/g, "");
 }
 
-export function queryVTUAfrica(ref: string): Promise<any> {
-  return callVTUAfricaWithRetry("/merchant-verify", { serviceName: "Transaction", ref: stripRef(ref) });
+export function queryVTUAfrica(ref: string, attempts = 5, timeoutMs = 20000): Promise<any> {
+  return callVTUAfricaWithRetry(
+    "/merchant-verify",
+    { serviceName: "Transaction", ref: stripRef(ref) },
+    attempts,
+    timeoutMs,
+  );
 }

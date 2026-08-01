@@ -65,7 +65,10 @@ serve(async (req: Request) => {
   if (!ref) return json({ status: "pending" });
 
   try {
-    const result = await queryVTUAfrica(ref);
+    // Foreground verification must be bounded. The 30-second reconciler is
+    // the retry mechanism; making a phone wait through exponential retries
+    // only creates a second timeout without making the provider settle faster.
+    const result = await queryVTUAfrica(ref, 1, 7000);
     const outcome = vtuAfricaOutcome(result);
     const normalized = normalizeVTUAfricaResult(result);
 

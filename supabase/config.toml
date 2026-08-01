@@ -26,6 +26,9 @@ verify_jwt = false
 [functions.vtu-webhook]
 verify_jwt = false
 
+[functions.vtuafrica-webhook]
+verify_jwt = false
+
 # --- Cron-only: JWT + separate x-cron-secret check ---
 [functions.vtu-reconcile]
 verify_jwt = true
