@@ -10,7 +10,7 @@ interface LogEntry {
   service_type: ServiceType;
   provider?: Provider;
   action: LogAction;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 let deviceInfo: string | null = null;
@@ -26,14 +26,14 @@ export const logger = {
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
-      await supabase.from('service_logs').insert({
-        user_id: user?.id || null,
-        service_type: entry.service_type,
-        provider: entry.provider || null,
-        action: entry.action,
-        metadata: entry.metadata || null,
-        network_type: null,
-        device_info: getDeviceInfo(),
+      if (!user) return;
+
+      await supabase.rpc('log_service_event', {
+        p_service_type: entry.service_type,
+        p_provider: entry.provider || null,
+        p_action: entry.action,
+        p_metadata: entry.metadata || null,
+        p_device_info: getDeviceInfo(),
       });
     } catch (error) {
       console.error('Failed to log service event:', error);
@@ -44,15 +44,15 @@ export const logger = {
     return this.log({ service_type: service, provider, action: 'view' });
   },
 
-  async logAttempt(service: ServiceType, provider: Provider, metadata?: Record<string, any>) {
+  async logAttempt(service: ServiceType, provider: Provider, metadata?: Record<string, unknown>) {
     return this.log({ service_type: service, provider, action: 'attempt', metadata });
   },
 
-  async logSuccess(service: ServiceType, provider: Provider, metadata?: Record<string, any>) {
+  async logSuccess(service: ServiceType, provider: Provider, metadata?: Record<string, unknown>) {
     return this.log({ service_type: service, provider, action: 'success', metadata });
   },
 
-  async logFailure(service: ServiceType, provider: Provider, metadata?: Record<string, any>) {
+  async logFailure(service: ServiceType, provider: Provider, metadata?: Record<string, unknown>) {
     return this.log({ service_type: service, provider, action: 'failure', metadata });
   },
 

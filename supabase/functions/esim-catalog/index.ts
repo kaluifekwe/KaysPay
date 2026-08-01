@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { adminClient, verifyCronSecret, withJobLock } from "../_shared/auth.ts";
+import { adminClient, getAuthUser, verifyCronSecret, withJobLock } from "../_shared/auth.ts";
 import { fetchAiraloCatalog, isAiraloConfigured } from "../_shared/airalo-client.ts";
 import { getUsdNgnRate, usdToNgnKobo } from "../_shared/esim-catalog.ts";
 
@@ -103,6 +103,11 @@ serve(async (req: Request) => {
     const res = await withJobLock(supabase, "esim-catalog-sync", () => refresh(supabase));
     return json({ refreshed: !!res && !("skipped" in (res as any)) });
   }
+
+  // Defense in depth: the gateway verifies JWTs, and every non-cron request
+  // also resolves the authenticated user here. Cron refreshes are separately
+  // authorized by the Vault-backed x-cron-secret above.
+  if (!(await getAuthUser(req))) return json({ error: "Unauthorized" }, 401);
 
   const rate = await getUsdNgnRate(supabase);
 

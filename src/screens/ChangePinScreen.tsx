@@ -28,6 +28,7 @@ export default function ChangePinScreen({ navigation }: ChangePinScreenProps) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const startedRef = useRef(false);
+  const authTokenRef = useRef<string | null>(null);
 
   // Prove identity (current PIN or biometric) before allowing a change —
   // unless there's no PIN yet at all, in which case there's nothing to prove
@@ -47,6 +48,7 @@ export default function ChangePinScreen({ navigation }: ChangePinScreenProps) {
         navigation.goBack();
         return;
       }
+      authTokenRef.current = authResult.token;
       setStep('new');
     })();
   }, [authorize, navigation]);
@@ -63,7 +65,7 @@ export default function ChangePinScreen({ navigation }: ChangePinScreenProps) {
         return;
       }
       setSaving(true);
-      const result = await authService.savePIN(firstPin);
+      const result = await authService.savePIN(firstPin, authTokenRef.current ?? undefined);
       if (result.success && (await authService.isBiometricEnabled())) {
         // Keep the biometric-gated keychain entry in sync with the new PIN —
         // otherwise Face ID/fingerprint would keep authorizing with the OLD

@@ -149,12 +149,15 @@ export const authService = {
    * which bcrypt-hashes it into a server-only table. It is NEVER stored in
    * plaintext (not in auth metadata, not on the device).
    */
-  async savePIN(pin: string): Promise<AuthResult> {
+  async savePIN(pin: string, authToken?: string): Promise<AuthResult> {
     try {
       if (!/^\d{4}$/.test(pin)) {
         return { success: false, error: 'PIN must be 4 digits' };
       }
-      const { error } = await supabase.rpc('set_user_pin', { p_pin: pin });
+      const { error } = await supabase.rpc('set_user_pin', {
+        p_pin: pin,
+        p_auth_token: authToken ?? null,
+      });
       if (error) throw error;
       return { success: true };
     } catch (error: any) {
