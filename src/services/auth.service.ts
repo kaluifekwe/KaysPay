@@ -1,6 +1,8 @@
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../lib/supabase';
 import { storageHelpers, StorageKeys } from '../lib/mmkv';
+import { clearAllCache } from '../utils/cache';
+import { passwordValidationError } from '../utils/password';
 
 export interface AuthResult {
   success: boolean;
@@ -82,6 +84,8 @@ export const authService = {
     newPassword: string,
   ): Promise<AuthResult & { attemptsRemaining?: number | null }> {
     try {
+      const passwordError = passwordValidationError(newPassword);
+      if (passwordError) return { success: false, error: passwordError };
       const { data, error } = await supabase.functions.invoke('verify-password-reset', {
         body: { email: email.trim().toLowerCase(), code: code.trim(), newPassword },
       });
@@ -123,6 +127,8 @@ export const authService = {
     metadata: Record<string, unknown>,
   ): Promise<AuthResult & { needsEmailConfirmation?: boolean }> {
     try {
+      const passwordError = passwordValidationError(password);
+      if (passwordError) return { success: false, error: passwordError };
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -319,8 +325,12 @@ export const authService = {
   },
 
   async signOut() {
-    await supabase.auth.signOut();
-    await storageHelpers.clearAll();
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      await storageHelpers.clearAll();
+      clearAllCache();
+    }
   },
 
   onAuthStateChange(callback: (session: any) => void) {

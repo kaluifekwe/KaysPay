@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { supabase } from '../lib/supabase';
 import { readCache, writeCache } from '../utils/cache';
 
 export interface UseCachedDataResult<T> {
@@ -23,7 +24,16 @@ export interface UseCachedDataResult<T> {
  * just leaves the stale value on screen (`isStale` stays true). `error` is
  * only set when there was never anything to show in the first place.
  */
-export function useCachedData<T>(key: string, fetchFn: () => Promise<T>): UseCachedDataResult<T> {
+interface UseCachedDataOptions {
+  /** Public catalogs may be shared across accounts. Financial data must remain user-scoped. */
+  scope?: 'user' | 'global';
+}
+
+export function useCachedData<T>(
+  key: string,
+  fetchFn: () => Promise<T>,
+  options: UseCachedDataOptions = {},
+): UseCachedDataResult<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [isStale, setIsStale] = useState(false);
@@ -33,9 +43,14 @@ export function useCachedData<T>(key: string, fetchFn: () => Promise<T>): UseCac
   // is usually a fresh closure every render.
   const fetchFnRef = useRef(fetchFn);
   fetchFnRef.current = fetchFn;
+  const scope = options.scope ?? 'user';
 
   const load = useCallback(async () => {
-    const cached = readCache<T>(key);
+    const userId = scope === 'global'
+      ? 'global'
+      : (await supabase.auth.getUser()).data.user?.id;
+    const scopedKey = userId ? `${scope}_${userId}_${key}` : null;
+    const cached = scopedKey ? readCache<T>(scopedKey, userId) : null;
     if (cached) {
       setData(cached.data);
       setIsStale(true);
@@ -49,7 +64,12 @@ export function useCachedData<T>(key: string, fetchFn: () => Promise<T>): UseCac
       setData(fresh);
       setIsStale(false);
       setError(null);
-      writeCache(key, fresh);
+      if (scopedKey) {
+        const currentUserId = scope === 'global'
+          ? 'global'
+          : (await supabase.auth.getUser()).data.user?.id;
+        if (currentUserId === userId) writeCache(scopedKey, fresh, userId);
+      }
     } catch (e) {
       if (!cached) {
         setError(e instanceof Error ? e.message : 'Could not load. Please try again.');
@@ -59,7 +79,7 @@ export function useCachedData<T>(key: string, fetchFn: () => Promise<T>): UseCac
     } finally {
       setLoading(false);
     }
-  }, [key]);
+  }, [key, scope]);
 
   useEffect(() => {
     load();

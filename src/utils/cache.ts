@@ -24,27 +24,39 @@ function cacheFile(key: string): File {
 export interface CacheEntry<T> {
   data: T;
   savedAt: number;
+  ownerId?: string;
 }
 
 /** Reads a previously cached value, or null if none exists / it's corrupt. */
-export function readCache<T>(key: string): CacheEntry<T> | null {
+export function readCache<T>(key: string, ownerId?: string): CacheEntry<T> | null {
   try {
     const file = cacheFile(key);
     if (!file.exists) return null;
-    return JSON.parse(file.textSync());
+    const entry = JSON.parse(file.textSync()) as CacheEntry<T>;
+    if (ownerId !== undefined && entry.ownerId !== ownerId) return null;
+    return entry;
   } catch {
     return null;
   }
 }
 
 /** Best-effort write — never throws, since caching is an optimization, not the feature itself. */
-export function writeCache<T>(key: string, data: T): void {
+export function writeCache<T>(key: string, data: T, ownerId?: string): void {
   try {
     ensureCacheDir();
     const file = cacheFile(key);
     if (!file.exists) file.create({ idempotent: true } as any);
-    file.write(JSON.stringify({ data, savedAt: Date.now() } as CacheEntry<T>));
+    file.write(JSON.stringify({ data, savedAt: Date.now(), ownerId } as CacheEntry<T>));
   } catch {
     // Ignored — see above.
+  }
+}
+
+/** Removes all non-secret cached app data from this device. */
+export function clearAllCache(): void {
+  try {
+    if (CACHE_DIR.exists) CACHE_DIR.delete();
+  } catch {
+    // Best-effort cleanup. User-scoped keys still prevent cross-account reads.
   }
 }

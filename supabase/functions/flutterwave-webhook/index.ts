@@ -51,27 +51,40 @@ serve(async (req: Request) => {
 
   try {
     if (event.type === "charge.completed" && event.data?.status === "succeeded") {
-      const { id: chargeId, amount, customer } = event.data;
+      const { id: chargeId, amount, customer, currency } = event.data;
       const customerId = customer?.id;
 
-      if (customerId && chargeId && typeof amount === "number") {
-        const { data: va } = await supabase
+      if (!customerId || !chargeId || typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
+        return new Response(JSON.stringify({ error: "Invalid charge payload" }), { status: 400 });
+      }
+      if (currency !== "NGN") {
+        return new Response(JSON.stringify({ error: "Unsupported currency" }), { status: 400 });
+      }
+
+      {
+        const { data: va, error: lookupError } = await supabase
           .from("virtual_accounts")
           .select("user_id")
           .eq("customer_code", customerId)
           .maybeSingle();
+        if (lookupError) throw lookupError;
+        if (!va?.user_id) throw new Error("No wallet mapping for Flutterwave customer");
 
-        if (va?.user_id) {
+        {
           // Confirmed empirically: Flutterwave reports amount in naira
           // (major units), unlike Paystack's kobo — our ledger is
           // kobo-based, so convert.
           const amountKobo = Math.round(amount * 100);
-          await supabase.rpc("credit_wallet_funding", {
+          if (!Number.isSafeInteger(amountKobo) || amountKobo <= 0) {
+            return new Response(JSON.stringify({ error: "Invalid charge amount" }), { status: 400 });
+          }
+          const { error: creditError } = await supabase.rpc("credit_wallet_funding", {
             p_user_id: va.user_id,
             p_reference: chargeId,
             p_amount: amountKobo,
             p_source: "flutterwave",
           });
+          if (creditError) throw creditError;
         }
       }
     }

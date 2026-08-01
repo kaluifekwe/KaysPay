@@ -52,38 +52,37 @@ serve(async (req: Request) => {
   const supabase = adminClient();
 
   try {
-    const requestId = event.request_id;
-    const status = event.status;
+    const requestId = typeof event.request_id === "string" ? event.request_id.trim() : "";
+    const status = typeof event.status === "string" ? event.status.trim().toLowerCase() : "";
 
     if (!requestId) {
-      return new Response(JSON.stringify({ status: true }), {
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(JSON.stringify({ error: "Missing request_id" }), { status: 400 });
     }
 
     // Our own idempotency_key IS the request_id we sent VTU.ng — find the
     // matching transaction (still 'pending' if this webhook is the first
     // thing to resolve it; the RPCs below are safe no-ops if it already
     // settled via requery in the original request).
-    const { data: tx } = await supabase
+    const { data: tx, error: lookupError } = await supabase
       .from("transactions")
       .select("id")
       .eq("metadata->>idempotency_key", requestId)
       .maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!tx?.id) throw new Error("No transaction for VTU.ng webhook request");
 
-    if (tx?.id) {
-      if (status === "completed-api") {
-        await supabase.rpc("complete_service_transaction", {
-          p_tx_id: tx.id,
-          p_order_id: event.order_id ?? null,
-        });
-      } else {
-        // "Order Refunded" and any other terminal-failure notification.
-        await supabase.rpc("refund_service_transaction", {
-          p_tx_id: tx.id,
-          p_reason: status || "webhook_refund",
-        });
-      }
+    if (status === "completed-api") {
+      const { error: completionError } = await supabase.rpc("complete_service_transaction", {
+        p_tx_id: tx.id,
+        p_order_id: event.order_id ?? null,
+      });
+      if (completionError) throw completionError;
+    } else if (["order refunded", "refunded", "refunded-api", "failed", "failed-api", "cancelled", "cancelled-api"].includes(status)) {
+      const { error: refundError } = await supabase.rpc("refund_service_transaction", {
+        p_tx_id: tx.id,
+        p_reason: status,
+      });
+      if (refundError) throw refundError;
     }
 
     return new Response(JSON.stringify({ status: true }), {

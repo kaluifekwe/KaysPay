@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { authService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
+import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password';
 
 const BRAND_GREEN = '#1A5C3A';
 const DARK_TEXT = '#0F1A14';
@@ -138,8 +139,8 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
   useEffect(() => {
     if (!password) {
       setPasswordError('');
-    } else if (password.length < 6) {
-      setPasswordError('Password must be at least 6 characters');
+    } else if (passwordValidationError(password)) {
+      setPasswordError(passwordValidationError(password) || 'Password is too short');
     } else {
       setPasswordError('');
     }
@@ -217,7 +218,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
   const isPinValid = pinString.length === 4;
   const isConfirmPinValid = isPinValid && confirmPinString === pinString;
   const isStep2Valid =
-    !passwordError && password.length >= 6 &&
+    !passwordError && password.length >= MIN_PASSWORD_LENGTH &&
     !confirmPasswordError && confirmPassword.length > 0 &&
     isPinValid && isConfirmPinValid;
 
@@ -514,11 +515,11 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
             <View style={styles.formCard}>
               <View style={styles.fieldContainer}>
                 {renderLabel('Password')}
-                <View style={[styles.inputWrapper, getFieldStyle(!!passwordError, password.length >= 6, focusedField === 'password')]}>
+                <View style={[styles.inputWrapper, getFieldStyle(!!passwordError, password.length >= MIN_PASSWORD_LENGTH, focusedField === 'password')]}>
                   <Text style={styles.fieldIcon}>🔒</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="At least 6 characters"
+                    placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
                     placeholderTextColor="#9CA3AF"
                     value={password}
                     onChangeText={setPassword}
@@ -533,7 +534,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                   <TouchableOpacity onPress={() => setShowPassword((v) => !v)} activeOpacity={0.7}>
                     <Text style={styles.fieldIcon}>{showPassword ? '🙈' : '👁'}</Text>
                   </TouchableOpacity>
-                  {renderStatusIcon(!!passwordError, password.length >= 6)}
+                  {renderStatusIcon(!!passwordError, password.length >= MIN_PASSWORD_LENGTH)}
                 </View>
                 {renderError(passwordError)}
                 {password.length > 0 && (

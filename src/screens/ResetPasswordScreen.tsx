@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { authService } from '../services/auth.service';
+import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password';
 
 const BRAND_GREEN = '#1A5C3A';
 const DARK_TEXT = '#0F1A14';
@@ -26,7 +27,7 @@ const BACK_BTN_BG = '#F3F4F6';
 const TRACK_BG = '#EEF2F0';
 
 // Same advisory strength signal as signup (RegistrationScreen): rewards length
-// + character variety, but we still only *require* 6+ characters.
+// + character variety, while the enforceable policy remains length-first.
 function passwordStrength(pw: string): { label: string; color: string; pct: number } {
   let score = 0;
   if (pw.length >= 8) score++;
@@ -61,7 +62,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
   const confirmRef = useRef<TextInput>(null);
 
   const codeValid = /^\d{6}$/.test(code);
-  const passwordValid = password.length >= 6;
+  const passwordValid = passwordValidationError(password) === null;
   const confirmValid = confirm.length > 0 && confirm === password;
   const isValid = codeValid && passwordValid && confirmValid;
   const strength = passwordStrength(password);
@@ -69,7 +70,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
   const handleReset = async () => {
     setError('');
     if (!codeValid) return setError('Enter the 6-digit code from your email');
-    if (!passwordValid) return setError('Password must be at least 6 characters');
+    if (!passwordValid) return setError(passwordValidationError(password) || 'Password is too short');
     if (!confirmValid) return setError('Passwords do not match');
 
     setLoading(true);
@@ -174,7 +175,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
                 <TextInput
                   ref={passwordRef}
                   style={styles.input}
-                  placeholder="At least 6 characters"
+                  placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
                   placeholderTextColor="#9CA3AF"
                   value={password}
                   onChangeText={setPassword}

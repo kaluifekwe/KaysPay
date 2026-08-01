@@ -12,7 +12,7 @@ function json(body: unknown, status = 200) {
 // Unauthenticated (called with the anon key): verifies the reset code the
 // user received by email, and ONLY on success sets the new password via the
 // admin API. The code is the sole gate — a valid session is neither present
-// nor required. Matches the signup password floor (>= 6 chars).
+// nor required. Matches the app signup password floor.
 serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
@@ -30,7 +30,7 @@ serve(async (req: Request) => {
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ success: false, error: "Enter a valid email address" }, 400);
   if (!/^\d{6}$/.test(code)) return json({ success: false, error: "Enter the 6-digit code" }, 400);
-  if (newPassword.length < 6) return json({ success: false, error: "Password must be at least 6 characters" }, 400);
+  if (newPassword.length < 10) return json({ success: false, error: "Password must be at least 10 characters" }, 400);
 
   const supabase = adminClient();
 

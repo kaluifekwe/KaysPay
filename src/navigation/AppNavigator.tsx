@@ -32,8 +32,8 @@ import { pushService } from '../services/push.service';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { Colors } from '../constants/colors';
 
-const RootStack = createStackNavigator();
-const MainStack = createStackNavigator();
+const RootStack = createStackNavigator<any>();
+const MainStack = createStackNavigator<any>();
 
 function MainStackScreen() {
   return (
@@ -41,7 +41,7 @@ function MainStackScreen() {
       <MainStack.Screen name="HomeTabs" component={TabNavigator} />
       <MainStack.Screen name="Airtime" component={AirtimeScreen} />
       <MainStack.Screen name="Data" component={DataScreen} />
-      <MainStack.Screen name="TransactionStatus" component={TransactionStatusScreen} />
+      <MainStack.Screen name="TransactionStatus" component={TransactionStatusScreen as React.ComponentType<any>} />
       <MainStack.Screen name="BulkSendReview" component={BulkSendReviewScreen} />
       <MainStack.Screen name="Bills" component={BillsScreen} />
       <MainStack.Screen name="ElectricityPay" component={ElectricityPayScreen} />

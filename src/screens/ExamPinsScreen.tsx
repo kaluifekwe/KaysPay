@@ -24,6 +24,7 @@ import { EXAM_LOGOS } from '../utils/providerLogos';
 interface ExamPinsScreenProps {
   navigation: {
     goBack: () => void;
+    navigate: (screen: string, params?: Record<string, unknown>) => void;
   };
 }
 

@@ -67,7 +67,11 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
     loading: countriesLoading,
     error: countriesError,
     refresh: refreshCountries,
-  } = useCachedData<EsimCountry[]>('esim_countries', () => esimService.loadCountries());
+  } = useCachedData<EsimCountry[]>(
+    'esim_countries',
+    () => esimService.loadCountries(),
+    { scope: 'global' },
+  );
 
   const { data: myEsims, refresh: refreshMyEsims } = useCachedData<MyEsim[]>(
     'esim_my_esims',
@@ -275,6 +279,10 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
     );
   }
 
+  // The branches above narrow this render to idle. Keep an explicit runtime
+  // guard as defense-in-depth against rapid repeat taps during state changes.
+  const isPurchaseProcessing = (buyState as BuyState) === 'processing';
+
   // ---- Shared header (hero + tabs) ----
   const heroAndTabs = (
     <View>
@@ -431,11 +439,11 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
               <Text style={styles.summaryAmount}>{formatNaira(selectedPlan.priceKobo / 100)}</Text>
             </View>
             <TouchableOpacity
-              style={[styles.primaryButton, buyState === 'processing' && styles.primaryButtonDisabled]}
+              style={[styles.primaryButton, isPurchaseProcessing && styles.primaryButtonDisabled]}
               onPress={handlePay}
-              disabled={buyState === 'processing'}
+              disabled={isPurchaseProcessing}
             >
-              {buyState === 'processing' ? (
+              {isPurchaseProcessing ? (
                 <ActivityIndicator color={Colors.WHITE} />
               ) : (
                 <Text style={styles.primaryButtonText}>Buy {formatNaira(selectedPlan.priceKobo / 100)}</Text>
