@@ -21,7 +21,14 @@ import {
   NON_TERMINAL_STATUSES,
   SUCCESS_STATUSES,
 } from "../_shared/vtu-client.ts";
-import { callVTUAfrica, isVtuAfricaConfigured, vtuAfricaOutcome, VTUAfricaError } from "../_shared/vtuafrica-client.ts";
+import {
+  callVTUAfrica,
+  isVtuAfricaConfigured,
+  normalizeVTUAfricaResult,
+  queryVTUAfrica,
+  vtuAfricaOutcome,
+  VTUAfricaError,
+} from "../_shared/vtuafrica-client.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -305,10 +312,11 @@ serve(async (req: Request) => {
 
         if (outcome === "success") {
           const orderId: string | undefined = result?.description?.ReferenceID;
-          await supabase.rpc("complete_service_transaction", {
+          const { error: completeError } = await supabase.rpc("complete_service_transaction", {
             p_tx_id: txId,
             p_order_id: orderId ?? null,
           });
+          if (completeError) throw completeError;
 
           // The prepaid meter token was previously only ever returned in this
           // one-time response and never saved anywhere — closing the app
@@ -372,11 +380,50 @@ serve(async (req: Request) => {
         }
 
         // outcome === "failed": explicit failure or hard reject — refund.
-        await supabase.rpc("refund_service_transaction", {
-          p_tx_id: txId,
-          p_reason: JSON.stringify(result?.description ?? result ?? "provider_rejected").slice(0, 500),
+        const verified = await queryVTUAfrica(requestId);
+        const verifiedOutcome = vtuAfricaOutcome(verified);
+
+        if (verifiedOutcome === "success") {
+          const normalized = normalizeVTUAfricaResult(verified);
+          const { error: completeError } = await supabase.rpc("complete_service_transaction", {
+            p_tx_id: txId,
+            p_order_id: normalized.reference,
+          });
+          if (completeError) throw completeError;
+          return json({
+            success: true,
+            transaction_id: txId,
+            order_id: normalized.reference ?? undefined,
+            amount: plan.amount,
+          });
+        }
+
+        if (verifiedOutcome === "failed") {
+          const normalized = normalizeVTUAfricaResult(verified);
+          await supabase
+            .from("transactions")
+            .update({
+              metadata: {
+                service: body.service,
+                request: plan.providerPayload,
+                idempotency_key: requestId,
+                provider_failure_observation: {
+                  at: new Date().toISOString(),
+                  status: normalized.status,
+                  message: normalized.message,
+                },
+              },
+            })
+            .eq("id", txId)
+            .eq("status", "pending");
+        }
+
+        return json({
+          success: true,
+          pending: true,
+          transaction_id: txId,
+          message: "Your order is still processing. You'll be notified once it completes.",
         });
-        return json({ success: false, error: result?.description?.message || "Purchase failed. You were not charged." });
       } catch (e) {
         // A config/auth error means the request never reached VTUAfrica —
         // nothing was charged, so refunding is safe. But a generic network

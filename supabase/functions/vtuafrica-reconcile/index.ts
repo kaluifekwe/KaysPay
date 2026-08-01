@@ -3,9 +3,9 @@ import { adminClient, verifyCronSecret, withJobLock } from "../_shared/auth.ts";
 import { redactSecrets } from "../_shared/redact.ts";
 import {
   queryVTUAfrica,
-  isVtuAfricaSuccess,
-  isVtuAfricaExplicitFailure,
   isVtuAfricaConfigured,
+  normalizeVTUAfricaResult,
+  vtuAfricaOutcome,
 } from "../_shared/vtuafrica-client.ts";
 
 // Scheduled sweep (see migration 028) that settles VTUAfrica orders left
@@ -54,19 +54,48 @@ serve(async (req: Request) => {
 
       try {
         const vtuResult = await queryVTUAfrica(ref);
+        const outcome = vtuAfricaOutcome(vtuResult);
+        const normalized = normalizeVTUAfricaResult(vtuResult);
 
-        if (isVtuAfricaSuccess(vtuResult)) {
-          await supabase.rpc("complete_service_transaction", {
+        if (outcome === "success") {
+          const { error: completeError } = await supabase.rpc("complete_service_transaction", {
             p_tx_id: tx.id,
-            p_order_id: vtuResult?.description?.ref ?? vtuResult?.description?.ReferenceID ?? null,
+            p_order_id: normalized.reference,
           });
-          completed++;
-        } else if (isVtuAfricaExplicitFailure(vtuResult)) {
-          await supabase.rpc("refund_service_transaction", {
-            p_tx_id: tx.id,
-            p_reason: vtuResult?.description?.Status || "reconcile_refund",
-          });
-          refunded++;
+          if (completeError) stillPending++;
+          else completed++;
+        } else if (outcome === "failed") {
+          const previous = tx.metadata?.provider_failure_confirmation;
+          const previousAt = previous?.at ? new Date(previous.at).getTime() : 0;
+          const separatedConfirmations =
+            previous?.status === normalized.status &&
+            Number.isFinite(previousAt) &&
+            Date.now() - previousAt >= 20_000;
+
+          if (separatedConfirmations) {
+            const { error: refundError } = await supabase.rpc("refund_service_transaction", {
+              p_tx_id: tx.id,
+              p_reason: normalized.status || "reconcile_refund",
+            });
+            if (refundError) stillPending++;
+            else refunded++;
+          } else {
+            await supabase
+              .from("transactions")
+              .update({
+                metadata: {
+                  ...tx.metadata,
+                  provider_failure_confirmation: {
+                    at: new Date().toISOString(),
+                    status: normalized.status,
+                    message: normalized.message,
+                  },
+                },
+              })
+              .eq("id", tx.id)
+              .eq("status", "pending");
+            stillPending++;
+          }
         } else {
           // "Processing" / "Does not Exist" / unknown / wrong-provider — leave it.
           // Record the raw provider answer on the transaction itself (not a

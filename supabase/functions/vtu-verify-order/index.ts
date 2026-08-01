@@ -3,9 +3,9 @@ import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient } from "../_shared/auth.ts";
 import {
   queryVTUAfrica,
-  isVtuAfricaSuccess,
-  isVtuAfricaExplicitFailure,
   isVtuAfricaConfigured,
+  normalizeVTUAfricaResult,
+  vtuAfricaOutcome,
 } from "../_shared/vtuafrica-client.ts";
 
 function json(body: unknown, status = 200) {
@@ -66,21 +66,24 @@ serve(async (req: Request) => {
 
   try {
     const result = await queryVTUAfrica(ref);
+    const outcome = vtuAfricaOutcome(result);
+    const normalized = normalizeVTUAfricaResult(result);
 
-    if (isVtuAfricaSuccess(result)) {
-      await supabase.rpc("complete_service_transaction", {
+    if (outcome === "success") {
+      const { error: completeError } = await supabase.rpc("complete_service_transaction", {
         p_tx_id: tx.id,
-        p_order_id: result?.description?.ref ?? result?.description?.ReferenceID ?? null,
+        p_order_id: normalized.reference,
       });
+      if (completeError) return json({ status: "pending" });
       return json({ status: "completed" });
     }
 
-    if (isVtuAfricaExplicitFailure(result)) {
-      await supabase.rpc("refund_service_transaction", {
-        p_tx_id: tx.id,
-        p_reason: result?.description?.Status || "verify_refund",
-      });
-      return json({ status: "failed" });
+    if (outcome === "failed") {
+      // Client polling is intentionally not allowed to refund. A provider can
+      // report failure briefly while telco delivery is still settling. The
+      // cron reconciler requires two separated failure confirmations before
+      // returning money, preventing rapid polls from creating free delivery.
+      return json({ status: "pending" });
     }
 
     // Still processing / "Does not Exist" / unknown — leave pending, let the

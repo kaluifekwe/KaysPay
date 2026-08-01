@@ -14,6 +14,15 @@ const VTUAFRICA_BASE_URL = "https://vtuafrica.com.ng/portal/api";
 const PENDING_STATUSES = ["processing", "pending", "initiated", "queued", "on hold", "on-hold"];
 const FAILURE_STATUSES = ["failed", "refunded", "reversed", "cancelled", "canceled", "declined"];
 
+export type VTUAfricaOutcome = "success" | "pending" | "failed" | "unknown";
+
+export interface NormalizedVTUAfricaResult {
+  code: number | null;
+  status: string;
+  message: string;
+  reference: string | null;
+}
+
 export class VTUAfricaError extends Error {}
 
 // The apikey rides in the VTUAfrica request URL, so a low-level fetch failure
@@ -112,8 +121,27 @@ export async function callVTUAfricaWithRetry(
   throw lastErr;
 }
 
+export function normalizeVTUAfricaResult(result: any): NormalizedVTUAfricaResult {
+  const rawCode = result?.code;
+  const parsedCode = typeof rawCode === "number" ? rawCode : Number(String(rawCode ?? "").trim());
+  const description = result?.description;
+
+  return {
+    code: Number.isFinite(parsedCode) ? parsedCode : null,
+    status: String(description?.Status ?? description?.status ?? result?.status ?? "").trim().toLowerCase(),
+    message: String(description?.message ?? result?.message ?? "").trim(),
+    reference: description?.ReferenceID != null
+      ? String(description.ReferenceID)
+      : description?.ref != null
+        ? String(description.ref)
+        : result?.ref != null
+          ? String(result.ref)
+          : null,
+  };
+}
+
 export function isVtuAfricaSuccess(result: any): boolean {
-  return result?.code === 101 && String(result?.description?.Status ?? "").toLowerCase() === "completed";
+  return vtuAfricaOutcome(result) === "success";
 }
 
 /**
@@ -125,12 +153,14 @@ export function isVtuAfricaSuccess(result: any): boolean {
  * - "unknown": code 101 with an unrecognized Status — accepted, so treat as
  *   pending (hold, let reconcile settle it) rather than risk a double outcome.
  */
-export function vtuAfricaOutcome(result: any): "success" | "pending" | "failed" | "unknown" {
-  const status = String(result?.description?.Status ?? "").trim().toLowerCase();
-  if (result?.code === 101 && status === "completed") return "success";
-  if (result?.code === 101 && PENDING_STATUSES.includes(status)) return "pending";
+export function vtuAfricaOutcome(result: any): VTUAfricaOutcome {
+  const { code, status } = normalizeVTUAfricaResult(result);
+  if (code === 101 && status === "completed") return "success";
+  if (code === 101 && PENDING_STATUSES.includes(status)) return "pending";
   if (FAILURE_STATUSES.includes(status)) return "failed";
-  if (result?.code !== 101) return "failed";
+  // An unexpected response is not proof that delivery failed. Keep it
+  // pending and settle it from the provider's transaction query; refunding an
+  // ambiguous result can give away airtime/data if the telco already delivered.
   return "unknown";
 }
 
@@ -138,7 +168,7 @@ export function vtuAfricaOutcome(result: any): "success" | "pending" | "failed" 
  * code!=101). Used by reconcile so a cross-provider "Does not Exist" query
  * result is never mistaken for a refundable failure. */
 export function isVtuAfricaExplicitFailure(result: any): boolean {
-  return FAILURE_STATUSES.includes(String(result?.description?.Status ?? "").trim().toLowerCase());
+  return vtuAfricaOutcome(result) === "failed";
 }
 
 /**
