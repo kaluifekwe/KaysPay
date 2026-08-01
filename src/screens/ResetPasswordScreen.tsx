@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { authService } from '../services/auth.service';
 import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password';
+import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 
 const BRAND_GREEN = '#1A5C3A';
 const DARK_TEXT = '#0F1A14';
@@ -46,6 +47,7 @@ interface Props {
 }
 
 export default function ResetPasswordScreen({ navigation, route }: Props) {
+  useSensitiveScreenProtection();
   const email = route?.params?.email || '';
 
   const [code, setCode] = useState('');

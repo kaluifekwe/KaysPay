@@ -13,6 +13,8 @@ import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
 import { authService } from '../services/auth.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
+import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
+import { deviceSessionService } from '../services/deviceSession.service';
 
 interface ChangePinScreenProps {
   navigation: any;
@@ -21,6 +23,7 @@ interface ChangePinScreenProps {
 const PIN_LENGTH = 4;
 
 export default function ChangePinScreen({ navigation }: ChangePinScreenProps) {
+  useSensitiveScreenProtection();
   const { authorize } = useTransactionAuth();
   const [step, setStep] = useState<'verifying' | 'new' | 'confirm'>('verifying');
   const [newPin, setNewPin] = useState('');
@@ -66,6 +69,7 @@ export default function ChangePinScreen({ navigation }: ChangePinScreenProps) {
       }
       setSaving(true);
       const result = await authService.savePIN(firstPin, authTokenRef.current ?? undefined);
+      if (result.success) void deviceSessionService.notifyPinChanged().catch(() => {});
       if (result.success && (await authService.isBiometricEnabled())) {
         // Keep the biometric-gated keychain entry in sync with the new PIN —
         // otherwise Face ID/fingerprint would keep authorizing with the OLD

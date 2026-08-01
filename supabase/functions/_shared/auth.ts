@@ -160,3 +160,33 @@ export async function readJsonBody<T = Record<string, unknown>>(
     throw new RequestBodyError(400, "Invalid request body");
   }
 }
+
+export function getSessionId(req: Request): string | null {
+  try {
+    const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+    if (!token) return null;
+    const encoded = token.split(".")[1];
+    const padded = encoded.replace(/-/g, "+").replace(/_/g, "/").padEnd(
+      Math.ceil(encoded.length / 4) * 4,
+      "=",
+    );
+    return String(JSON.parse(atob(padded))?.session_id || "") || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Revoked registered sessions cannot perform financial/identity actions. */
+export async function isDeviceSessionAllowed(
+  req: Request,
+  supabase: ReturnType<typeof adminClient>,
+  userId: string,
+): Promise<boolean> {
+  const sessionId = getSessionId(req);
+  if (!sessionId) return true; // compatibility for legacy tokens without the claim
+  const { data, error } = await supabase.rpc("is_device_session_revoked", {
+    p_user_id: userId,
+    p_session_id: sessionId,
+  });
+  return !error && data !== true;
+}

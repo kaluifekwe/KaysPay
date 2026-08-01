@@ -15,12 +15,14 @@ import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { Strings } from '../constants/strings';
 import { authService } from '../services/auth.service';
+import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 
 interface PINSetupScreenProps {
   navigation: any;
 }
 
 export default function PINSetupScreen({ navigation }: PINSetupScreenProps) {
+  useSensitiveScreenProtection();
   const [pin, setPin] = useState(['', '', '', '']);
   const [confirmPin, setConfirmPin] = useState(['', '', '', '']);
   const [isConfirming, setIsConfirming] = useState(false);

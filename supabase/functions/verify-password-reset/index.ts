@@ -6,6 +6,7 @@ import {
   readJsonBody,
   RequestBodyError,
 } from "../_shared/auth.ts";
+import { isResendConfigured, sendEmail } from "../_shared/resend-client.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -135,6 +136,21 @@ serve(async (req: Request) => {
       success: false,
       error: "Could not update your password. Please try again.",
     }, 500);
+  }
+
+  // A password reset is an account-recovery boundary: registered sessions on
+  // every device are revoked and must authenticate again for sensitive work.
+  await supabase.rpc("revoke_all_device_sessions", { p_user_id: userId });
+  if (isResendConfigured()) {
+    await sendEmail(
+      email,
+      "Your Kay's Pay password was changed",
+      "<p>Your Kay's Pay password was reset successfully, and registered device sessions were revoked.</p><p>If this wasn't you, contact support immediately.</p>",
+      {
+        text:
+          "Your Kay's Pay password was reset and registered device sessions were revoked. If this wasn't you, contact support immediately.",
+      },
+    );
   }
 
   return json({ success: true });

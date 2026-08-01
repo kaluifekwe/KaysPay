@@ -5,6 +5,7 @@ import {
   consumeAuthToken,
   enforceRateLimit,
   getAuthUser,
+  isDeviceSessionAllowed,
   readJsonBody,
   RequestBodyError,
 } from "../_shared/auth.ts";
@@ -163,6 +164,11 @@ serve(async (req: Request) => {
   }
 
   const supabase = adminClient();
+  if (!(await isDeviceSessionAllowed(req, supabase, user.id))) {
+    return json({
+      error: "This device session has been revoked. Please log in again.",
+    }, 401);
+  }
 
   const rate = await enforceRateLimit(
     supabase,

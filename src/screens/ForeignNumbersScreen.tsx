@@ -15,6 +15,7 @@ import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { formatNaira } from '../utils/formatCurrency';
+import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 import {
   foreignNumberService,
   type ForeignNumberService as FNService,
@@ -41,6 +42,7 @@ function countryFlag(code: string): string {
 }
 
 export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScreenProps) {
+  useSensitiveScreenProtection();
   const { authorize } = useTransactionAuth();
   const insets = useSafeAreaInsets();
   const services = useMemo(() => foreignNumberService.getServices(), []);

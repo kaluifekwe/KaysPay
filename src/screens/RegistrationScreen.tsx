@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { authService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
 import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password';
+import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 
 const BRAND_GREEN = '#1A5C3A';
 const DARK_TEXT = '#0F1A14';
@@ -84,6 +85,7 @@ interface RegistrationScreenProps {
 }
 
 export default function RegistrationScreen({ navigation }: RegistrationScreenProps) {
+  useSensitiveScreenProtection();
   const [step, setStep] = useState<1 | 2>(1);
 
   // Step 1

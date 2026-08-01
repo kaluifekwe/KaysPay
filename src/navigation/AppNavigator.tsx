@@ -27,8 +27,10 @@ import EditProfileScreen from '../screens/EditProfileScreen';
 import KycScreen from '../screens/KycScreen';
 import ChangePinScreen from '../screens/ChangePinScreen';
 import LegalDocumentScreen from '../screens/LegalDocumentScreen';
+import ActiveSessionsScreen from '../screens/ActiveSessionsScreen';
 import { authService } from '../services/auth.service';
 import { pushService } from '../services/push.service';
+import { deviceSessionService } from '../services/deviceSession.service';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { Colors } from '../constants/colors';
 
@@ -60,6 +62,7 @@ function MainStackScreen() {
       <MainStack.Screen name="Settings" component={SettingsScreen} />
       <MainStack.Screen name="ChangePin" component={ChangePinScreen} />
       <MainStack.Screen name="LegalDocument" component={LegalDocumentScreen} />
+      <MainStack.Screen name="ActiveSessions" component={ActiveSessionsScreen} />
     </MainStack.Navigator>
   );
 }
@@ -101,6 +104,7 @@ export default function AppNavigator() {
   useEffect(() => {
     if (isAuth && hasVerifiedEmail && hasPin) {
       pushService.registerForPush();
+      deviceSessionService.register().catch(() => {});
     }
   }, [isAuth, hasVerifiedEmail, hasPin]);
 

@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { kycService } from '../services/kyc.service';
 import { safeErrorMessage } from '../utils/errorMessages';
+import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 
 const BRAND_GREEN = '#1A5C3A';
 const DARK_TEXT = '#0F1A14';
@@ -21,6 +22,7 @@ const BORDER_COLOR = '#E5E7EB';
 const ERROR_RED = '#DC2626';
 
 export default function KycScreen({ navigation }: any) {
+  useSensitiveScreenProtection();
   const [loading, setLoading] = useState(true);
   const [verified, setVerified] = useState(false);
   const [verifiedName, setVerifiedName] = useState<string | undefined>();

@@ -138,6 +138,11 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           toggleValue: biometricEnabled,
           onToggle: handleBiometricToggle,
         },
+        {
+          icon: 'phone-portrait-outline',
+          label: 'Active Sessions',
+          onPress: () => navigation.navigate('ActiveSessions'),
+        },
       ],
     },
     {

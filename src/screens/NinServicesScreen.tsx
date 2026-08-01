@@ -21,6 +21,7 @@ import { Spacing } from '../constants/spacing';
 import { formatNaira } from '../utils/formatCurrency';
 import { ninService, NinRecord, BvnRecord, NinModificationType } from '../services/nin.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
+import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 import ResultStatusView from '../components/ResultStatusView';
 import { sharePdf, downloadPdf } from '../utils/pdf';
 
@@ -445,6 +446,7 @@ const VALIDATE_PRICE = 8000;
 const MODIFY_PRICE = 18000;
 
 export default function NinServicesScreen({ navigation }: NinServicesScreenProps) {
+  useSensitiveScreenProtection();
   const { authorize } = useTransactionAuth();
   const [mode, setMode] = useState<Mode>('verify');
 

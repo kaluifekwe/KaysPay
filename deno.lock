@@ -49,6 +49,7 @@
         "npm:expo-local-authentication@~17.0.8",
         "npm:expo-notifications@~0.32.17",
         "npm:expo-print@~15.0.8",
+        "npm:expo-screen-capture@~8.0.9",
         "npm:expo-secure-store@~15.0.8",
         "npm:expo-sharing@~14.0.8",
         "npm:expo-splash-screen@~31.0.13",

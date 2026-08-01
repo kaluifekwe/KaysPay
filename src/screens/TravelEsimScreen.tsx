@@ -18,6 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
+import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 import { formatNaira } from '../utils/formatCurrency';
 import {
   esimService,
@@ -59,6 +60,7 @@ function formatDate(iso: string): string {
 }
 
 export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) {
+  useSensitiveScreenProtection();
   const { authorize } = useTransactionAuth();
   const insets = useSafeAreaInsets();
 

@@ -70,6 +70,9 @@ verify_jwt = true
 [functions.verify-password-reset]
 verify_jwt = true
 
+[functions.device-sessions]
+verify_jwt = true
+
 [functions.kyc-verify-nin]
 verify_jwt = true
 
