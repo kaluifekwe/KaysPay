@@ -2,7 +2,7 @@
   "expo": {
     "name": "KaysPay",
     "slug": "KaysPay",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -10,6 +10,7 @@
       "supportsTablet": true
     },
     "android": {
+      "allowBackup": false,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/android-icon-foreground.png"
@@ -32,6 +33,7 @@
     "plugins": [
       "expo-asset",
       "expo-notifications",
+      "./plugins/withAndroidNetworkSecurity.js",
       [
         "expo-contacts",
         {
