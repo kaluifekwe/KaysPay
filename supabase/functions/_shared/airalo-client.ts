@@ -1,4 +1,5 @@
 import { adminClient } from "./auth.ts";
+import { fetchWithTimeout } from "./provider-fetch.ts";
 
 // Airalo Partner API — OAuth2 client_credentials. Token is valid ~24h and
 // rate-limited to 3 requests/minute to fetch, so it's cached (same pattern
@@ -22,7 +23,7 @@ export function isAiraloConfigured(): boolean {
 }
 
 async function fetchFreshToken(): Promise<string> {
-  const res = await fetch(`${AIRALO_BASE_URL}/v2/token`, {
+  const res = await fetchWithTimeout(`${AIRALO_BASE_URL}/v2/token`, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -30,7 +31,7 @@ async function fetchFreshToken(): Promise<string> {
       client_secret: AIRALO_CLIENT_SECRET || "",
       grant_type: "client_credentials",
     }),
-  });
+  }, 15_000);
   const data = await res.json();
   if (!data?.data?.access_token) {
     throw new AiraloAuthError(data?.meta?.message || "Airalo authentication failed");
@@ -63,10 +64,10 @@ async function authedFetch(
   init: RequestInit,
 ): Promise<any> {
   const doCall = async (token: string) => {
-    const res = await fetch(`${AIRALO_BASE_URL}${path}`, {
+    const res = await fetchWithTimeout(`${AIRALO_BASE_URL}${path}`, {
       ...init,
       headers: { ...init.headers, Accept: "application/json", Authorization: `Bearer ${token}` },
-    });
+    }, path === "/v2/orders" ? 45_000 : 30_000);
     return { status: res.status, data: await res.json() };
   };
 

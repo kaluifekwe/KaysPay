@@ -1,4 +1,5 @@
 import { adminClient } from "./auth.ts";
+import { fetchWithTimeout } from "./provider-fetch.ts";
 
 // VTU.ng API v2 — the Legacy v1 API this used to call is being discontinued.
 // Auth: JWT bearer token (login once, cache, refresh every ~7 days — NOT
@@ -12,11 +13,11 @@ const VTU_NG_PASSWORD = Deno.env.get("VTU_NG_PASSWORD");
 export class VTUAuthError extends Error {}
 
 async function fetchFreshToken(): Promise<string> {
-  const res = await fetch(VTU_NG_AUTH_URL, {
+  const res = await fetchWithTimeout(VTU_NG_AUTH_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username: VTU_NG_USERNAME, password: VTU_NG_PASSWORD }),
-  });
+  }, 15_000);
   const data = await res.json();
   if (!data?.token) {
     // Tagged separately from network/provider errors so the real cause
@@ -60,11 +61,11 @@ export async function callVTUNG(
   body: Record<string, unknown>,
 ): Promise<any> {
   const doCall = async (token: string) => {
-    const res = await fetch(`${VTU_NG_API_BASE}${endpoint}`, {
+    const res = await fetchWithTimeout(`${VTU_NG_API_BASE}${endpoint}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    });
+    }, 25_000);
     return { status: res.status, data: await res.json() };
   };
 

@@ -72,13 +72,10 @@ const ProfileScreen = ({ navigation }: any) => {
 
   const loadStats = async () => {
     try {
-      const txResult = await walletService.getRecentTransactions(1000);
-      if (txResult.success && txResult.transactions) {
-        setTotalTransactions(txResult.transactions.length);
-        const spent = txResult.transactions
-          .filter((tx) => tx.type !== 'wallet_fund' && tx.type !== 'refund')
-          .reduce((sum, tx) => sum + tx.amount_ngn, 0);
-        setTotalSpent(spent);
+      const summary = await walletService.getTransactionSummary();
+      if (summary.success) {
+        setTotalTransactions(summary.totalTransactions ?? 0);
+        setTotalSpent(summary.totalSpent ?? 0);
       }
     } catch (error) {
       // silent

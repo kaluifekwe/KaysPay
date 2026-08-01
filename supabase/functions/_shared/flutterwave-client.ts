@@ -1,4 +1,5 @@
 import { adminClient } from "./auth.ts";
+import { fetchWithTimeout } from "./provider-fetch.ts";
 
 // Flutterwave v4 API — OAuth2 client-credentials auth (NOT a static secret
 // key like Paystack/v3). Tokens expire in 600s (10 min), so unlike VTU.ng's
@@ -20,7 +21,7 @@ export function isFlutterwaveConfigured(): boolean {
 }
 
 async function fetchFreshToken(): Promise<string> {
-  const res = await fetch(FLW_TOKEN_URL, {
+  const res = await fetchWithTimeout(FLW_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -28,7 +29,7 @@ async function fetchFreshToken(): Promise<string> {
       client_secret: FLW_CLIENT_SECRET ?? "",
       grant_type: "client_credentials",
     }),
-  });
+  }, 15_000);
   const data = await res.json();
   if (!data?.access_token) {
     throw new FlutterwaveAuthError(data?.error_description || data?.error || "Flutterwave authentication failed");
@@ -68,7 +69,7 @@ export async function callFlutterwave(
   idempotencyKey?: string,
 ): Promise<{ status: number; data: any }> {
   const doCall = async (token: string) => {
-    const res = await fetch(`${FLW_BASE_URL}${path}`, {
+    const res = await fetchWithTimeout(`${FLW_BASE_URL}${path}`, {
       method,
       headers: {
         Authorization: `Bearer ${token}`,
@@ -77,7 +78,7 @@ export async function callFlutterwave(
         ...(idempotencyKey ? { "X-Idempotency-Key": idempotencyKey } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
-    });
+    }, 25_000);
     return { status: res.status, data: await res.json() };
   };
 

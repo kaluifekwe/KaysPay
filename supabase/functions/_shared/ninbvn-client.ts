@@ -3,6 +3,8 @@
 // an async, reviewed order (24-48h), not a live API response — submit,
 // then poll status. Wallet is charged by the provider immediately on
 // submission and auto-refunded if the order is rejected.
+import { fetchWithTimeout } from "./provider-fetch.ts";
+
 const NINBVN_API_KEY = Deno.env.get("NINBVN_API_KEY");
 const NINBVN_BASE_URL = "https://checkmyninbvn.com.ng/api";
 
@@ -15,11 +17,11 @@ export function isNinBvnConfigured(): boolean {
 async function call(path: string, body: Record<string, unknown>): Promise<{ status: number; data: any }> {
   if (!NINBVN_API_KEY) throw new NinBvnError("CheckMyNINBVN API key not configured");
 
-  const res = await fetch(`${NINBVN_BASE_URL}${path}`, {
+  const res = await fetchWithTimeout(`${NINBVN_BASE_URL}${path}`, {
     method: "POST",
     headers: { "x-api-key": NINBVN_API_KEY, "Content-Type": "application/json" },
     body: JSON.stringify(body),
-  });
+  }, 30_000);
   return { status: res.status, data: await res.json() };
 }
 

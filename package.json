@@ -41,7 +41,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "security:audit": "npm audit --omit=dev --audit-level=high"
+    "security:audit": "npm audit --omit=dev --audit-level=high",
+    "load:test": "node scripts/load/resilience-load.mjs"
   },
   "overrides": {
     "postcss": "8.5.18"

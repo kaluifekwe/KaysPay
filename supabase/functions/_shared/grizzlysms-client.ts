@@ -2,6 +2,8 @@
 // (not JSON except for getPrices/getCountries), api_key as a query param.
 // This is the CUSTOMER-side "Activation API" (buying numbers), not the
 // "Partner API" (which is for becoming a number supplier — a different role).
+import { fetchWithTimeout } from "./provider-fetch.ts";
+
 const GRIZZLYSMS_BASE_URL = "https://api.grizzlysms.com/stubs/handler_api.php";
 const GRIZZLYSMS_API_KEY = Deno.env.get("GRIZZLYSMS_API_KEY");
 
@@ -15,7 +17,7 @@ async function call(params: Record<string, string>): Promise<string> {
   if (!GRIZZLYSMS_API_KEY) throw new GrizzlySMSError("GrizzlySMS not configured");
 
   const query = new URLSearchParams({ api_key: GRIZZLYSMS_API_KEY, ...params });
-  const res = await fetch(`${GRIZZLYSMS_BASE_URL}?${query.toString()}`);
+  const res = await fetchWithTimeout(`${GRIZZLYSMS_BASE_URL}?${query.toString()}`, {}, 15_000);
   return res.text();
 }
 

@@ -2,6 +2,8 @@
 // params, apikey). Real-SIM numbers. SMSPVA charges only ON SUCCESS (when the
 // SMS actually arrives), so renting a number that never gets a code costs us
 // nothing — the user is fully refunded and we lose nothing. Server-only.
+import { fetchWithTimeout } from "./provider-fetch.ts";
+
 const BASE = "https://smspva.com/priemnik.php";
 const KEY = Deno.env.get("SMSPVA_API_KEY");
 
@@ -14,7 +16,7 @@ export function isSmspvaConfigured(): boolean {
 async function call(params: Record<string, string>): Promise<any> {
   if (!KEY) throw new SmspvaError("SMSPVA not configured");
   const q = new URLSearchParams({ apikey: KEY, ...params });
-  const res = await fetch(`${BASE}?${q.toString()}`);
+  const res = await fetchWithTimeout(`${BASE}?${q.toString()}`, {}, 15_000);
   const text = await res.text();
   try { return JSON.parse(text); } catch { return { response: "error", error_msg: text.slice(0, 200) }; }
 }

@@ -14,6 +14,13 @@ export interface TransactionResult {
   error?: string;
 }
 
+export interface TransactionSummaryResult {
+  success: boolean;
+  totalTransactions?: number;
+  totalSpent?: number;
+  error?: string;
+}
+
 /**
  * The wallet is server-authoritative. The client may only READ its balance
  * and history and subscribe to realtime changes. Every credit/debit happens
@@ -89,6 +96,31 @@ export const walletService = {
       return { success: true, transactions };
     } catch (error: any) {
       return { success: false, error: error.message };
+    }
+  },
+
+  async getTransactionSummary(): Promise<TransactionSummaryResult> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return { success: false, error: 'Not authenticated' };
+
+      const { data, error } = await supabase.rpc('get_user_transaction_summary');
+      if (error) throw error;
+
+      const summary = data as { total_transactions?: unknown; total_spent_kobo?: unknown } | null;
+      const totalTransactions = Number(summary?.total_transactions ?? 0);
+      const totalSpentKobo = Number(summary?.total_spent_kobo ?? 0);
+      if (!Number.isSafeInteger(totalTransactions) || !Number.isSafeInteger(totalSpentKobo)) {
+        throw new Error('Invalid transaction summary');
+      }
+
+      return {
+        success: true,
+        totalTransactions,
+        totalSpent: koboToNaira(totalSpentKobo),
+      };
+    } catch (error: unknown) {
+      return { success: false, error: error instanceof Error ? error.message : 'Could not load transaction summary' };
     }
   },
 

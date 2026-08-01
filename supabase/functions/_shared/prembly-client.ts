@@ -7,6 +7,8 @@
 // reference: only "x-api-key" is required (the account's Secret Key — the
 // Public Key is unused here, and there is no separate app-id). Same base
 // URL for sandbox and live; only the key value differs.
+import { fetchWithTimeout } from "./provider-fetch.ts";
+
 const PREMBLY_API_KEY = Deno.env.get("PREMBLY_API_KEY");
 const PREMBLY_APP_ID = Deno.env.get("PREMBLY_APP_ID");
 const PREMBLY_BASE_URL = "https://api.prembly.com";
@@ -20,7 +22,7 @@ export function isPremblyConfigured(): boolean {
 export async function verifyNin(nin: string): Promise<{ status: number; data: any }> {
   if (!PREMBLY_API_KEY) throw new PremblyError("Prembly API key not configured");
 
-  const res = await fetch(`${PREMBLY_BASE_URL}/verification/vnin`, {
+  const res = await fetchWithTimeout(`${PREMBLY_BASE_URL}/verification/vnin`, {
     method: "POST",
     headers: {
       "x-api-key": PREMBLY_API_KEY,
@@ -28,7 +30,7 @@ export async function verifyNin(nin: string): Promise<{ status: number; data: an
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ number_nin: nin }),
-  });
+  }, 25_000);
   return { status: res.status, data: await res.json() };
 }
 
@@ -39,7 +41,7 @@ export async function verifyNin(nin: string): Promise<{ status: number; data: an
 export async function verifyBvn(bvn: string): Promise<{ status: number; data: any }> {
   if (!PREMBLY_API_KEY) throw new PremblyError("Prembly API key not configured");
 
-  const res = await fetch(`${PREMBLY_BASE_URL}/verification/bvn_validation`, {
+  const res = await fetchWithTimeout(`${PREMBLY_BASE_URL}/verification/bvn_validation`, {
     method: "POST",
     headers: {
       "x-api-key": PREMBLY_API_KEY,
@@ -47,7 +49,7 @@ export async function verifyBvn(bvn: string): Promise<{ status: number; data: an
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ number: bvn }),
-  });
+  }, 25_000);
   return { status: res.status, data: await res.json() };
 }
 
@@ -69,10 +71,10 @@ export async function verifyBvnFull(bvn: string): Promise<{ status: number; data
   };
   if (PREMBLY_APP_ID) headers["app-id"] = PREMBLY_APP_ID;
 
-  const res = await fetch(`${PREMBLY_BASE_URL}/verification/bvn`, {
+  const res = await fetchWithTimeout(`${PREMBLY_BASE_URL}/verification/bvn`, {
     method: "POST",
     headers,
     body: JSON.stringify({ number: bvn }),
-  });
+  }, 25_000);
   return { status: res.status, data: await res.json() };
 }
