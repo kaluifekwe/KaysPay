@@ -126,8 +126,9 @@ async function tryPrembly(nin: string): Promise<ProviderOutcome> {
   return { ok, record, errorMessage: data?.message, isTestData, notFound };
 }
 
+console.info("[build] phase5-financial-controls-20260801");
+
 serve(async (req: Request) => {
-  // Phase 5 bundle marker: server-controlled service availability.
   const cors = handleCors(req);
   if (cors) return cors;
 

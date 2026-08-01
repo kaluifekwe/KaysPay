@@ -230,8 +230,9 @@ function friendlyValidation(code: string): string {
     "Please check your details and try again.";
 }
 
+console.info("[build] phase5-financial-controls-20260801");
+
 serve(async (req: Request) => {
-  // Phase 5 bundle marker: server-controlled service availability.
   const cors = handleCors(req);
   if (cors) return cors;
 

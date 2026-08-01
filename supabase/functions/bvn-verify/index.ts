@@ -138,8 +138,9 @@ async function tryNinBvn(bvn: string): Promise<ProviderOutcome> {
   };
 }
 
+console.info("[build] phase5-financial-controls-20260801");
+
 serve(async (req: Request) => {
-  // Phase 5 bundle marker: server-controlled service availability.
   const cors = handleCors(req);
   if (cors) return cors;
 
