@@ -54,6 +54,15 @@ function newRequestId() {
 
 type Provider = "vtu_ng" | "vtuafrica";
 
+// Performance telemetry is deliberately sampled and contains no customer or
+// financial data. A stable hash keeps retries of one idempotent request in the
+// same sample while avoiding Math.random() differences between invocations.
+function shouldMeasure(requestId: string): boolean {
+  let hash = 0;
+  for (let i = 0; i < requestId.length; i++) hash = (hash * 31 + requestId.charCodeAt(i)) >>> 0;
+  return hash % 10 === 0; // 10% sample: useful percentiles without a write per purchase.
+}
+
 /**
  * Resolve the trusted price + provider payload for a purchase request.
  * `amount` is in KOBO (used to debit the wallet). Amounts inside
@@ -233,6 +242,7 @@ function friendlyValidation(code: string): string {
 console.info("[build] phase5-financial-controls-20260801");
 
 serve(async (req: Request) => {
+  const requestStartedAt = performance.now();
   const cors = handleCors(req);
   if (cors) return cors;
 
@@ -344,6 +354,7 @@ serve(async (req: Request) => {
   const requestId = String(body.idempotency_key || newRequestId());
 
   // 4. Atomically debit + create the pending transaction.
+  const debitStartedAt = performance.now();
   const { data: txId, error: debitError } = await supabase.rpc(
     "debit_for_service",
     {
@@ -356,6 +367,7 @@ serve(async (req: Request) => {
       p_idempotency_key: requestId,
     },
   );
+  const debitCompletedAt = performance.now();
 
   if (debitError) {
     const msg = debitError.message || "";
@@ -376,6 +388,10 @@ serve(async (req: Request) => {
   // refunded) and finalized by the vtuafrica-reconcile sweep — same lifecycle
   // as VTU.ng below. Refunding a "Processing" order is a money leak.
   if (plan.provider === "vtuafrica") {
+    const measureThisRequest =
+      (body.service === "airtime" || body.service === "data") && shouldMeasure(requestId);
+    let providerStartedAt = 0;
+    let providerCompletedAt = 0;
     // VTUAfrica's purchase endpoint is synchronous and slow (measured 2-13s in
     // production — it holds the connection open while it reaches the telco).
     // The settle logic below is UNCHANGED (same debit/complete/refund
@@ -383,10 +399,12 @@ serve(async (req: Request) => {
     // blocking the user for the whole call. Every branch returns a Response.
     const settle = async (): Promise<Response> => {
       try {
+        providerStartedAt = performance.now();
         const result = await callVTUAfrica(plan.endpoint, {
           ...plan.providerPayload,
           ref: requestId,
         });
+        providerCompletedAt = performance.now();
         const outcome = vtuAfricaOutcome(result);
 
         if (outcome === "success") {
@@ -557,7 +575,43 @@ serve(async (req: Request) => {
     // (~2-13s, the provider's own latency) and then flips to Successful/Failed.
     // Genuinely async provider "Processing" replies are still held 'pending'
     // inside settle() and finalized by vtuafrica-reconcile.
-    return await settle();
+    const response = await settle();
+
+    if (measureThisRequest) {
+      const finishedAt = performance.now();
+      let outcome = "error";
+      try {
+        const responseBody = await response.clone().json();
+        outcome = responseBody?.pending
+          ? "pending"
+          : responseBody?.success
+            ? "completed"
+            : "failed";
+      } catch {
+        // Keep the generic outcome; telemetry must never affect the purchase.
+      }
+
+      const providerEnd = providerCompletedAt || finishedAt;
+      const { error: metricError } = await supabase.from("vtu_performance_metrics").upsert({
+        transaction_id: txId,
+        service: body.service,
+        network: plan.network,
+        provider: plan.provider,
+        outcome,
+        pre_debit_ms: Math.round(debitStartedAt - requestStartedAt),
+        debit_ms: Math.round(debitCompletedAt - debitStartedAt),
+        provider_ms: Math.round(providerEnd - (providerStartedAt || debitCompletedAt)),
+        settlement_ms: providerCompletedAt ? Math.round(finishedAt - providerCompletedAt) : 0,
+        total_ms: Math.round(finishedAt - requestStartedAt),
+      }, { onConflict: "transaction_id" });
+      if (metricError) {
+        // Non-sensitive structured failure only. Telemetry is best-effort and
+        // must never alter or delay financial settlement beyond this one write.
+        console.warn("vtu_performance_metric_write_failed", metricError.code);
+      }
+    }
+
+    return response;
   }
 
   // 4b. VTU.ng — call the provider with the SERVER-SIDE token.
