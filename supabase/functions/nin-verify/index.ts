@@ -6,6 +6,7 @@ import {
   enforceRateLimit,
   getAuthUser,
   isDeviceSessionAllowed,
+  isServiceEnabled,
   readJsonBody,
   RequestBodyError,
 } from "../_shared/auth.ts";
@@ -126,6 +127,7 @@ async function tryPrembly(nin: string): Promise<ProviderOutcome> {
 }
 
 serve(async (req: Request) => {
+  // Phase 5 bundle marker: server-controlled service availability.
   const cors = handleCors(req);
   if (cors) return cors;
 
@@ -152,6 +154,13 @@ serve(async (req: Request) => {
   }
 
   const supabase = adminClient();
+  if (!(await isServiceEnabled(supabase, "identity"))) {
+    return json({
+      success: false,
+      error:
+        "Identity services are temporarily unavailable. Please try again later.",
+    }, 503);
+  }
   if (!(await isDeviceSessionAllowed(req, supabase, user.id))) {
     return json({
       error: "This device session has been revoked. Please log in again.",

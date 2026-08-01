@@ -40,3 +40,13 @@ jobs:
             echo 'Potential committed credential detected.' >&2
             exit 1
           fi
+
+      - name: Enforce read-only financial monitor
+        shell: bash
+        run: |
+          if grep -En '(credit_wallet|debit_for_|complete_service_transaction|refund_service_transaction|refund_completed_service_transaction)' \
+            supabase/functions/financial-integrity-monitor/index.ts \
+            supabase/functions/_shared/financial-monitor.ts; then
+            echo 'Financial monitor must never invoke a money-movement function.' >&2
+            exit 1
+          fi

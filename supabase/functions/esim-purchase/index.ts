@@ -6,6 +6,7 @@ import {
   enforceRateLimit,
   getAuthUser,
   isDeviceSessionAllowed,
+  isServiceEnabled,
   readJsonBody,
   RequestBodyError,
 } from "../_shared/auth.ts";
@@ -99,6 +100,13 @@ serve(async (req: Request) => {
   }
 
   const supabase = adminClient();
+  if (!(await isServiceEnabled(supabase, "esim"))) {
+    return json({
+      success: false,
+      error:
+        "eSIM purchases are temporarily unavailable. Please try again later.",
+    }, 503);
+  }
   if (!(await isDeviceSessionAllowed(req, supabase, user.id))) {
     return json({
       error: "This device session has been revoked. Please log in again.",

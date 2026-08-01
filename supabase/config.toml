@@ -73,6 +73,9 @@ verify_jwt = true
 [functions.device-sessions]
 verify_jwt = true
 
+[functions.financial-integrity-monitor]
+verify_jwt = true
+
 [functions.kyc-verify-nin]
 verify_jwt = true
 
