@@ -1,8 +1,21 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser, adminClient, consumeAuthToken } from "../_shared/auth.ts";
-import { verifyNin as verifyNinPrembly, isPremblyConfigured } from "../_shared/prembly-client.ts";
-import { verifyNin as verifyNinBvn, isNinBvnConfigured } from "../_shared/ninbvn-client.ts";
+import {
+  adminClient,
+  consumeAuthToken,
+  enforceRateLimit,
+  getAuthUser,
+  readJsonBody,
+  RequestBodyError,
+} from "../_shared/auth.ts";
+import {
+  isPremblyConfigured,
+  verifyNin as verifyNinPrembly,
+} from "../_shared/prembly-client.ts";
+import {
+  isNinBvnConfigured,
+  verifyNin as verifyNinBvn,
+} from "../_shared/ninbvn-client.ts";
 
 // Retail prices confirmed by owner 2026-07-26: Regular Slip ₦500, Card ₦700.
 // SERVER-AUTHORITATIVE: the client sends the chosen slip type, but the price
@@ -38,7 +51,10 @@ function normalizeGender(v: unknown): string {
 // Compares the provider's on-file record against whatever the caller
 // claims, field by field — used by banks/schools/agents to confirm
 // submitted details are genuine, per the "verification" use case.
-function buildMatchReport(record: any, claimed: Record<string, string> | undefined) {
+function buildMatchReport(
+  record: any,
+  claimed: Record<string, string> | undefined,
+) {
   if (!claimed) return undefined;
   const normText = (v: unknown) => String(v ?? "").trim().toLowerCase();
   const fields: Record<string, [string, string, (v: unknown) => string]> = {
@@ -75,7 +91,10 @@ interface ProviderOutcome {
 function extractRecord(data: any): any {
   const candidates = [data?.data?.data, data?.data, data];
   for (const c of candidates) {
-    if (c && typeof c === "object" && typeof c.firstname === "string" && c.firstname.trim().length > 0) {
+    if (
+      c && typeof c === "object" && typeof c.firstname === "string" &&
+      c.firstname.trim().length > 0
+    ) {
       return c;
     }
   }
@@ -87,7 +106,9 @@ async function tryNinBvn(nin: string): Promise<ProviderOutcome> {
   const { status, data } = await verifyNinBvn(nin);
   const record = extractRecord(data);
   const ok = status < 400 && !!record;
-  const errorMessage = ok ? undefined : (data?.message || data?.data?.message || `http_${status}`);
+  const errorMessage = ok
+    ? undefined
+    : (data?.message || data?.data?.message || `http_${status}`);
   return { ok, record, errorMessage };
 }
 
@@ -95,7 +116,8 @@ async function tryNinBvn(nin: string): Promise<ProviderOutcome> {
 async function tryPrembly(nin: string): Promise<ProviderOutcome> {
   const { status, data } = await verifyNinPrembly(nin);
   const record = extractRecord(data);
-  const isTestData = typeof data?.message === "string" && /test data/i.test(data.message);
+  const isTestData = typeof data?.message === "string" &&
+    /test data/i.test(data.message);
   const ok = status < 400 && !!record && !isTestData;
   // 2xx + no record + not test data = the number genuinely isn't on file.
   const notFound = status >= 200 && status < 300 && !record && !isTestData;
@@ -115,27 +137,56 @@ serve(async (req: Request) => {
 
   let body: any;
   try {
-    body = await req.json();
-  } catch {
-    return json({ error: "Invalid request body" }, 400);
+    body = await readJsonBody(req);
+  } catch (error) {
+    const e = error instanceof RequestBodyError
+      ? error
+      : new RequestBodyError(400, "Invalid request body");
+    return json({ error: e.message }, e.status);
   }
 
   const nin = String(body?.nin || "").trim();
-  if (!/^\d{11}$/.test(nin)) return json({ success: false, error: "Enter a valid 11-digit NIN" }, 400);
+  if (!/^\d{11}$/.test(nin)) {
+    return json({ success: false, error: "Enter a valid 11-digit NIN" }, 400);
+  }
 
   const supabase = adminClient();
+
+  const rate = await enforceRateLimit(
+    supabase,
+    "nin_verify",
+    user.id,
+    6,
+    3600,
+    user.id,
+  );
+  if (!rate.allowed) {
+    return json({
+      success: false,
+      error: "Too many NIN verification attempts. Please wait and try again.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
+  }
 
   // Require server-verified proof the PIN/biometric step-up just ran for
   // THIS request — a valid JWT alone is not enough to move money.
   const authorized = await consumeAuthToken(supabase, user.id, body.auth_token);
-  if (!authorized) return json({ success: false, error: "Re-authorization required. Please try again." }, 401);
+  if (!authorized) {
+    return json({
+      success: false,
+      error: "Re-authorization required. Please try again.",
+    }, 401);
+  }
 
   const requestId = String(body.idempotency_key || newRequestId());
   const claimed = body.claimed as Record<string, string> | undefined;
 
   // Which slip the user chose up front decides the price. Validate against our
   // own map — never trust a client-sent amount.
-  const slipTier = Object.prototype.hasOwnProperty.call(SLIP_PRICE_KOBO, String(body?.slip_tier))
+  const slipTier = Object.prototype.hasOwnProperty.call(
+      SLIP_PRICE_KOBO,
+      String(body?.slip_tier),
+    )
     ? String(body.slip_tier)
     : DEFAULT_SLIP_TIER;
   const priceKobo = SLIP_PRICE_KOBO[slipTier];
@@ -174,25 +225,50 @@ serve(async (req: Request) => {
     // Different slip type (e.g. upgrading Regular → Card): reuse the already
     // verified record (no provider re-call), but charge the new type's price so
     // a cheaper prior lookup can't unlock a pricier slip for free.
-    const { data: upTxId, error: upErr } = await supabase.rpc("debit_for_service", {
-      p_user_id: user.id,
-      p_amount: priceKobo,
-      p_type: "nin_verification",
-      p_network: "N/A",
-      p_recipient: nin,
-      p_metadata: { service: "nin_verification", slip_tier: slipTier, claimed: claimed ?? null },
-      p_idempotency_key: requestId,
-    });
+    const { data: upTxId, error: upErr } = await supabase.rpc(
+      "debit_for_service",
+      {
+        p_user_id: user.id,
+        p_amount: priceKobo,
+        p_type: "nin_verification",
+        p_network: "N/A",
+        p_recipient: nin,
+        p_metadata: {
+          service: "nin_verification",
+          slip_tier: slipTier,
+          claimed: claimed ?? null,
+        },
+        p_idempotency_key: requestId,
+      },
+    );
     if (upErr) {
       const msg = upErr.message || "";
-      if (msg.includes("INSUFFICIENT_FUNDS")) return json({ success: false, error: "Insufficient balance" });
-      if (msg.includes("WALLET_NOT_FOUND")) return json({ success: false, error: "Wallet not found" });
-      return json({ success: false, error: "Could not start transaction" }, 500);
+      if (msg.includes("INSUFFICIENT_FUNDS")) {
+        return json({ success: false, error: "Insufficient balance" });
+      }
+      if (msg.includes("WALLET_NOT_FOUND")) {
+        return json({ success: false, error: "Wallet not found" });
+      }
+      return json(
+        { success: false, error: "Could not start transaction" },
+        500,
+      );
     }
-    await supabase.rpc("complete_service_transaction", { p_tx_id: upTxId, p_order_id: nin });
+    await supabase.rpc("complete_service_transaction", {
+      p_tx_id: upTxId,
+      p_order_id: nin,
+    });
     await supabase
       .from("transactions")
-      .update({ metadata: { service: "nin_verification", slip_tier: slipTier, claimed: claimed ?? null, provider: "cache", record: cachedTx.metadata.record } })
+      .update({
+        metadata: {
+          service: "nin_verification",
+          slip_tier: slipTier,
+          claimed: claimed ?? null,
+          provider: "cache",
+          record: cachedTx.metadata.record,
+        },
+      })
       .eq("id", upTxId);
     return json({
       success: true,
@@ -203,20 +279,31 @@ serve(async (req: Request) => {
     });
   }
 
-  const { data: txId, error: debitError } = await supabase.rpc("debit_for_service", {
-    p_user_id: user.id,
-    p_amount: priceKobo,
-    p_type: "nin_verification",
-    p_network: "N/A",
-    p_recipient: nin,
-    p_metadata: { service: "nin_verification", slip_tier: slipTier, claimed: claimed ?? null },
-    p_idempotency_key: requestId,
-  });
+  const { data: txId, error: debitError } = await supabase.rpc(
+    "debit_for_service",
+    {
+      p_user_id: user.id,
+      p_amount: priceKobo,
+      p_type: "nin_verification",
+      p_network: "N/A",
+      p_recipient: nin,
+      p_metadata: {
+        service: "nin_verification",
+        slip_tier: slipTier,
+        claimed: claimed ?? null,
+      },
+      p_idempotency_key: requestId,
+    },
+  );
 
   if (debitError) {
     const msg = debitError.message || "";
-    if (msg.includes("INSUFFICIENT_FUNDS")) return json({ success: false, error: "Insufficient balance" });
-    if (msg.includes("WALLET_NOT_FOUND")) return json({ success: false, error: "Wallet not found" });
+    if (msg.includes("INSUFFICIENT_FUNDS")) {
+      return json({ success: false, error: "Insufficient balance" });
+    }
+    if (msg.includes("WALLET_NOT_FOUND")) {
+      return json({ success: false, error: "Wallet not found" });
+    }
     return json({ success: false, error: "Could not start transaction" }, 500);
   }
 
@@ -239,7 +326,8 @@ serve(async (req: Request) => {
           : outcome.errorMessage;
       } else if (!outcome.ok && outcome.isTestData) {
         primaryError = "prembly_test_data";
-        lastError = "Verification is temporarily unavailable. Please try again shortly.";
+        lastError =
+          "Verification is temporarily unavailable. Please try again shortly.";
       }
     } catch (e) {
       primaryError = (e as Error).message;
@@ -272,18 +360,33 @@ serve(async (req: Request) => {
     // otherwise the actual cause of a failure is lost.
     await supabase.rpc("refund_service_transaction", {
       p_tx_id: txId,
-      p_reason: JSON.stringify({ primary: primaryError, shown: lastError }).slice(0, 500),
+      p_reason: JSON.stringify({ primary: primaryError, shown: lastError })
+        .slice(0, 500),
     });
-    return json({ success: false, error: lastError || "Could not verify this NIN. Please try again." });
+    return json({
+      success: false,
+      error: lastError || "Could not verify this NIN. Please try again.",
+    });
   }
 
-  await supabase.rpc("complete_service_transaction", { p_tx_id: txId, p_order_id: nin });
+  await supabase.rpc("complete_service_transaction", {
+    p_tx_id: txId,
+    p_order_id: nin,
+  });
 
   // Persist the verified record so the print-slip feature (and Transaction
   // History) can redisplay it later without paying again.
   await supabase
     .from("transactions")
-    .update({ metadata: { service: "nin_verification", slip_tier: slipTier, claimed: claimed ?? null, provider: providerUsed, record: outcome.record } })
+    .update({
+      metadata: {
+        service: "nin_verification",
+        slip_tier: slipTier,
+        claimed: claimed ?? null,
+        provider: providerUsed,
+        record: outcome.record,
+      },
+    })
     .eq("id", txId);
 
   return json({

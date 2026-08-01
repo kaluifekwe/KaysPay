@@ -1,33 +1,40 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser, adminClient, consumeAuthToken } from "../_shared/auth.ts";
 import {
-  AIRTIME_MIN,
+  adminClient,
+  consumeAuthToken,
+  enforceRateLimit,
+  getAuthUser,
+  readJsonBody,
+  RequestBodyError,
+} from "../_shared/auth.ts";
+import {
   AIRTIME_MAX,
-  BILL_MIN,
+  AIRTIME_MIN,
   BILL_MAX,
+  BILL_MIN,
   DATA_BUNDLES,
-  TV_BOUQUETS,
   ELECTRICITY_PROVIDERS,
-  VALID_NETWORKS,
   EXAM_PIN_TYPES,
   KOBO,
   NetworkProvider,
+  TV_BOUQUETS,
+  VALID_NETWORKS,
 } from "../_shared/vtu-catalog.ts";
 import {
   callVTUNG,
   isVtuConfigured,
-  VTUAuthError,
   NON_TERMINAL_STATUSES,
   SUCCESS_STATUSES,
+  VTUAuthError,
 } from "../_shared/vtu-client.ts";
 import {
   callVTUAfrica,
   isVtuAfricaConfigured,
   normalizeVTUAfricaResult,
   queryVTUAfrica,
-  vtuAfricaOutcome,
   VTUAfricaError,
+  vtuAfricaOutcome,
 } from "../_shared/vtuafrica-client.ts";
 
 function json(body: unknown, status = 200) {
@@ -69,12 +76,16 @@ function resolvePurchase(body: any): {
 
   switch (service) {
     case "airtime": {
-      const network = String(body.network || "").toLowerCase() as NetworkProvider;
+      const network = String(body.network || "")
+        .toLowerCase() as NetworkProvider;
       const amount = Number(body.amount); // kobo
       const phone = String(body.phone || "");
       if (!VALID_NETWORKS.includes(network)) throw "INVALID_NETWORK";
       if (!/^0\d{10}$/.test(phone)) throw "INVALID_PHONE";
-      if (!Number.isInteger(amount) || amount < AIRTIME_MIN || amount > AIRTIME_MAX) throw "INVALID_AMOUNT";
+      if (
+        !Number.isInteger(amount) || amount < AIRTIME_MIN ||
+        amount > AIRTIME_MAX
+      ) throw "INVALID_AMOUNT";
       return {
         amount,
         txType: "airtime",
@@ -87,7 +98,8 @@ function resolvePurchase(body: any): {
     }
 
     case "data": {
-      const network = String(body.network || "").toLowerCase() as NetworkProvider;
+      const network = String(body.network || "")
+        .toLowerCase() as NetworkProvider;
       const phone = String(body.phone || "");
       const bundleId = String(body.bundle_id || "");
       if (!VALID_NETWORKS.includes(network)) throw "INVALID_NETWORK";
@@ -118,7 +130,9 @@ function resolvePurchase(body: any): {
       const type = body.type === "postpaid" ? "postpaid" : "prepaid";
       if (!ELECTRICITY_PROVIDERS.includes(biller)) throw "INVALID_PROVIDER";
       if (!/^\d{6,20}$/.test(meter)) throw "INVALID_METER";
-      if (!Number.isInteger(amount) || amount < BILL_MIN || amount > BILL_MAX) throw "INVALID_AMOUNT";
+      if (!Number.isInteger(amount) || amount < BILL_MIN || amount > BILL_MAX) {
+        throw "INVALID_AMOUNT";
+      }
       return {
         amount,
         txType: "bill",
@@ -126,7 +140,12 @@ function resolvePurchase(body: any): {
         recipient: meter,
         provider: "vtuafrica",
         endpoint: "/electric",
-        providerPayload: { service: biller, meterNo: meter, metertype: type, amount: amount / KOBO },
+        providerPayload: {
+          service: biller,
+          meterNo: meter,
+          metertype: type,
+          amount: amount / KOBO,
+        },
       };
     }
 
@@ -205,7 +224,8 @@ const VALIDATION_MESSAGES: Record<string, string> = {
   UNKNOWN_SERVICE: "This service isn't available right now.",
 };
 function friendlyValidation(code: string): string {
-  return VALIDATION_MESSAGES[code] || "Please check your details and try again.";
+  return VALIDATION_MESSAGES[code] ||
+    "Please check your details and try again.";
 }
 
 serve(async (req: Request) => {
@@ -218,17 +238,42 @@ serve(async (req: Request) => {
 
   let body: any;
   try {
-    body = await req.json();
-  } catch {
-    return json({ error: "Invalid request body" }, 400);
+    body = await readJsonBody(req);
+  } catch (error) {
+    const e = error instanceof RequestBodyError
+      ? error
+      : new RequestBodyError(400, "Invalid request body");
+    return json({ error: e.message }, e.status);
   }
 
   const supabase = adminClient();
 
+  const rate = await enforceRateLimit(
+    supabase,
+    "vtu_purchase",
+    user.id,
+    30,
+    300,
+    user.id,
+  );
+  if (!rate.allowed) {
+    return json({
+      success: false,
+      error:
+        "Too many purchase attempts. Please wait a few minutes and try again.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
+  }
+
   // 2. Require server-verified proof the PIN/biometric step-up just ran for
   // THIS request — a valid JWT alone is not enough to move money.
   const authorized = await consumeAuthToken(supabase, user.id, body.auth_token);
-  if (!authorized) return json({ success: false, error: "Re-authorization required. Please try again." }, 401);
+  if (!authorized) {
+    return json({
+      success: false,
+      error: "Re-authorization required. Please try again.",
+    }, 401);
+  }
 
   // 3. Resolve trusted price + provider payload.
   let plan;
@@ -238,8 +283,12 @@ serve(async (req: Request) => {
     return json({ error: friendlyValidation(String(code)) }, 400);
   }
 
-  if (plan.provider === "vtu_ng" && !isVtuConfigured()) return json({ error: "VTU provider not configured" }, 500);
-  if (plan.provider === "vtuafrica" && !isVtuAfricaConfigured()) return json({ error: "VTUAfrica provider not configured" }, 500);
+  if (plan.provider === "vtu_ng" && !isVtuConfigured()) {
+    return json({ error: "VTU provider not configured" }, 500);
+  }
+  if (plan.provider === "vtuafrica" && !isVtuAfricaConfigured()) {
+    return json({ error: "VTUAfrica provider not configured" }, 500);
+  }
 
   // 3b. Duplicate guard (data + TV only). The telco/VTUAfrica rejects a repeat
   // of the SAME plan to the SAME recipient within a short window, which would
@@ -259,7 +308,11 @@ serve(async (req: Request) => {
       .limit(5);
     const pp = plan.providerPayload as Record<string, unknown>;
     const isSamePlan = (recentSame ?? []).some((t) => {
-      const req = ((t.metadata as Record<string, unknown>)?.request ?? {}) as Record<string, unknown>;
+      const req =
+        ((t.metadata as Record<string, unknown>)?.request ?? {}) as Record<
+          string,
+          unknown
+        >;
       return body.service === "data"
         ? req.service === pp.service && req.DataPlan === pp.DataPlan
         : req.service === pp.service && req.variation === pp.variation;
@@ -267,7 +320,8 @@ serve(async (req: Request) => {
     if (isSamePlan) {
       return json({
         success: false,
-        error: "You just bought this plan for this number. Please wait a couple of minutes before buying it again.",
+        error:
+          "You just bought this plan for this number. Please wait a couple of minutes before buying it again.",
       });
     }
   }
@@ -275,22 +329,29 @@ serve(async (req: Request) => {
   const requestId = String(body.idempotency_key || newRequestId());
 
   // 4. Atomically debit + create the pending transaction.
-  const { data: txId, error: debitError } = await supabase.rpc("debit_for_service", {
-    p_user_id: user.id,
-    p_amount: plan.amount,
-    p_type: plan.txType,
-    p_network: plan.network,
-    p_recipient: plan.recipient,
-    p_metadata: { service: body.service, request: plan.providerPayload },
-    p_idempotency_key: requestId,
-  });
+  const { data: txId, error: debitError } = await supabase.rpc(
+    "debit_for_service",
+    {
+      p_user_id: user.id,
+      p_amount: plan.amount,
+      p_type: plan.txType,
+      p_network: plan.network,
+      p_recipient: plan.recipient,
+      p_metadata: { service: body.service, request: plan.providerPayload },
+      p_idempotency_key: requestId,
+    },
+  );
 
   if (debitError) {
     const msg = debitError.message || "";
     // Expected business outcomes return 200 + success:false so the client
     // can read them directly; only genuine faults return non-2xx.
-    if (msg.includes("INSUFFICIENT_FUNDS")) return json({ success: false, error: "Insufficient balance" });
-    if (msg.includes("WALLET_NOT_FOUND")) return json({ success: false, error: "Wallet not found" });
+    if (msg.includes("INSUFFICIENT_FUNDS")) {
+      return json({ success: false, error: "Insufficient balance" });
+    }
+    if (msg.includes("WALLET_NOT_FOUND")) {
+      return json({ success: false, error: "Wallet not found" });
+    }
     return json({ success: false, error: "Could not start transaction" }, 500);
   }
 
@@ -307,15 +368,21 @@ serve(async (req: Request) => {
     // blocking the user for the whole call. Every branch returns a Response.
     const settle = async (): Promise<Response> => {
       try {
-        const result = await callVTUAfrica(plan.endpoint, { ...plan.providerPayload, ref: requestId });
+        const result = await callVTUAfrica(plan.endpoint, {
+          ...plan.providerPayload,
+          ref: requestId,
+        });
         const outcome = vtuAfricaOutcome(result);
 
         if (outcome === "success") {
           const orderId: string | undefined = result?.description?.ReferenceID;
-          const { error: completeError } = await supabase.rpc("complete_service_transaction", {
-            p_tx_id: txId,
-            p_order_id: orderId ?? null,
-          });
+          const { error: completeError } = await supabase.rpc(
+            "complete_service_transaction",
+            {
+              p_tx_id: txId,
+              p_order_id: orderId ?? null,
+            },
+          );
           if (completeError) throw completeError;
 
           // The prepaid meter token was previously only ever returned in this
@@ -325,13 +392,16 @@ serve(async (req: Request) => {
           // Persist it into the transaction's own metadata (a short string,
           // not a file — this is not the same as storing a generated PDF,
           // which is still never done) so the receipt can be rebuilt anytime.
-          const electricityToken: string | undefined = result?.description?.Token;
+          const electricityToken: string | undefined = result?.description
+            ?.Token;
 
           // Exam PINs come back as a single "<=>"-delimited string for
           // multi-quantity purchases (VTUAfrica's own docs example:
           // "WR23454<=>456786564") — split into a clean array for the client.
           const pinsRaw: string | undefined = result?.description?.pins;
-          const pins = pinsRaw ? pinsRaw.split("<=>").filter(Boolean) : undefined;
+          const pins = pinsRaw
+            ? pinsRaw.split("<=>").filter(Boolean)
+            : undefined;
 
           // Persist the token, exam PIN(s) AND the provider reference — all
           // one-time values in the provider response. Saving them means they're
@@ -375,7 +445,8 @@ serve(async (req: Request) => {
             success: true,
             pending: true,
             transaction_id: txId,
-            message: "Your order is still processing. You'll be notified once it completes.",
+            message:
+              "Your order is still processing. You'll be notified once it completes.",
           });
         }
 
@@ -385,10 +456,13 @@ serve(async (req: Request) => {
 
         if (verifiedOutcome === "success") {
           const normalized = normalizeVTUAfricaResult(verified);
-          const { error: completeError } = await supabase.rpc("complete_service_transaction", {
-            p_tx_id: txId,
-            p_order_id: normalized.reference,
-          });
+          const { error: completeError } = await supabase.rpc(
+            "complete_service_transaction",
+            {
+              p_tx_id: txId,
+              p_order_id: normalized.reference,
+            },
+          );
           if (completeError) throw completeError;
           return json({
             success: true,
@@ -422,7 +496,8 @@ serve(async (req: Request) => {
           success: true,
           pending: true,
           transaction_id: txId,
-          message: "Your order is still processing. You'll be notified once it completes.",
+          message:
+            "Your order is still processing. You'll be notified once it completes.",
         });
       } catch (e) {
         // A config/auth error means the request never reached VTUAfrica —
@@ -436,13 +511,17 @@ serve(async (req: Request) => {
             p_tx_id: txId,
             p_reason: `vtuafrica_config: ${e.message}`,
           });
-          return json({ success: false, error: "Provider not configured. Please try again later." });
+          return json({
+            success: false,
+            error: "Provider not configured. Please try again later.",
+          });
         }
         return json({
           success: true,
           pending: true,
           transaction_id: txId,
-          message: "Your order is still processing. You'll be notified once it completes.",
+          message:
+            "Your order is still processing. You'll be notified once it completes.",
         });
       }
     };
@@ -468,7 +547,10 @@ serve(async (req: Request) => {
 
   // 4b. VTU.ng — call the provider with the SERVER-SIDE token.
   try {
-    const result = await callVTUNG(supabase, plan.endpoint, { request_id: requestId, ...plan.providerPayload });
+    const result = await callVTUNG(supabase, plan.endpoint, {
+      request_id: requestId,
+      ...plan.providerPayload,
+    });
 
     // A hard API-level error (not even an order was created) — code is the
     // error code itself (e.g. "invalid_service_id"), not "success".
@@ -477,7 +559,10 @@ serve(async (req: Request) => {
         p_tx_id: txId,
         p_reason: result?.message || result?.code || "provider_rejected",
       });
-      return json({ success: false, error: result?.message || "Purchase failed. You were not charged." });
+      return json({
+        success: false,
+        error: result?.message || "Purchase failed. You were not charged.",
+      });
     }
 
     // v2 orders can be async: "code":"success" just means the request was
@@ -512,7 +597,8 @@ serve(async (req: Request) => {
         success: true,
         pending: true,
         transaction_id: txId,
-        message: "Your order is still processing. You'll be notified once it completes.",
+        message:
+          "Your order is still processing. You'll be notified once it completes.",
       });
     }
 
@@ -521,12 +607,17 @@ serve(async (req: Request) => {
       p_tx_id: txId,
       p_reason: order?.status || "provider_rejected",
     });
-    return json({ success: false, error: "Purchase failed. You were not charged." });
+    return json({
+      success: false,
+      error: "Purchase failed. You were not charged.",
+    });
   } catch (e) {
     const isAuthError = e instanceof VTUAuthError;
     await supabase.rpc("refund_service_transaction", {
       p_tx_id: txId,
-      p_reason: isAuthError ? `vtu_auth_failed: ${e.message}` : "provider_unreachable",
+      p_reason: isAuthError
+        ? `vtu_auth_failed: ${e.message}`
+        : "provider_unreachable",
     });
     return json({
       success: false,

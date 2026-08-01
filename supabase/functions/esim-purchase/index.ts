@@ -1,8 +1,21 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser, adminClient, consumeAuthToken } from "../_shared/auth.ts";
-import { browseAiraloPackages, fetchAiraloCatalog, submitAiraloOrder, isAiraloConfigured, AiraloAuthError } from "../_shared/airalo-client.ts";
-import { usdToNgnKobo, getUsdNgnRate } from "../_shared/esim-catalog.ts";
+import {
+  adminClient,
+  consumeAuthToken,
+  enforceRateLimit,
+  getAuthUser,
+  readJsonBody,
+  RequestBodyError,
+} from "../_shared/auth.ts";
+import {
+  AiraloAuthError,
+  browseAiraloPackages,
+  fetchAiraloCatalog,
+  isAiraloConfigured,
+  submitAiraloOrder,
+} from "../_shared/airalo-client.ts";
+import { getUsdNgnRate, usdToNgnKobo } from "../_shared/esim-catalog.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -37,7 +50,9 @@ async function resolveCurrentPrice(
     for (const op of c?.operators || []) {
       for (const pkg of op?.packages || []) {
         if (pkg?.id === providerPackageId) {
-          const priceUSD = Number(pkg?.prices?.net_price?.USD ?? pkg?.net_price ?? pkg?.price);
+          const priceUSD = Number(
+            pkg?.prices?.net_price?.USD ?? pkg?.net_price ?? pkg?.price,
+          );
           if (Number.isFinite(priceUSD)) return { priceUSD, raw: pkg };
         }
       }
@@ -55,9 +70,12 @@ serve(async (req: Request) => {
 
   let body: any;
   try {
-    body = await req.json();
-  } catch {
-    return json({ error: "Invalid request body" }, 400);
+    body = await readJsonBody(req);
+  } catch (error) {
+    const e = error instanceof RequestBodyError
+      ? error
+      : new RequestBodyError(400, "Invalid request body");
+    return json({ error: e.message }, e.status);
   }
 
   const planId = String(body?.plan_id || "");
@@ -66,56 +84,126 @@ serve(async (req: Request) => {
   const destination = region || country;
   const [provider, providerPackageId] = planId.split(/:(.+)/);
 
-  if (!region && !/^[A-Z]{2}$/.test(country)) return json({ success: false, error: "Invalid destination" }, 400);
-  if (provider !== "airalo") return json({ success: false, error: "Invalid plan" }, 400);
-  if (!providerPackageId) return json({ success: false, error: "Invalid plan" }, 400);
-  if (!isAiraloConfigured()) return json({ error: "Airalo not configured" }, 500);
+  if (!region && !/^[A-Z]{2}$/.test(country)) {
+    return json({ success: false, error: "Invalid destination" }, 400);
+  }
+  if (provider !== "airalo") {
+    return json({ success: false, error: "Invalid plan" }, 400);
+  }
+  if (!providerPackageId) {
+    return json({ success: false, error: "Invalid plan" }, 400);
+  }
+  if (!isAiraloConfigured()) {
+    return json({ error: "Airalo not configured" }, 500);
+  }
 
   const supabase = adminClient();
+
+  const rate = await enforceRateLimit(
+    supabase,
+    "esim_purchase",
+    user.id,
+    6,
+    600,
+    user.id,
+  );
+  if (!rate.allowed) {
+    return json({
+      success: false,
+      error: "Too many eSIM purchase attempts. Please wait and try again.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
+  }
 
   // Require server-verified proof the PIN/biometric step-up just ran for
   // THIS request — a valid JWT alone is not enough to move money.
   const authorized = await consumeAuthToken(supabase, user.id, body.auth_token);
-  if (!authorized) return json({ success: false, error: "Re-authorization required. Please try again." }, 401);
+  if (!authorized) {
+    return json({
+      success: false,
+      error: "Re-authorization required. Please try again.",
+    }, 401);
+  }
 
   let current;
   try {
-    current = await resolveCurrentPrice(supabase, providerPackageId, { country: region ? null : country, region: region || null });
+    current = await resolveCurrentPrice(supabase, providerPackageId, {
+      country: region ? null : country,
+      region: region || null,
+    });
   } catch {
-    return json({ success: false, error: "Could not verify current plan price. Please try again." });
+    return json({
+      success: false,
+      error: "Could not verify current plan price. Please try again.",
+    });
   }
-  if (!current) return json({ success: false, error: "This plan is no longer available. Please pick another." });
+  if (!current) {
+    return json({
+      success: false,
+      error: "This plan is no longer available. Please pick another.",
+    });
+  }
 
   const fxRate = await getUsdNgnRate(supabase);
   const amountKobo = usdToNgnKobo(current.priceUSD, fxRate);
   const requestId = String(body.idempotency_key || newIdempotencyKey());
 
-  const { data: txId, error: debitError } = await supabase.rpc("debit_for_service", {
-    p_user_id: user.id,
-    p_amount: amountKobo,
-    p_type: "esim",
-    p_network: "N/A",
-    p_recipient: destination,
-    p_metadata: { service: "esim", provider, provider_package_id: providerPackageId, country: destination, region: region || null, price_usd: current.priceUSD, fx_rate: fxRate },
-    p_idempotency_key: requestId,
-  });
+  const { data: txId, error: debitError } = await supabase.rpc(
+    "debit_for_service",
+    {
+      p_user_id: user.id,
+      p_amount: amountKobo,
+      p_type: "esim",
+      p_network: "N/A",
+      p_recipient: destination,
+      p_metadata: {
+        service: "esim",
+        provider,
+        provider_package_id: providerPackageId,
+        country: destination,
+        region: region || null,
+        price_usd: current.priceUSD,
+        fx_rate: fxRate,
+      },
+      p_idempotency_key: requestId,
+    },
+  );
 
   if (debitError) {
     const msg = debitError.message || "";
-    if (msg.includes("INSUFFICIENT_FUNDS")) return json({ success: false, error: "Insufficient balance" });
-    if (msg.includes("WALLET_NOT_FOUND")) return json({ success: false, error: "Wallet not found" });
+    if (msg.includes("INSUFFICIENT_FUNDS")) {
+      return json({ success: false, error: "Insufficient balance" });
+    }
+    if (msg.includes("WALLET_NOT_FOUND")) {
+      return json({ success: false, error: "Wallet not found" });
+    }
     return json({ success: false, error: "Could not start transaction" }, 500);
   }
 
   try {
-    const result = await submitAiraloOrder(supabase, providerPackageId, 1, requestId);
+    const result = await submitAiraloOrder(
+      supabase,
+      providerPackageId,
+      1,
+      requestId,
+    );
     const orderData = result?.data;
     const sim = orderData?.sims?.[0];
     if (!sim?.qrcode) {
-      await supabase.rpc("refund_service_transaction", { p_tx_id: txId, p_reason: result?.meta?.message || "provider_rejected" });
-      return json({ success: false, error: result?.meta?.message || "Purchase failed. You were not charged." });
+      await supabase.rpc("refund_service_transaction", {
+        p_tx_id: txId,
+        p_reason: result?.meta?.message || "provider_rejected",
+      });
+      return json({
+        success: false,
+        error: result?.meta?.message ||
+          "Purchase failed. You were not charged.",
+      });
     }
-    await supabase.rpc("complete_service_transaction", { p_tx_id: txId, p_order_id: String(orderData?.id ?? "") });
+    await supabase.rpc("complete_service_transaction", {
+      p_tx_id: txId,
+      p_order_id: String(orderData?.id ?? ""),
+    });
 
     // Enrich the transaction metadata (service role, metadata only — no money
     // columns touched). Two purposes: (a) persist the delivered eSIM so the
@@ -137,7 +225,9 @@ serve(async (req: Request) => {
           // What the customer bought (shown in "My eSIMs"):
           plan_name: current.raw?.title ?? null,
           plan_days: current.raw?.day ?? null,
-          plan_data_mb: current.raw?.is_unlimited ? null : (current.raw?.amount ?? null),
+          plan_data_mb: current.raw?.is_unlimited
+            ? null
+            : (current.raw?.amount ?? null),
           plan_unlimited: !!current.raw?.is_unlimited,
           // The eSIM itself (for later retrieval):
           iccid: sim.iccid ?? null,
@@ -166,11 +256,15 @@ serve(async (req: Request) => {
     const isAuthError = e instanceof AiraloAuthError;
     await supabase.rpc("refund_service_transaction", {
       p_tx_id: txId,
-      p_reason: isAuthError ? `airalo_auth_failed: ${e.message}` : "provider_unreachable",
+      p_reason: isAuthError
+        ? `airalo_auth_failed: ${e.message}`
+        : "provider_unreachable",
     });
     return json({
       success: false,
-      error: isAuthError ? "Provider login failed. Please try again later." : "Network error. Please try again. You were not charged.",
+      error: isAuthError
+        ? "Provider login failed. Please try again later."
+        : "Network error. Please try again. You were not charged.",
     });
   }
 });

@@ -30,5 +30,13 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Test VTU edge logic
-        run: deno test --allow-env=VTUAFRICA_API_KEY supabase/functions/_shared/vtuafrica-client.test.ts
+      - name: Test Edge security and VTU logic
+        run: deno test --allow-env=VTUAFRICA_API_KEY,SUPABASE_URL,SUPABASE_ANON_KEY,SUPABASE_SERVICE_ROLE_KEY,CRON_SECRET supabase/functions/_shared/*.test.ts
+
+      - name: Reject committed credentials
+        shell: bash
+        run: |
+          if git grep -nE '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|postgres(ql)?://[^[:space:]]+:[^[:space:]]+@|sk_(live|test)_[A-Za-z0-9]{16,})' -- ':!package-lock.json'; then
+            echo 'Potential committed credential detected.' >&2
+            exit 1
+          fi

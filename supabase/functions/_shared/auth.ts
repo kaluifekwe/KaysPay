@@ -44,9 +44,13 @@ const CRON_SECRET = Deno.env.get("CRON_SECRET");
  */
 export function verifyCronSecret(req: Request): boolean {
   const provided = req.headers.get("x-cron-secret");
-  if (!provided || !CRON_SECRET || provided.length !== CRON_SECRET.length) return false;
+  if (!provided || !CRON_SECRET || provided.length !== CRON_SECRET.length) {
+    return false;
+  }
   let diff = 0;
-  for (let i = 0; i < CRON_SECRET.length; i++) diff |= provided.charCodeAt(i) ^ CRON_SECRET.charCodeAt(i);
+  for (let i = 0; i < CRON_SECRET.length; i++) {
+    diff |= provided.charCodeAt(i) ^ CRON_SECRET.charCodeAt(i);
+  }
   return diff === 0;
 }
 
@@ -67,7 +71,9 @@ export async function withJobLock<T>(
   jobName: string,
   fn: () => Promise<T>,
 ): Promise<T | { skipped: true; reason: "already_running" }> {
-  const { data: acquired } = await supabase.rpc("try_acquire_job_lock", { p_job_name: jobName });
+  const { data: acquired } = await supabase.rpc("try_acquire_job_lock", {
+    p_job_name: jobName,
+  });
   if (!acquired) return { skipped: true, reason: "already_running" };
   try {
     return await fn();
@@ -93,4 +99,64 @@ export async function consumeAuthToken(
     p_token: token,
   });
   return !error && data === true;
+}
+
+export type RateLimitResult = {
+  allowed: boolean;
+  remaining: number;
+  retryAfterSeconds: number;
+};
+
+/** Atomic account/action limiter. Never use a carrier IP as the subject. */
+export async function enforceRateLimit(
+  supabase: ReturnType<typeof adminClient>,
+  scope: string,
+  subject: string,
+  maxRequests: number,
+  windowSeconds: number,
+  userId: string | null = null,
+): Promise<RateLimitResult> {
+  const { data, error } = await supabase.rpc("enforce_abuse_rate_limit", {
+    p_scope: scope,
+    p_subject: subject,
+    p_max_requests: maxRequests,
+    p_window_seconds: windowSeconds,
+    p_user_id: userId,
+  });
+  // Fail closed for protected/paid operations if the limiter is unavailable.
+  // A temporary retry is safer than letting an abuse burst bypass controls.
+  if (error || !data) {
+    return { allowed: false, remaining: 0, retryAfterSeconds: 60 };
+  }
+  return {
+    allowed: data.allowed === true,
+    remaining: Number(data.remaining ?? 0),
+    retryAfterSeconds: Number(data.retry_after_seconds ?? 0),
+  };
+}
+
+export class RequestBodyError extends Error {
+  constructor(public readonly status: 400 | 413, message: string) {
+    super(message);
+  }
+}
+
+/** Reject oversized JSON even when a request uses chunked transfer encoding. */
+export async function readJsonBody<T = Record<string, unknown>>(
+  req: Request,
+  maxBytes = 16_384,
+): Promise<T> {
+  const declared = Number(req.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw new RequestBodyError(413, "Request body too large");
+  }
+  const text = await req.text();
+  if (new TextEncoder().encode(text).byteLength > maxBytes) {
+    throw new RequestBodyError(413, "Request body too large");
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new RequestBodyError(400, "Invalid request body");
+  }
 }

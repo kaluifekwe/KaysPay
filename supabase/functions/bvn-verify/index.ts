@@ -1,8 +1,21 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser, adminClient, consumeAuthToken } from "../_shared/auth.ts";
-import { verifyBvnFull as verifyBvnPremblyFull, isPremblyConfigured } from "../_shared/prembly-client.ts";
-import { verifyBvn as verifyBvnNinBvn, isNinBvnConfigured } from "../_shared/ninbvn-client.ts";
+import {
+  adminClient,
+  consumeAuthToken,
+  enforceRateLimit,
+  getAuthUser,
+  readJsonBody,
+  RequestBodyError,
+} from "../_shared/auth.ts";
+import {
+  isPremblyConfigured,
+  verifyBvnFull as verifyBvnPremblyFull,
+} from "../_shared/prembly-client.ts";
+import {
+  isNinBvnConfigured,
+  verifyBvn as verifyBvnNinBvn,
+} from "../_shared/ninbvn-client.ts";
 
 // BVN slip prices (owner-set 2026-07-26): Regular Slip ₦500, Card ₦700.
 // SERVER-AUTHORITATIVE — the client sends the chosen slip type, but the price
@@ -40,13 +53,21 @@ interface ProviderOutcome {
 function pick(c: any, ...keys: string[]): string | undefined {
   for (const k of keys) {
     const v = c[k];
-    if (v !== undefined && v !== null && v !== "") return typeof v === "string" ? v : String(v);
+    if (v !== undefined && v !== null && v !== "") {
+      return typeof v === "string" ? v : String(v);
+    }
   }
   return undefined;
 }
 
 function extractBvnRecord(data: any): any {
-  const candidates = [data?.bvn_data, data?.data?.bvn_data, data?.data?.data, data?.data, data];
+  const candidates = [
+    data?.bvn_data,
+    data?.data?.bvn_data,
+    data?.data?.data,
+    data?.data,
+    data,
+  ];
   for (const c of candidates) {
     if (!c || typeof c !== "object") continue;
     const firstname = pick(c, "firstname", "firstName", "first_name");
@@ -66,8 +87,18 @@ function extractBvnRecord(data: any): any {
         stateOfResidence: pick(c, "stateOfResidence", "state_of_residence"),
         lgaOfOrigin: pick(c, "lgaOfOrigin", "lga_of_origin"),
         lgaOfResidence: pick(c, "lgaOfResidence", "lga_of_residence"),
-        residentialAddress: pick(c, "residentialAddress", "residential_address", "address"),
-        enrollmentBank: pick(c, "enrollmentBank", "enrollment_bank", "registrationBank"),
+        residentialAddress: pick(
+          c,
+          "residentialAddress",
+          "residential_address",
+          "address",
+        ),
+        enrollmentBank: pick(
+          c,
+          "enrollmentBank",
+          "enrollment_bank",
+          "registrationBank",
+        ),
         enrollmentBranch: pick(c, "enrollmentBranch", "enrollment_branch"),
         nameOnCard: pick(c, "nameOnCard", "name_on_card"),
       };
@@ -83,7 +114,14 @@ async function tryPrembly(bvn: string): Promise<ProviderOutcome> {
   const ok = status < 400 && !!record;
   // 2xx + no record = the BVN genuinely isn't on file (definitive miss).
   const notFound = status >= 200 && status < 300 && !record;
-  return { ok, record, notFound, errorMessage: ok ? undefined : (data?.detail || data?.message || `http_${status}`) };
+  return {
+    ok,
+    record,
+    notFound,
+    errorMessage: ok
+      ? undefined
+      : (data?.detail || data?.message || `http_${status}`),
+  };
 }
 
 // CheckMyNINBVN — FALLBACK.
@@ -91,7 +129,11 @@ async function tryNinBvn(bvn: string): Promise<ProviderOutcome> {
   const { status, data } = await verifyBvnNinBvn(bvn);
   const record = extractBvnRecord(data);
   const ok = status < 400 && !!record;
-  return { ok, record, errorMessage: ok ? undefined : (data?.message || `http_${status}`) };
+  return {
+    ok,
+    record,
+    errorMessage: ok ? undefined : (data?.message || `http_${status}`),
+  };
 }
 
 serve(async (req: Request) => {
@@ -107,26 +149,55 @@ serve(async (req: Request) => {
 
   let body: any;
   try {
-    body = await req.json();
-  } catch {
-    return json({ error: "Invalid request body" }, 400);
+    body = await readJsonBody(req);
+  } catch (error) {
+    const e = error instanceof RequestBodyError
+      ? error
+      : new RequestBodyError(400, "Invalid request body");
+    return json({ error: e.message }, e.status);
   }
 
   const bvn = String(body?.bvn || "").trim();
-  if (!/^\d{11}$/.test(bvn)) return json({ success: false, error: "Enter a valid 11-digit BVN" }, 400);
+  if (!/^\d{11}$/.test(bvn)) {
+    return json({ success: false, error: "Enter a valid 11-digit BVN" }, 400);
+  }
 
   const supabase = adminClient();
+
+  const rate = await enforceRateLimit(
+    supabase,
+    "bvn_verify",
+    user.id,
+    6,
+    3600,
+    user.id,
+  );
+  if (!rate.allowed) {
+    return json({
+      success: false,
+      error: "Too many BVN verification attempts. Please wait and try again.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
+  }
 
   // Require server-verified proof the PIN/biometric step-up just ran for
   // THIS request — a valid JWT alone is not enough to move money.
   const authorized = await consumeAuthToken(supabase, user.id, body.auth_token);
-  if (!authorized) return json({ success: false, error: "Re-authorization required. Please try again." }, 401);
+  if (!authorized) {
+    return json({
+      success: false,
+      error: "Re-authorization required. Please try again.",
+    }, 401);
+  }
 
   const requestId = String(body.idempotency_key || newRequestId());
 
   // The slip type chosen up front decides the price. Validate against our own
   // map — never trust a client-sent amount.
-  const slipTier = Object.prototype.hasOwnProperty.call(SLIP_PRICE_KOBO, String(body?.slip_tier))
+  const slipTier = Object.prototype.hasOwnProperty.call(
+      SLIP_PRICE_KOBO,
+      String(body?.slip_tier),
+    )
     ? String(body.slip_tier)
     : DEFAULT_SLIP_TIER;
   const priceKobo = SLIP_PRICE_KOBO[slipTier];
@@ -160,7 +231,57 @@ serve(async (req: Request) => {
     }
     // Different slip type (e.g. upgrading Regular → Card): reuse the already
     // verified record (no provider re-call), but charge the new type's price.
-    const { data: upTxId, error: upErr } = await supabase.rpc("debit_for_service", {
+    const { data: upTxId, error: upErr } = await supabase.rpc(
+      "debit_for_service",
+      {
+        p_user_id: user.id,
+        p_amount: priceKobo,
+        p_type: "bvn_verification",
+        p_network: "N/A",
+        p_recipient: bvn,
+        p_metadata: { service: "bvn_verification", slip_tier: slipTier },
+        p_idempotency_key: requestId,
+      },
+    );
+    if (upErr) {
+      const msg = upErr.message || "";
+      if (msg.includes("INSUFFICIENT_FUNDS")) {
+        return json({ success: false, error: "Insufficient balance" });
+      }
+      if (msg.includes("WALLET_NOT_FOUND")) {
+        return json({ success: false, error: "Wallet not found" });
+      }
+      return json(
+        { success: false, error: "Could not start transaction" },
+        500,
+      );
+    }
+    await supabase.rpc("complete_service_transaction", {
+      p_tx_id: upTxId,
+      p_order_id: bvn,
+    });
+    await supabase
+      .from("transactions")
+      .update({
+        metadata: {
+          service: "bvn_verification",
+          slip_tier: slipTier,
+          provider: "cache",
+          record: cachedTx.metadata.record,
+        },
+      })
+      .eq("id", upTxId);
+    return json({
+      success: true,
+      transaction_id: upTxId,
+      record: cachedTx.metadata.record,
+      cached: true,
+    });
+  }
+
+  const { data: txId, error: debitError } = await supabase.rpc(
+    "debit_for_service",
+    {
       p_user_id: user.id,
       p_amount: priceKobo,
       p_type: "bvn_verification",
@@ -168,35 +289,17 @@ serve(async (req: Request) => {
       p_recipient: bvn,
       p_metadata: { service: "bvn_verification", slip_tier: slipTier },
       p_idempotency_key: requestId,
-    });
-    if (upErr) {
-      const msg = upErr.message || "";
-      if (msg.includes("INSUFFICIENT_FUNDS")) return json({ success: false, error: "Insufficient balance" });
-      if (msg.includes("WALLET_NOT_FOUND")) return json({ success: false, error: "Wallet not found" });
-      return json({ success: false, error: "Could not start transaction" }, 500);
-    }
-    await supabase.rpc("complete_service_transaction", { p_tx_id: upTxId, p_order_id: bvn });
-    await supabase
-      .from("transactions")
-      .update({ metadata: { service: "bvn_verification", slip_tier: slipTier, provider: "cache", record: cachedTx.metadata.record } })
-      .eq("id", upTxId);
-    return json({ success: true, transaction_id: upTxId, record: cachedTx.metadata.record, cached: true });
-  }
-
-  const { data: txId, error: debitError } = await supabase.rpc("debit_for_service", {
-    p_user_id: user.id,
-    p_amount: priceKobo,
-    p_type: "bvn_verification",
-    p_network: "N/A",
-    p_recipient: bvn,
-    p_metadata: { service: "bvn_verification", slip_tier: slipTier },
-    p_idempotency_key: requestId,
-  });
+    },
+  );
 
   if (debitError) {
     const msg = debitError.message || "";
-    if (msg.includes("INSUFFICIENT_FUNDS")) return json({ success: false, error: "Insufficient balance" });
-    if (msg.includes("WALLET_NOT_FOUND")) return json({ success: false, error: "Wallet not found" });
+    if (msg.includes("INSUFFICIENT_FUNDS")) {
+      return json({ success: false, error: "Insufficient balance" });
+    }
+    if (msg.includes("WALLET_NOT_FOUND")) {
+      return json({ success: false, error: "Wallet not found" });
+    }
     return json({ success: false, error: "Could not start transaction" }, 500);
   }
 
@@ -240,16 +343,30 @@ serve(async (req: Request) => {
   if (!outcome.ok) {
     await supabase.rpc("refund_service_transaction", {
       p_tx_id: txId,
-      p_reason: JSON.stringify({ primary: primaryError, shown: lastError }).slice(0, 500),
+      p_reason: JSON.stringify({ primary: primaryError, shown: lastError })
+        .slice(0, 500),
     });
-    return json({ success: false, error: lastError || "Could not verify this BVN. Please try again." });
+    return json({
+      success: false,
+      error: lastError || "Could not verify this BVN. Please try again.",
+    });
   }
 
-  await supabase.rpc("complete_service_transaction", { p_tx_id: txId, p_order_id: bvn });
+  await supabase.rpc("complete_service_transaction", {
+    p_tx_id: txId,
+    p_order_id: bvn,
+  });
 
   await supabase
     .from("transactions")
-    .update({ metadata: { service: "bvn_verification", slip_tier: slipTier, provider: providerUsed, record: outcome.record } })
+    .update({
+      metadata: {
+        service: "bvn_verification",
+        slip_tier: slipTier,
+        provider: providerUsed,
+        record: outcome.record,
+      },
+    })
     .eq("id", txId);
 
   return json({ success: true, transaction_id: txId, record: outcome.record });

@@ -1,6 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { adminClient } from "../_shared/auth.ts";
+import {
+  adminClient,
+  enforceRateLimit,
+  readJsonBody,
+  RequestBodyError,
+} from "../_shared/auth.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -19,39 +24,99 @@ serve(async (req: Request) => {
 
   let body: { email?: string; code?: string; newPassword?: string };
   try {
-    body = await req.json();
-  } catch {
-    return json({ success: false, error: "Invalid request body" }, 400);
+    body = await readJsonBody(req, 4096);
+  } catch (error) {
+    const e = error instanceof RequestBodyError
+      ? error
+      : new RequestBodyError(400, "Invalid request body");
+    return json({ success: false, error: e.message }, e.status);
   }
 
   const email = String(body?.email || "").trim().toLowerCase();
   const code = String(body?.code || "").trim();
   const newPassword = String(body?.newPassword || "");
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ success: false, error: "Enter a valid email address" }, 400);
-  if (!/^\d{6}$/.test(code)) return json({ success: false, error: "Enter the 6-digit code" }, 400);
-  if (newPassword.length < 8) return json({ success: false, error: "Password must be at least 8 characters" }, 400);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return json({ success: false, error: "Enter a valid email address" }, 400);
+  }
+  if (!/^\d{6}$/.test(code)) {
+    return json({ success: false, error: "Enter the 6-digit code" }, 400);
+  }
+  if (newPassword.length < 8) {
+    return json({
+      success: false,
+      error: "Password must be at least 8 characters",
+    }, 400);
+  }
 
   const supabase = adminClient();
 
-  const { data: userId, error: lookupError } = await supabase.rpc("get_user_id_by_email", { p_email: email });
-  if (lookupError) return json({ success: false, error: "Could not verify code. Please try again." }, 500);
+  const rate = await enforceRateLimit(
+    supabase,
+    "verify_password_reset",
+    email,
+    10,
+    600,
+  );
+  if (!rate.allowed) {
+    return json({
+      success: false,
+      error: "Too many verification attempts. Please wait and try again.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
+  }
+
+  const { data: userId, error: lookupError } = await supabase.rpc(
+    "get_user_id_by_email",
+    { p_email: email },
+  );
+  if (lookupError) {
+    return json({
+      success: false,
+      error: "Could not verify code. Please try again.",
+    }, 500);
+  }
   // Unknown email: respond exactly like a wrong/expired code — no enumeration.
-  if (!userId) return json({ success: false, error: "Request a new code and try again." });
+  if (!userId) {
+    return json({ success: false, error: "Request a new code and try again." });
+  }
 
-  const { data: result, error: verifyError } = await supabase.rpc("verify_email_verification_code", {
-    p_user_id: userId,
-    p_purpose: "password_reset",
-    p_target: email,
-    p_code: code,
-  });
+  const { data: result, error: verifyError } = await supabase.rpc(
+    "verify_email_verification_code",
+    {
+      p_user_id: userId,
+      p_purpose: "password_reset",
+      p_target: email,
+      p_code: code,
+    },
+  );
 
-  if (verifyError) return json({ success: false, error: "Could not verify code. Please try again." }, 500);
+  if (verifyError) {
+    return json({
+      success: false,
+      error: "Could not verify code. Please try again.",
+    }, 500);
+  }
 
   if (!result?.valid) {
-    if (result?.error === "EXPIRED") return json({ success: false, error: "This code has expired. Request a new one." });
-    if (result?.error === "NOT_FOUND") return json({ success: false, error: "Request a new code and try again." });
-    if (result?.locked) return json({ success: false, error: "Too many wrong attempts. Request a new code." });
+    if (result?.error === "EXPIRED") {
+      return json({
+        success: false,
+        error: "This code has expired. Request a new one.",
+      });
+    }
+    if (result?.error === "NOT_FOUND") {
+      return json({
+        success: false,
+        error: "Request a new code and try again.",
+      });
+    }
+    if (result?.locked) {
+      return json({
+        success: false,
+        error: "Too many wrong attempts. Request a new code.",
+      });
+    }
     return json({
       success: false,
       error: "Incorrect code. Please try again.",
@@ -61,8 +126,16 @@ serve(async (req: Request) => {
 
   // Code confirmed — set the new password. This is the only place a reset can
   // change the credential; the code row was marked used inside the verify RPC.
-  const { error: updateError } = await supabase.auth.admin.updateUserById(userId, { password: newPassword });
-  if (updateError) return json({ success: false, error: "Could not update your password. Please try again." }, 500);
+  const { error: updateError } = await supabase.auth.admin.updateUserById(
+    userId,
+    { password: newPassword },
+  );
+  if (updateError) {
+    return json({
+      success: false,
+      error: "Could not update your password. Please try again.",
+    }, 500);
+  }
 
   return json({ success: true });
 });
