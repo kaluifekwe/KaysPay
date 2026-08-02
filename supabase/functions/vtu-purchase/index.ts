@@ -15,7 +15,6 @@ import {
   AIRTIME_MIN,
   BILL_MAX,
   BILL_MIN,
-  VTUNG_DATA_BUNDLES,
   ELECTRICITY_PROVIDERS,
   EXAM_PIN_TYPES,
   KOBO,
@@ -78,7 +77,13 @@ function shouldMeasure(requestId: string): boolean {
  * Exam pins were already VTUAfrica-only (VTU.ng never had a working
  * integration for them).
  */
-function resolvePurchase(body: any): {
+class PriceChangedError extends Error {
+  constructor(public readonly currentAmountKobo: number) {
+    super("PRICE_CHANGED");
+  }
+}
+
+async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClient>): Promise<{
   amount: number; // kobo
   txType: string;
   network: string;
@@ -86,7 +91,7 @@ function resolvePurchase(body: any): {
   provider: Provider;
   endpoint: string;
   providerPayload: Record<string, unknown>;
-} {
+}> {
   const service = String(body?.service || "");
 
   switch (service) {
@@ -120,10 +125,22 @@ function resolvePurchase(body: any): {
       if (!VALID_NETWORKS.includes(network)) throw "INVALID_NETWORK";
       if (!/^0\d{10}$/.test(phone)) throw "INVALID_PHONE";
 
-      const bundle = VTUNG_DATA_BUNDLES[bundleId];
-      if (!bundle || bundle.network !== network) throw "INVALID_BUNDLE";
+      const { data: bundle } = await supabase
+        .from("vtung_data_catalog")
+        .select("network, variation_id, reseller_kobo, available, provider_seen_at")
+        .eq("id", bundleId)
+        .eq("network", network)
+        .eq("available", true)
+        .maybeSingle();
+      if (!bundle) throw "INVALID_BUNDLE";
+      if (new Date(bundle.provider_seen_at).getTime() < Date.now() - 30 * 60 * 1000) throw "CATALOG_STALE";
+      const amount = Number(bundle.reseller_kobo);
+      const quotedAmount = Number(body.quoted_amount_kobo);
+      if (Number.isFinite(quotedAmount) && quotedAmount > 0 && quotedAmount !== amount) {
+        throw new PriceChangedError(amount);
+      }
       return {
-        amount: bundle.amount, // kobo
+        amount,
         txType: "data",
         network,
         recipient: phone,
@@ -132,7 +149,7 @@ function resolvePurchase(body: any): {
         providerPayload: {
           phone,
           service_id: network,
-          variation_id: bundle.variationId,
+          variation_id: bundle.variation_id,
         },
       };
     }
@@ -228,6 +245,7 @@ const VALIDATION_MESSAGES: Record<string, string> = {
   INVALID_PHONE: "Please enter a valid phone number.",
   INVALID_AMOUNT: "Please enter a valid amount.",
   INVALID_BUNDLE: "Please choose a valid data bundle.",
+  CATALOG_STALE: "Data prices are being refreshed. Please try again shortly.",
   INVALID_PROVIDER: "Please choose a valid provider.",
   INVALID_METER: "Please enter a valid meter number.",
   INVALID_BOUQUET: "Please choose a valid package.",
@@ -296,20 +314,27 @@ serve(async (req: Request) => {
 
   // 2. Require server-verified proof the PIN/biometric step-up just ran for
   // THIS request — a valid JWT alone is not enough to move money.
+  let plan;
+  try {
+    plan = await resolvePurchase(body, supabase);
+  } catch (code) {
+    if (code instanceof PriceChangedError) {
+      return json({
+        success: false,
+        code: "PRICE_CHANGED",
+        current_amount: code.currentAmountKobo / KOBO,
+        error: `The price changed to ₦${(code.currentAmountKobo / KOBO).toLocaleString("en-NG")}. Please confirm again.`,
+      });
+    }
+    return json({ error: friendlyValidation(String(code)) }, 400);
+  }
+
   const authorized = await consumeAuthToken(supabase, user.id, body.auth_token);
   if (!authorized) {
     return json({
       success: false,
       error: "Re-authorization required. Please try again.",
     }, 401);
-  }
-
-  // 3. Resolve trusted price + provider payload.
-  let plan;
-  try {
-    plan = resolvePurchase(body);
-  } catch (code) {
-    return json({ error: friendlyValidation(String(code)) }, 400);
   }
 
   if (plan.provider === "vtu_ng" && !isVtuConfigured()) {

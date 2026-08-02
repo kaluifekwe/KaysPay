@@ -33,6 +33,9 @@ verify_jwt = false
 [functions.vtu-reconcile]
 verify_jwt = true
 
+[functions.vtu-data-catalog]
+verify_jwt = true
+
 [functions.nin-reconcile]
 verify_jwt = true
 

@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { nairaToKobo } from '../utils/formatCurrency';
 import { withTimeout, invokeWithRetry } from '../utils/network';
+import { readCache, writeCache } from '../utils/cache';
 
 export type NetworkProvider = 'mtn' | 'airtel' | 'glo' | '9mobile';
 
@@ -44,6 +45,8 @@ export interface VTUResult {
   // The server transaction id — lets the result screen poll this purchase
   // until it settles (used by the Processing -> Successful status screen).
   transaction_id?: string;
+  code?: 'PRICE_CHANGED';
+  current_amount?: number;
 }
 
 export interface BatchAirtimeRecipient {
@@ -226,35 +229,35 @@ const dataBundles: DataBundle[] = [
 // VTU.ng v2 plans marked Available on 2026-08-02. IDs and customer prices
 // match the server-authoritative catalog exactly.
 const vtuNgDataBundles: DataBundle[] = [
-  { id: 'vtung-mtn-244540', name: '16.5GB', amount: 6699, validity: '30 Days', network: 'mtn' },
+  { id: 'vtung-mtn-244540', name: '16.5GB', amount: 6499, validity: '30 Days', network: 'mtn' },
   { id: 'vtung-mtn-5506674', name: '1GB + 1.5 mins', amount: 499, validity: '1 Day', network: 'mtn' },
-  { id: 'vtung-mtn-244538', name: '7GB', amount: 3699, validity: '30 Days', network: 'mtn' },
-  { id: 'vtung-mtn-2673', name: '36GB', amount: 11999, validity: '30 Days', network: 'mtn' },
-  { id: 'vtung-mtn-5506738', name: '3.5GB + 5 mins', amount: 2599, validity: '30 Days', network: 'mtn' },
-  { id: 'vtung-mtn-2677', name: '10GB + 10 mins', amount: 4799, validity: '30 Days', network: 'mtn' },
-  { id: 'vtung-mtn-244542', name: '2GB + 2 mins', amount: 1599, validity: '30 Days', network: 'mtn' },
-  { id: 'vtung-mtn-2676', name: '1GB + 5 mins', amount: 819, validity: '7 Days', network: 'mtn' },
-  { id: 'vtung-mtn-2667', name: '75GB', amount: 19999, validity: '30 Days', network: 'mtn' },
-  { id: 'vtung-airtel-244698', name: '1GB', amount: 819, validity: '7 Days', network: 'airtel' },
-  { id: 'vtung-airtel-2669', name: '35GB', amount: 10499, validity: '30 Days', network: 'airtel' },
-  { id: 'vtung-airtel-2672', name: '2GB', amount: 1519, validity: '30 Days', network: 'airtel' },
-  { id: 'vtung-airtel-2675', name: '8GB', amount: 3199, validity: '30 Days', network: 'airtel' },
-  { id: 'vtung-airtel-244721', name: '3GB', amount: 2099, validity: '30 Days', network: 'airtel' },
-  { id: 'vtung-airtel-2668', name: '60GB', amount: 15599, validity: '30 Days', network: 'airtel' },
-  { id: 'vtung-airtel-2674', name: '10GB', amount: 4299, validity: '30 Days', network: 'airtel' },
-  { id: 'vtung-airtel-2670', name: '18GB', amount: 6399, validity: '30 Days', network: 'airtel' },
-  { id: 'vtung-glo-5580757', name: '1.75GB (Sunday)', amount: 249, validity: 'Sunday', network: 'glo' },
-  { id: 'vtung-glo-5580758', name: '125MB', amount: 149, validity: '1 Day', network: 'glo' },
-  { id: 'vtung-glo-244659', name: '2.2GB (Weekend)', amount: 549, validity: 'Weekend', network: 'glo' },
-  { id: 'vtung-glo-2660', name: '2.6GB', amount: 1099, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-244658', name: '5GB', amount: 1599, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-244668', name: '7.5GB', amount: 2599, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-2665', name: '11GB', amount: 3199, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-2663', name: '18GB', amount: 5299, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-2251529', name: '500MB (Gift)', amount: 299, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-2661', name: '40GB', amount: 10599, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-2251528', name: '1GB (Gift)', amount: 549, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-2251526', name: '2GB (Gift)', amount: 1099, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-mtn-244538', name: '7GB', amount: 3499, validity: '30 Days', network: 'mtn' },
+  { id: 'vtung-mtn-2673', name: '36GB', amount: 10999, validity: '30 Days', network: 'mtn' },
+  { id: 'vtung-mtn-5506738', name: '3.5GB + 5 mins', amount: 2499, validity: '30 Days', network: 'mtn' },
+  { id: 'vtung-mtn-2677', name: '10GB + 10 mins', amount: 4499, validity: '30 Days', network: 'mtn' },
+  { id: 'vtung-mtn-244542', name: '2GB + 2 mins', amount: 1499, validity: '30 Days', network: 'mtn' },
+  { id: 'vtung-mtn-2676', name: '1GB + 5 mins', amount: 799, validity: '7 Days', network: 'mtn' },
+  { id: 'vtung-mtn-2667', name: '75GB', amount: 17999, validity: '30 Days', network: 'mtn' },
+  { id: 'vtung-airtel-244698', name: '1GB', amount: 799, validity: '7 Days', network: 'airtel' },
+  { id: 'vtung-airtel-2669', name: '35GB', amount: 9999, validity: '30 Days', network: 'airtel' },
+  { id: 'vtung-airtel-2672', name: '2GB', amount: 1499, validity: '30 Days', network: 'airtel' },
+  { id: 'vtung-airtel-2675', name: '8GB', amount: 2999, validity: '30 Days', network: 'airtel' },
+  { id: 'vtung-airtel-244721', name: '3GB', amount: 1999, validity: '30 Days', network: 'airtel' },
+  { id: 'vtung-airtel-2668', name: '60GB', amount: 14999, validity: '30 Days', network: 'airtel' },
+  { id: 'vtung-airtel-2674', name: '10GB', amount: 3999, validity: '30 Days', network: 'airtel' },
+  { id: 'vtung-airtel-2670', name: '18GB', amount: 5999, validity: '30 Days', network: 'airtel' },
+  { id: 'vtung-glo-5580757', name: '1.75GB (Sunday)', amount: 199, validity: 'Sunday', network: 'glo' },
+  { id: 'vtung-glo-5580758', name: '125MB', amount: 99, validity: '1 Day', network: 'glo' },
+  { id: 'vtung-glo-244659', name: '2.2GB (Weekend)', amount: 499, validity: 'Weekend', network: 'glo' },
+  { id: 'vtung-glo-2660', name: '2.6GB', amount: 999, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-244658', name: '5GB', amount: 1499, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-244668', name: '7.5GB', amount: 2499, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-2665', name: '11GB', amount: 2999, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-2663', name: '18GB', amount: 4999, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-2251529', name: '500MB (Gift)', amount: 279, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-2661', name: '40GB', amount: 9999, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-2251528', name: '1GB (Gift)', amount: 499, validity: '30 Days', network: 'glo' },
+  { id: 'vtung-glo-2251526', name: '2GB (Gift)', amount: 999, validity: '30 Days', network: 'glo' },
 ];
 
 // Same 12 DISCO codes VTUAfrica's own pricing page confirms it supports
@@ -395,7 +398,12 @@ async function purchase(
       return { success: false, error: msg };
     }
     if (!data?.success) {
-      return { success: false, error: data?.error || 'Transaction failed' };
+      return {
+        success: false,
+        error: data?.error || 'Transaction failed',
+        code: data?.code,
+        current_amount: data?.current_amount,
+      };
     }
 
     return {
@@ -410,6 +418,39 @@ async function purchase(
     };
   } catch {
     return { success: false, error: 'Network error. Please try again.' };
+  }
+}
+
+function dataCatalogCacheKey(network: NetworkProvider): string {
+  return `vtung_data_catalog_${network}`;
+}
+
+function cachedDataBundles(network: NetworkProvider): DataBundle[] {
+  const cached = readCache<DataBundle[]>(dataCatalogCacheKey(network));
+  if (cached?.data?.length) return cached.data;
+  return vtuNgDataBundles.filter((bundle) => bundle.network === network);
+}
+
+async function refreshDataBundles(network: NetworkProvider): Promise<DataBundle[]> {
+  const cached = readCache<DataBundle[]>(dataCatalogCacheKey(network));
+  if (cached?.data?.length && Date.now() - cached.savedAt < 5 * 60 * 1000) return cached.data;
+  try {
+    const { data, error } = await withTimeout(
+      supabase.functions.invoke('vtu-data-catalog', { body: { network } }),
+      12_000,
+    );
+    if (error || !data?.success || !Array.isArray(data.plans) || data.plans.length === 0) {
+      return cachedDataBundles(network);
+    }
+    const plans = data.plans.filter((plan: DataBundle) =>
+      plan?.network === network && typeof plan.id === 'string' && typeof plan.name === 'string' &&
+      Number.isFinite(plan.amount) && plan.amount > 0
+    ) as DataBundle[];
+    if (plans.length === 0) return cachedDataBundles(network);
+    writeCache(dataCatalogCacheKey(network), plans);
+    return plans;
+  } catch {
+    return cachedDataBundles(network);
   }
 }
 
@@ -443,7 +484,19 @@ export const vtuService = {
   },
 
   getDataBundles(network: NetworkProvider): DataBundle[] {
-    return vtuNgDataBundles.filter((b) => b.network === network);
+    return cachedDataBundles(network);
+  },
+
+  refreshDataBundles(network: NetworkProvider): Promise<DataBundle[]> {
+    return refreshDataBundles(network);
+  },
+
+  applyDataPriceChange(network: NetworkProvider, bundleId: string, amount: number): void {
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    const updated = cachedDataBundles(network).map((bundle) =>
+      bundle.id === bundleId ? { ...bundle, amount } : bundle
+    );
+    writeCache(dataCatalogCacheKey(network), updated);
   },
 
   getAirtimeAmounts(): number[] {
@@ -473,7 +526,13 @@ export const vtuService = {
   },
 
   buyData(phone: string, network: NetworkProvider, bundle: DataBundle, authToken: string, idempotencyKey?: string): Promise<VTUResult> {
-    return purchase({ service: 'data', phone, network, bundle_id: bundle.id }, authToken, idempotencyKey);
+    return purchase({
+      service: 'data',
+      phone,
+      network,
+      bundle_id: bundle.id,
+      quoted_amount_kobo: nairaToKobo(bundle.amount),
+    }, authToken, idempotencyKey);
   },
 
   /**

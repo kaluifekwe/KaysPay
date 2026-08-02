@@ -12,6 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -66,6 +67,8 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   const [resultPending, setResultPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [pickerMode, setPickerMode] = useState<'closed' | 'single' | 'multi'>('closed');
+  const [bundles, setBundles] = useState<DataBundle[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
 
   const detectedNetwork = useMemo(() => {
     const digits = phoneNumber.replace(/\D/g, '');
@@ -86,10 +89,28 @@ export default function DataScreen({ navigation }: DataScreenProps) {
 
   const effectiveNetwork = selectedNetwork || autoDetectedNetwork;
 
-  const bundles = useMemo(() => {
-    if (!effectiveNetwork) return [];
-    return vtuService.getDataBundles(effectiveNetwork);
-  }, [effectiveNetwork]);
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    if (!effectiveNetwork) {
+      setBundles([]);
+      setCatalogLoading(false);
+      return () => { cancelled = true; };
+    }
+
+    setBundles(vtuService.getDataBundles(effectiveNetwork));
+    setCatalogLoading(true);
+    vtuService.refreshDataBundles(effectiveNetwork).then((fresh) => {
+      if (cancelled) return;
+      setBundles(fresh);
+      setSelectedBundle((selected) => {
+        if (!selected) return null;
+        return fresh.find((bundle) => bundle.id === selected.id) ?? null;
+      });
+    }).finally(() => {
+      if (!cancelled) setCatalogLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [effectiveNetwork]));
 
   const handlePhoneChange = useCallback((text: string) => {
     let digits = text.replace(/\D/g, '');
@@ -328,6 +349,12 @@ export default function DataScreen({ navigation }: DataScreenProps) {
           {bundles.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.label}>Choose a Bundle</Text>
+              {catalogLoading ? (
+                <View style={styles.catalogLoadingRow}>
+                  <ActivityIndicator size="small" color={Colors.GREEN} />
+                  <Text style={styles.catalogLoadingText}>Updating reseller prices…</Text>
+                </View>
+              ) : null}
               {bundles.map((bundle) => {
                 const isSelected = selectedBundle?.id === bundle.id;
                 return (
@@ -365,7 +392,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
             </View>
           )}
 
-          {effectiveNetwork && bundles.length === 0 && (
+          {effectiveNetwork && bundles.length === 0 && !catalogLoading && (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateText}>
                 No bundles available for {networkLabel(effectiveNetwork)}
@@ -536,6 +563,16 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.CARD_RADIUS,
     paddingHorizontal: Spacing.CARD_PADDING,
     marginBottom: Spacing.M,
+  },
+  catalogLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.S,
+    marginBottom: Spacing.M,
+  },
+  catalogLoadingText: {
+    color: Colors.GRAY,
+    fontSize: 12,
   },
   bundleCardSelected: {
     borderColor: Colors.GREEN,

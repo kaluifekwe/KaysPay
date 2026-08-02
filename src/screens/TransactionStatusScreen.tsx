@@ -76,6 +76,8 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
   const [orderId, setOrderId] = useState<string | undefined>();
   const [pins, setPins] = useState<string[] | undefined>();
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [priceChanged, setPriceChanged] = useState(false);
+  const [currentAmount, setCurrentAmount] = useState<number | undefined>();
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedRef = useRef(Date.now());
@@ -147,6 +149,17 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
           if (result.transaction_id) setTxId(result.transaction_id);
           if (!result.pending) settleSuccess();
         } else {
+          if (result.code === 'PRICE_CHANGED') {
+            setPriceChanged(true);
+            setCurrentAmount(result.current_amount);
+            if (p.request?.kind === 'data' && result.current_amount) {
+              vtuService.applyDataPriceChange(
+                p.request.network,
+                p.request.bundle.id,
+                result.current_amount,
+              );
+            }
+          }
           // A definitive decline, or the request never placed an order (in
           // which case nothing was charged). Either way, safe to show failed;
           // the money layer is idempotent + reconciled regardless.
@@ -260,7 +273,9 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
   }, [buildReceipt]);
 
   const visual =
-    status === 'success'
+    priceChanged
+      ? { color: Colors.WARNING, icon: 'refresh' as const, label: 'Price Updated' }
+      : status === 'success'
       ? { color: SUCCESS_GREEN, icon: 'checkmark' as const, label: 'Successful' }
       : status === 'failed'
       ? { color: Colors.RED, icon: 'close' as const, label: 'Failed' }
@@ -283,7 +298,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
           <Ionicons name={visual.icon} size={42} color={Colors.WHITE} />
         </View>
         <Text style={styles.statusLabel}>{visual.label}</Text>
-        <Text style={styles.amount}>{formatNaira(p.amount || 0)}</Text>
+        <Text style={styles.amount}>{formatNaira(currentAmount ?? p.amount ?? 0)}</Text>
 
         {status === 'processing' ? (
           <View style={styles.spinnerRow}>
@@ -352,20 +367,26 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
           </View>
         ) : null}
 
-        <TouchableOpacity
-          style={styles.viewDetail}
-          onPress={() => {
-            stopPolling();
-            navigation.navigate('TransactionHistory');
-          }}
-        >
-          <Text style={styles.viewDetailText}>View Detail</Text>
-          <Ionicons name="chevron-forward" size={16} color={Colors.PURPLE} />
-        </TouchableOpacity>
+        {!priceChanged ? (
+          <TouchableOpacity
+            style={styles.viewDetail}
+            onPress={() => {
+              stopPolling();
+              navigation.navigate('TransactionHistory');
+            }}
+          >
+            <Text style={styles.viewDetailText}>View Detail</Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.PURPLE} />
+          </TouchableOpacity>
+        ) : null}
       </ScrollView>
 
-      <TouchableOpacity style={styles.doneButton} onPress={goHome} activeOpacity={0.85}>
-        <Text style={styles.doneText}>Done</Text>
+      <TouchableOpacity
+        style={styles.doneButton}
+        onPress={priceChanged ? navigation.goBack : goHome}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.doneText}>{priceChanged ? 'Review New Price' : 'Done'}</Text>
       </TouchableOpacity>
     </SafeAreaView>
   );
