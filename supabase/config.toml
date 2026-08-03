@@ -39,6 +39,12 @@ verify_jwt = true
 [functions.vtunaija-data-catalog]
 verify_jwt = true
 
+[functions.vtunaija-electricity-catalog]
+verify_jwt = true
+
+[functions.vtunaija-cabletv-catalog]
+verify_jwt = true
+
 [functions.nin-reconcile]
 verify_jwt = true
 
