@@ -78,188 +78,21 @@ export interface BatchResultItem {
 
 const airtimeAmounts = [100, 200, 300, 500, 1000, 2000, 3000, 5000, 10000, 15000, 20000];
 
-// Real, live catalog from VTUAfrica's own Data Bundle API docs page
-// (confirmed live, 2026-07-03). IDs match the server catalog exactly
-// (`{network}-{category}-{planCode}`). Only plans marked "Active" on
-// VTUAfrica's side are listed. Zero markup — customers pay exactly
-// VTUAfrica's confirmed Portal Owner cost, same policy as Glo already had.
-const dataBundles: DataBundle[] = [
-  // MTN
-  { id: 'mtn-sme-500w', name: '500MB (SME)', amount: 330, validity: '7 Days', network: 'mtn' },
-  { id: 'mtn-sme-5000w', name: '5GB (SME)', amount: 1840, validity: '7 Days', network: 'mtn' },
-  { id: 'mtn-sme-6000w', name: '6GB (SME)', amount: 2460, validity: '7 Days', network: 'mtn' },
-  { id: 'mtn-sme-1000', name: '1GB (SME)', amount: 770, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-sme-2000', name: '2GB (SME)', amount: 1430, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-sme-3000', name: '3GB (SME)', amount: 1770, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-sme-10000', name: '10GB (SME)', amount: 4470, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-gift-40', name: '40MB (Gifting)', amount: 52, validity: '1 Day', network: 'mtn' },
-  { id: 'mtn-gift-75', name: '75MB (Gifting)', amount: 76, validity: '1 Day', network: 'mtn' },
-  { id: 'mtn-gift-500', name: '500MB (Gifting)', amount: 490, validity: '7 Days', network: 'mtn' },
-  { id: 'mtn-gift-750', name: '750MB (Gifting)', amount: 440, validity: '3 Days', network: 'mtn' },
-  { id: 'mtn-gift-1000d', name: '1GB (Gifting)', amount: 490, validity: '1 Day', network: 'mtn' },
-  { id: 'mtn-gift-2000d', name: '2GB (Gifting)', amount: 735, validity: '2 Days', network: 'mtn' },
-  { id: 'mtn-gift-2501d', name: '2.5GB (Gifting)', amount: 735, validity: '1 Day', network: 'mtn' },
-  { id: 'mtn-gift-2500d', name: '2.5GB (Gifting)', amount: 880, validity: '2 Days', network: 'mtn' },
-  { id: 'mtn-gift-3200d', name: '3.2GB (Gifting)', amount: 980, validity: '2 Days', network: 'mtn' },
-  { id: 'mtn-gift-1000w', name: '1GB (Gifting)', amount: 780, validity: '7 Days', network: 'mtn' },
-  { id: 'mtn-gift-1500w', name: '1.5GB (Gifting)', amount: 975, validity: '7 Days', network: 'mtn' },
-  { id: 'mtn-gift-6000w', name: '6GB (Gifting)', amount: 2415, validity: '7 Days', network: 'mtn' },
-  { id: 'mtn-gift-2000', name: '2GB (Gifting)', amount: 1465, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-gift-2700', name: '2.7GB (Gifting)', amount: 1950, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-gift-3500', name: '3.5GB (Gifting)', amount: 2425, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-gift-10000', name: '10GB (Gifting)', amount: 4375, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-gift-12500', name: '12.5GB (Gifting)', amount: 5430, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-gift-5000', name: '5GB (Gifting)', amount: 2580, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-gift-7000', name: '7GB (Gifting)', amount: 3445, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-gift-16500', name: '16.5GB (Gifting)', amount: 6355, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-gift-20000', name: '20GB (Gifting)', amount: 7500, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-gift-25000', name: '25GB (Gifting)', amount: 8900, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-gift-36000', name: '36GB (Gifting)', amount: 10800, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-gift-75000', name: '75GB (Gifting)', amount: 17470, validity: '30 Days', network: 'mtn' },
-  { id: 'mtn-awoof-1000d', name: '1GB (Awoof)', amount: 490, validity: '1 Day', network: 'mtn' },
-  { id: 'mtn-awoof-1400w', name: '1.4GB (Awoof)', amount: 1756, validity: '3 Days', network: 'mtn' },
-  { id: 'mtn-awoof-20000w', name: '20GB (Awoof)', amount: 9825, validity: '7 Days', network: 'mtn' },
-
-  // Airtel
-  { id: 'airtel-sme-150', name: '150MB (SME)', amount: 65, validity: '1 Day', network: 'airtel' },
-  { id: 'airtel-sme-300', name: '300MB (SME)', amount: 114, validity: '2 Days', network: 'airtel' },
-  { id: 'airtel-sme-600', name: '600MB (SME)', amount: 220, validity: '2 Days', network: 'airtel' },
-  { id: 'airtel-sme-1000d', name: '1GB (SME)', amount: 358, validity: '1 Day', network: 'airtel' },
-  { id: 'airtel-sme-3000w', name: '3GB (SME)', amount: 1070, validity: '7 Days', network: 'airtel' },
-  { id: 'airtel-sme-7000w', name: '7GB (SME)', amount: 2035, validity: '7 Days', network: 'airtel' },
-  { id: 'airtel-sme-4000', name: '4GB (SME)', amount: 2450, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-sme-10000', name: '10GB (SME)', amount: 3100, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-sme-13000', name: '13GB (SME)', amount: 4925, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-corp-100', name: '100MB (Corporate)', amount: 105, validity: '7 Days', network: 'airtel' },
-  { id: 'airtel-corp-300', name: '300MB (Corporate)', amount: 270, validity: '7 Days', network: 'airtel' },
-  { id: 'airtel-corp-500', name: '500MB (Corporate)', amount: 490, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-corp-1000', name: '1GB (Corporate)', amount: 980, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-corp-2000', name: '2GB (Corporate)', amount: 1960, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-corp-5000', name: '5GB (Corporate)', amount: 4900, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-corp-10000', name: '10GB (Corporate)', amount: 9800, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-corp-15000', name: '15GB (Corporate)', amount: 14700, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-corp-20000', name: '20GB (Corporate)', amount: 19600, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-gift-75', name: '75MB (Gifting)', amount: 79.9, validity: '1 Day', network: 'airtel' },
-  { id: 'airtel-gift-200', name: '200MB (Gifting)', amount: 206, validity: '3 Days', network: 'airtel' },
-  { id: 'airtel-gift-500', name: '500MB (Gifting)', amount: 496, validity: '3 Days', network: 'airtel' },
-  { id: 'airtel-gift-1000d', name: '1GB (Gifting)', amount: 495, validity: '1 Day', network: 'airtel' },
-  { id: 'airtel-gift-1500d', name: '1.5GB (Gifting)', amount: 595, validity: '2 Days', network: 'airtel' },
-  { id: 'airtel-gift-3000d', name: '3GB (Gifting)', amount: 990, validity: '2 Days', network: 'airtel' },
-  { id: 'airtel-gift-1000w', name: '1GB (Gifting)', amount: 790, validity: '7 Days', network: 'airtel' },
-  { id: 'airtel-gift-1500w', name: '1.5GB (Gifting)', amount: 995, validity: '7 Days', network: 'airtel' },
-  { id: 'airtel-gift-6000w', name: '6GB (Gifting)', amount: 2493, validity: '7 Days', network: 'airtel' },
-  { id: 'airtel-gift-2000', name: '2GB (Gifting)', amount: 1485, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-gift-3000', name: '3GB (Gifting)', amount: 1980, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-gift-4000', name: '4GB (Gifting)', amount: 2502, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-gift-8000', name: '8GB (Gifting)', amount: 2993, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-gift-10000', name: '10GB (Gifting)', amount: 3990, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-gift-13000', name: '13GB (Gifting)', amount: 4973, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-gift-18000', name: '18GB (Gifting)', amount: 6000, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-gift-25000', name: '25GB (Gifting)', amount: 8055, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-gift-35000', name: '35GB (Gifting)', amount: 10000, validity: '30 Days', network: 'airtel' },
-  { id: 'airtel-gift-60000', name: '60GB (Gifting)', amount: 15275, validity: '30 Days', network: 'airtel' },
-
-  // Glo
-  { id: 'glo-sme-50', name: '50MB (SME)', amount: 52, validity: '1 Day', network: 'glo' },
-  { id: 'glo-sme-125', name: '125MB (SME)', amount: 98, validity: '1 Day', network: 'glo' },
-  { id: 'glo-sme-260', name: '260MB (SME)', amount: 192, validity: '2 Days', network: 'glo' },
-  { id: 'glo-sme-350', name: '350MB (SME)', amount: 100, validity: '1 Day', network: 'glo' },
-  { id: 'glo-sme-750n', name: '750MB (SME, Night)', amount: 119, validity: '1 Night', network: 'glo' },
-  { id: 'glo-sme-750', name: '750MB (SME)', amount: 205, validity: '1 Day', network: 'glo' },
-  { id: 'glo-sme-1250d', name: '1.25GB (SME, Sunday)', amount: 200, validity: '1 Sunday', network: 'glo' },
-  { id: 'glo-sme-1500d', name: '1.5GB (SME)', amount: 300, validity: '1 Day', network: 'glo' },
-  { id: 'glo-sme-2500d', name: '2.5GB (SME)', amount: 500, validity: '2 Days', network: 'glo' },
-  { id: 'glo-sme-10000w', name: '10GB (SME)', amount: 2000, validity: '7 Days', network: 'glo' },
-  { id: 'glo-corp-200', name: '200MB (Corporate)', amount: 90, validity: '14 Days', network: 'glo' },
-  { id: 'glo-corp-500', name: '500MB (Corporate)', amount: 210, validity: '30 Days', network: 'glo' },
-  { id: 'glo-corp-1000', name: '1GB (Corporate)', amount: 408, validity: '30 Days', network: 'glo' },
-  { id: 'glo-corp-2000', name: '2GB (Corporate)', amount: 816, validity: '30 Days', network: 'glo' },
-  { id: 'glo-corp-3000', name: '3GB (Corporate)', amount: 1225, validity: '30 Days', network: 'glo' },
-  { id: 'glo-corp-5000', name: '5GB (Corporate)', amount: 2040, validity: '30 Days', network: 'glo' },
-  { id: 'glo-corp-10000', name: '10GB (Corporate)', amount: 4050, validity: '30 Days', network: 'glo' },
-  { id: 'glo-gift-50', name: '50MB (Gifting)', amount: 51, validity: '1 Day', network: 'glo' },
-  { id: 'glo-gift-150', name: '150MB (Gifting)', amount: 97, validity: '1 Day', network: 'glo' },
-  { id: 'glo-gift-350', name: '350MB (Gifting)', amount: 191, validity: '1 Day', network: 'glo' },
-  { id: 'glo-gift-1000w', name: '1GB (Gifting)', amount: 470, validity: '14 Days', network: 'glo' },
-  { id: 'glo-gift-3900', name: '3.9GB (Gifting)', amount: 945, validity: '30 Days', network: 'glo' },
-  { id: 'glo-gift-7500', name: '7.5GB (Gifting)', amount: 2380, validity: '30 Days', network: 'glo' },
-  { id: 'glo-gift-9000', name: '9.2GB (Gifting)', amount: 1905, validity: '30 Days', network: 'glo' },
-  { id: 'glo-gift-10000', name: '10.8GB (Gifting)', amount: 2865, validity: '30 Days', network: 'glo' },
-  { id: 'glo-gift-14000', name: '14GB (Gifting)', amount: 3830, validity: '30 Days', network: 'glo' },
-  { id: 'glo-gift-18000', name: '18GB (Gifting)', amount: 4760, validity: '30 Days', network: 'glo' },
-
-  // 9mobile
-  { id: '9mobile-sme-250', name: '250MB (SME)', amount: 81, validity: '14 Days', network: '9mobile' },
-  { id: '9mobile-sme-500', name: '500MB (SME)', amount: 135, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-sme-3500', name: '3.5GB (SME)', amount: 905, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-sme-7000', name: '7GB (SME)', amount: 1750, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-sme-15000', name: '15GB (SME)', amount: 3100, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-corp-500', name: '500MB (Corporate)', amount: 147, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-corp-1000', name: '1GB (Corporate)', amount: 285, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-corp-1500', name: '1.5GB (Corporate)', amount: 435, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-corp-2000', name: '2GB (Corporate)', amount: 570, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-corp-3000', name: '3GB (Corporate)', amount: 855, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-corp-4000', name: '4GB (Corporate)', amount: 1140, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-corp-4500', name: '4.5GB (Corporate)', amount: 1283, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-corp-5000', name: '5GB (Corporate)', amount: 1425, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-corp-10000', name: '10GB (Corporate)', amount: 2850, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-corp-11000', name: '11GB (Corporate)', amount: 4125, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-corp-15000', name: '15GB (Corporate)', amount: 4275, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-corp-20000', name: '20GB (Corporate)', amount: 5700, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-corp-25000', name: '25GB (Corporate)', amount: 7125, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-corp-30000', name: '30GB (Corporate)', amount: 8550, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-corp-40000', name: '40GB (Corporate)', amount: 11350, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-gift-25', name: '25MB (Gifting)', amount: 87, validity: '1 Day', network: '9mobile' },
-  { id: '9mobile-gift-2000d', name: '2GB (Gifting)', amount: 850, validity: '1 Day', network: '9mobile' },
-  { id: '9mobile-gift-100', name: '100MB (Gifting)', amount: 187, validity: '7 Days', network: '9mobile' },
-  { id: '9mobile-gift-250', name: '250MB (Gifting)', amount: 160, validity: '14 Days', network: '9mobile' },
-  { id: '9mobile-gift-350', name: '350MB (Gifting)', amount: 594, validity: '7 Days', network: '9mobile' },
-  { id: '9mobile-gift-1500w', name: '1.5GB (Gifting)', amount: 705, validity: '7 Days', network: '9mobile' },
-  { id: '9mobile-gift-7000w', name: '7GB (Gifting)', amount: 2510, validity: '7 Days', network: '9mobile' },
-  { id: '9mobile-gift-500', name: '500MB (Gifting)', amount: 320, validity: '14 Days', network: '9mobile' },
-  { id: '9mobile-gift-5000w', name: '5GB (Gifting)', amount: 2350, validity: '14 Days', network: '9mobile' },
-  { id: '9mobile-gift-1500', name: '1.5GB (Gifting)', amount: 1660, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-gift-2000', name: '2GB (Gifting)', amount: 1984, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-gift-3000', name: '3GB (Gifting)', amount: 2480, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-gift-4500', name: '4.5GB (Gifting)', amount: 3320, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-gift-5500', name: '5.5GB (Gifting)', amount: 6840, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-gift-11000', name: '11GB (Gifting)', amount: 6630, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-gift-15000', name: '15GB (Gifting)', amount: 8300, validity: '30 Days', network: '9mobile' },
-  { id: '9mobile-gift-25000', name: '25GB (Gifting)', amount: 17820, validity: '30 Days', network: '9mobile' },
-];
-
-// VTU.ng v2 plans marked Available on 2026-08-02. IDs and customer prices
-// match the server-authoritative catalog exactly.
-const vtuNgDataBundles: DataBundle[] = [
-  { id: 'vtung-mtn-244540', name: '16.5GB', amount: 6499, validity: '30 Days', network: 'mtn' },
-  { id: 'vtung-mtn-5506674', name: '1GB + 1.5 mins', amount: 499, validity: '1 Day', network: 'mtn' },
-  { id: 'vtung-mtn-244538', name: '7GB', amount: 3499, validity: '30 Days', network: 'mtn' },
-  { id: 'vtung-mtn-2673', name: '36GB', amount: 10999, validity: '30 Days', network: 'mtn' },
-  { id: 'vtung-mtn-5506738', name: '3.5GB + 5 mins', amount: 2499, validity: '30 Days', network: 'mtn' },
-  { id: 'vtung-mtn-2677', name: '10GB + 10 mins', amount: 4499, validity: '30 Days', network: 'mtn' },
-  { id: 'vtung-mtn-244542', name: '2GB + 2 mins', amount: 1499, validity: '30 Days', network: 'mtn' },
-  { id: 'vtung-mtn-2676', name: '1GB + 5 mins', amount: 799, validity: '7 Days', network: 'mtn' },
-  { id: 'vtung-mtn-2667', name: '75GB', amount: 17999, validity: '30 Days', network: 'mtn' },
-  { id: 'vtung-airtel-244698', name: '1GB', amount: 799, validity: '7 Days', network: 'airtel' },
-  { id: 'vtung-airtel-2669', name: '35GB', amount: 9999, validity: '30 Days', network: 'airtel' },
-  { id: 'vtung-airtel-2672', name: '2GB', amount: 1499, validity: '30 Days', network: 'airtel' },
-  { id: 'vtung-airtel-2675', name: '8GB', amount: 2999, validity: '30 Days', network: 'airtel' },
-  { id: 'vtung-airtel-244721', name: '3GB', amount: 1999, validity: '30 Days', network: 'airtel' },
-  { id: 'vtung-airtel-2668', name: '60GB', amount: 14999, validity: '30 Days', network: 'airtel' },
-  { id: 'vtung-airtel-2674', name: '10GB', amount: 3999, validity: '30 Days', network: 'airtel' },
-  { id: 'vtung-airtel-2670', name: '18GB', amount: 5999, validity: '30 Days', network: 'airtel' },
-  { id: 'vtung-glo-5580757', name: '1.75GB (Sunday)', amount: 199, validity: 'Sunday', network: 'glo' },
-  { id: 'vtung-glo-5580758', name: '125MB', amount: 99, validity: '1 Day', network: 'glo' },
-  { id: 'vtung-glo-244659', name: '2.2GB (Weekend)', amount: 499, validity: 'Weekend', network: 'glo' },
-  { id: 'vtung-glo-2660', name: '2.6GB', amount: 999, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-244658', name: '5GB', amount: 1499, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-244668', name: '7.5GB', amount: 2499, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-2665', name: '11GB', amount: 2999, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-2663', name: '18GB', amount: 4999, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-2251529', name: '500MB (Gift)', amount: 279, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-2661', name: '40GB', amount: 9999, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-2251528', name: '1GB (Gift)', amount: 499, validity: '30 Days', network: 'glo' },
-  { id: 'vtung-glo-2251526', name: '2GB (Gift)', amount: 999, validity: '30 Days', network: 'glo' },
+// Small fallback list, used only when the live vtunaija-data-catalog fetch
+// fails and the cache is empty. Real sample from VTUnaija's /listdataplans/
+// response (confirmed live, 2026-08-03) — ids/names/prices match what the
+// live sync would store for these specific plans (price_for_premiumuser
+// tier, per owner confirmation). Not the full 178-plan catalog — just enough
+// to keep the Data screen usable during a provider hiccup.
+const fallbackDataBundles: DataBundle[] = [
+  { id: 'vtunaija-mtn-121', name: '1GB DataShare (DataShare)', amount: 460, validity: '7 Days', network: 'mtn' },
+  { id: 'vtunaija-mtn-122', name: '2GB Datashare (DataShare)', amount: 1040, validity: '30 Days', network: 'mtn' },
+  { id: 'vtunaija-glo-22', name: '500 MB (Corporate)', amount: 190, validity: '30 Days', network: 'glo' },
+  { id: 'vtunaija-glo-23', name: '1 GB (Corporate)', amount: 380, validity: '30 Days', network: 'glo' },
+  { id: 'vtunaija-airtel-28', name: '500 MB (Corporate)', amount: 489, validity: '7 Days', network: 'airtel' },
+  { id: 'vtunaija-airtel-29', name: '1 GB (Corporate)', amount: 782.4, validity: '7 Days', network: 'airtel' },
+  { id: 'vtunaija-9mobile-219', name: '9mobile 100MB - 100 Naira (GiftingPlan)', amount: 100.55, validity: '1 Days', network: '9mobile' },
+  { id: 'vtunaija-9mobile-220', name: '9mobile 650MB - 200 Naira (GiftingPlan)', amount: 200.10, validity: '1 Days', network: '9mobile' },
 ];
 
 // Same 12 DISCO codes VTUAfrica's own pricing page confirms it supports
@@ -424,13 +257,13 @@ async function purchase(
 }
 
 function dataCatalogCacheKey(network: NetworkProvider): string {
-  return `vtung_data_catalog_${network}`;
+  return `vtu_data_catalog_${network}`;
 }
 
 function cachedDataBundles(network: NetworkProvider): DataBundle[] {
   const cached = readCache<DataBundle[]>(dataCatalogCacheKey(network));
   if (cached?.data?.length) return cached.data;
-  return vtuNgDataBundles.filter((bundle) => bundle.network === network);
+  return fallbackDataBundles.filter((bundle) => bundle.network === network);
 }
 
 async function refreshDataBundles(network: NetworkProvider): Promise<DataBundle[]> {
@@ -438,7 +271,7 @@ async function refreshDataBundles(network: NetworkProvider): Promise<DataBundle[
   if (cached?.data?.length && Date.now() - cached.savedAt < 5 * 60 * 1000) return cached.data;
   try {
     const { data, error } = await withTimeout(
-      supabase.functions.invoke('vtu-data-catalog', { body: { network } }),
+      supabase.functions.invoke('vtunaija-data-catalog', { body: { network } }),
       12_000,
     );
     if (error || !data?.success || !Array.isArray(data.plans) || data.plans.length === 0) {

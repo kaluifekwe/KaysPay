@@ -80,14 +80,18 @@ function shouldMeasure(requestId: string): boolean {
  * `providerPayload` are in NAIRA because both providers expect naira.
  * Throws a string error code for invalid requests.
  *
- * Provider routing (as of the VTUnaija migration, 2026-07-30):
- *   - airtime -> VTUnaija (moved off VTU.ng; VTU.ng's client/reconcile/catalog
- *     code stays deployed but unreferenced, for fast rollback if ever needed).
- *   - data -> VTU.ng for now, pending one field (VTUnaija's `account_Id`)
- *     still being confirmed with VTUnaija support; will move to VTUnaija once
- *     that's resolved (Phase 1b).
+ * Provider routing (as of the VTUnaija migration, 2026-08-03):
+ *   - airtime -> VTUnaija (/topup/). Moved off VTU.ng.
+ *   - data -> VTUnaija (/data/, NOT /internetbundles/ — that endpoint needed
+ *     an unconfirmed `account_Id` field; /data/ needs no such field and
+ *     returns the identical success wording, confirmed the right one to use).
+ *     Moved off VTU.ng. Catalog prices come from vtunaija_data_catalog.
  *   - electricity, TV, exam_pin -> VTUAfrica (Phase 2 of the VTUnaija
  *     migration; not yet started — no confirmed VTUnaija API shape for these).
+ *
+ * VTU.ng's and VTUAfrica's client/reconcile/catalog code for airtime+data
+ * stays deployed but unreferenced — fast rollback if ever needed, see
+ * supabase/ROLLBACK_VTUNAIJA.md.
  */
 class PriceChangedError extends Error {
   constructor(public readonly currentAmountKobo: number) {
@@ -148,8 +152,8 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
       if (!/^0\d{10}$/.test(phone)) throw "INVALID_PHONE";
 
       const { data: bundle } = await supabase
-        .from("vtung_data_catalog")
-        .select("network, variation_id, reseller_kobo, available, provider_seen_at")
+        .from("vtunaija_data_catalog")
+        .select("network, data_plan_id, reseller_kobo, available, provider_seen_at")
         .eq("id", bundleId)
         .eq("network", network)
         .eq("available", true)
@@ -166,12 +170,15 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
         txType: "data",
         network,
         recipient: phone,
-        provider: "vtu_ng",
-        endpoint: "/data",
+        provider: "vtunaija",
+        endpoint: "/data/",
         providerPayload: {
-          phone,
-          service_id: network,
-          variation_id: bundle.variation_id,
+          network: VTUNAIJA_NETWORK_IDS[network],
+          mobile_number: phone,
+          plan: bundle.data_plan_id,
+          // Same unconfirmed-but-documented-default as airtime — see the
+          // Ported_number comment in the airtime case above.
+          Ported_number: "true",
         },
       };
     }
@@ -393,8 +400,9 @@ serve(async (req: Request) => {
           unknown
         >;
       return body.service === "data"
-        ? (req.service_id === pp.service_id && req.variation_id === pp.variation_id) ||
-          (req.service === pp.service && req.DataPlan === pp.DataPlan)
+        ? (req.network === pp.network && req.plan === pp.plan) || // VTUnaija (current)
+          (req.service_id === pp.service_id && req.variation_id === pp.variation_id) || // VTU.ng (retired)
+          (req.service === pp.service && req.DataPlan === pp.DataPlan) // VTUAfrica (retired)
         : req.service === pp.service && req.variation === pp.variation;
     });
     if (isSamePlan) {

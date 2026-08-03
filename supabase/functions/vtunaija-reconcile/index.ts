@@ -3,22 +3,30 @@ import { adminClient, verifyCronSecret, withJobLock } from "../_shared/auth.ts";
 import {
   normalizeVTUNaijaResult,
   queryVTUNaijaTransaction,
+  queryVTUNaijaDataTransaction,
   isVtuNaijaConfigured,
   vtunaijaOutcome,
 } from "../_shared/vtunaija-client.ts";
 
 // Scheduled sweep (see the VTUnaija migration cron) that resolves VTUnaija
-// airtime orders left 'pending' after vtu-purchase's inline attempt hit an
-// ambiguous outcome (network blip / unrecognized response shape — VTUnaija
-// documents no async "processing" state for airtime, so this should only
-// ever catch a genuine network-level ambiguity, not a normal async order).
-// Only ever transitions 'pending' -> 'completed'/'refunded' based on
-// VTUnaija's own queryTransaction answer — never guesses, and never touches
-// a transaction whose provider isn't 'vtunaija'.
+// airtime/data orders left 'pending' after vtu-purchase's inline attempt hit
+// an ambiguous outcome (network blip / unrecognized response shape — VTUnaija
+// documents no async "processing" state for either, so this should only ever
+// catch a genuine network-level ambiguity, not a normal async order). Only
+// ever transitions 'pending' -> 'completed'/'refunded' based on VTUnaija's
+// own query answer — never guesses, and never touches a transaction whose
+// provider isn't 'vtunaija'.
 //
-// "data" is intentionally excluded from the type filter below: data purchases
-// still route to VTU.ng until VTUnaija's account_Id field is confirmed (see
-// the VTUnaija migration plan) — add "data" here once that ships.
+// Query-endpoint pairing assumption (NOT yet confirmed with a live forced-
+// timeout test): airtime -> queryTransaction (transaction_id), data ->
+// queryDataTransaction (datarequest_id) — the naming ("datarequest_id" reads
+// as "any data request", not implementation-specific to one data endpoint)
+// suggests this pairing holds even though our data purchases go through
+// /data/, not /internetbundles/. A wrong guess here is safe, not silently
+// wrong: an unrecognized/error query response is classified "unknown" and
+// stays pending for the next sweep — it can never cause a false
+// complete/refund. Verify this pairing with a real forced-timeout test
+// before relying on it at scale.
 
 serve(async (req: Request) => {
   if (!verifyCronSecret(req)) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
@@ -35,9 +43,9 @@ serve(async (req: Request) => {
     const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
     const { data: pending, error } = await supabase
       .from("transactions")
-      .select("id, metadata")
+      .select("id, type, metadata")
       .eq("status", "pending")
-      .in("type", ["airtime"])
+      .in("type", ["airtime", "data"])
       .eq("metadata->>provider", "vtunaija")
       .not("metadata->>idempotency_key", "is", null)
       .gte("created_at", cutoff)
@@ -57,7 +65,9 @@ serve(async (req: Request) => {
       if (!requestId) continue;
 
       try {
-        const queried = await queryVTUNaijaTransaction(requestId);
+        const queried = tx.type === "data"
+          ? await queryVTUNaijaDataTransaction(requestId)
+          : await queryVTUNaijaTransaction(requestId);
         const outcome = vtunaijaOutcome(queried);
         const normalized = normalizeVTUNaijaResult(queried);
 

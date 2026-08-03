@@ -36,6 +36,9 @@ verify_jwt = true
 [functions.vtu-data-catalog]
 verify_jwt = true
 
+[functions.vtunaija-data-catalog]
+verify_jwt = true
+
 [functions.nin-reconcile]
 verify_jwt = true
 
