@@ -23,6 +23,7 @@ import {
   VALID_NETWORKS,
   VTUNAIJA_CABLE_IDS,
   VTUNAIJA_ELECTRICITY_NAME_MAP,
+  VTUNAIJA_EXAM_IDS,
   VTUNAIJA_NETWORK_IDS,
 } from "../_shared/vtu-catalog.ts";
 import {
@@ -97,9 +98,14 @@ function shouldMeasure(requestId: string): boolean {
  *     (vtunaija_cabletv_catalog), replacing the old static TV_BOUQUETS map —
  *     the client (TVScreen.tsx) fetches bouquets live, same pattern as data.
  *     Moved off VTUAfrica.
- *   - exam_pin -> VTUAfrica (deferred: VTUnaija only cleanly offers WAEC/NECO/
- *     NABTEB result-checking, and its one example price didn't match ours —
- *     pricing confirmation pending before this moves).
+ *   - exam_pin: WAEC/NECO/NABTEB result-checking (only these 3 — confirmed
+ *     available via VTUnaija's own support) -> VTUnaija (/exam/). No
+ *     price-list endpoint exists for exam pins, so the debited amount is
+ *     provisional (our last-known price) until a live purchase reveals
+ *     VTUnaija's real plan_amount, at which point EXAM_PIN_TYPES should be
+ *     updated to match (owner-approved approach, 2026-08-03). JAMB
+ *     (confirmed NOT available on VTUnaija) and WAEC Verification/GCE (no
+ *     confirmed VTUnaija product) stay on VTUAfrica, unchanged.
  *
  * VTU.ng's and VTUAfrica's client/reconcile/catalog code stays deployed but
  * unreferenced for airtime/data/electricity/TV — fast rollback if ever
@@ -271,6 +277,30 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
       const exam = EXAM_PIN_TYPES[examId];
       if (!exam) throw "INVALID_EXAM_TYPE";
       if (!exam.quantityOptions.includes(quantity)) throw "INVALID_QUANTITY";
+
+      // WAEC/NECO/NABTEB result-checking pins move to VTUnaija (confirmed
+      // available via their own support, 2026-08-03). JAMB (confirmed NOT
+      // available on VTUnaija at all) and WAEC Verification/GCE (no
+      // confirmed VTUnaija product) stay on VTUAfrica, unchanged below.
+      const vtunaijaExamCode = VTUNAIJA_EXAM_IDS[examId];
+      if (vtunaijaExamCode) {
+        return {
+          // Provisional debit — VTUnaija has no price-list endpoint for exam
+          // pins, so this is our last-known price until a live purchase
+          // response reveals their real plan_amount (owner-approved
+          // approach, 2026-08-03: use their real price once observed).
+          amount: exam.amount * quantity, // kobo
+          txType: "exam_pin",
+          network: "N/A",
+          recipient: null,
+          provider: "vtunaija",
+          endpoint: "/exam/",
+          providerPayload: {
+            exam_name: vtunaijaExamCode,
+            quantity,
+          },
+        };
+      }
 
       // VTUAfrica requires profilecode + recipient email (`sender`) + phone
       // for JAMB. The current app collects only profilecode, so accepting this
@@ -723,10 +753,11 @@ serve(async (req: Request) => {
     return response;
   }
 
-  // 4c. VTUnaija — airtime, data, electricity, and TV all route here now
-  // (exam pins remain deferred on VTUAfrica — see the Provider-routing doc
-  // comment above). Same inline-await, never-background pattern as VTUAfrica
-  // above: the EdgeRuntime.waitUntil incident (worker EarlyDropped right after
+  // 4c. VTUnaija — airtime, data, electricity, TV, and (WAEC/NECO/NABTEB)
+  // exam pins all route here now (JAMB and WAEC Verification/GCE stay on
+  // VTUAfrica — see the Provider-routing doc comment above). Same
+  // inline-await, never-background pattern as VTUAfrica above: the
+  // EdgeRuntime.waitUntil incident (worker EarlyDropped right after
   // responding, killing an in-flight provider call and leaving a user
   // debited with no airtime delivered) means the provider call MUST be
   // fully awaited before this function ever responds.
@@ -751,7 +782,22 @@ serve(async (req: Request) => {
         // into the transaction's own metadata (same reasoning/shape as the
         // VTUAfrica electricity branch above) so receipts/History still work.
         const electricityToken: string | undefined = result?.token ?? result?.electricitytoken;
-        if (electricityToken) {
+
+        // Exam pin success carries a one-time PIN + serial. VTUnaija's docs
+        // only show a single pin/serial pair for quantity=1 — the
+        // multi-quantity delimiter format is UNCONFIRMED (VTUAfrica used
+        // "<=>"), so this splits defensively on known delimiters and falls
+        // back to the single raw string rather than ever guessing/losing a
+        // PIN. Verify the real multi-quantity shape with a live test before
+        // trusting this at quantity > 1.
+        const pinRaw: string | undefined = result?.pin;
+        const pins = pinRaw
+          ? (pinRaw.includes("<=>") ? pinRaw.split("<=>") : pinRaw.includes(",") ? pinRaw.split(",") : [pinRaw])
+              .map((s: string) => s.trim())
+              .filter(Boolean)
+          : undefined;
+
+        if (electricityToken || pins) {
           await supabase
             .from("transactions")
             .update({
@@ -761,7 +807,8 @@ serve(async (req: Request) => {
                 provider: plan.provider,
                 idempotency_key: requestId,
                 provider_reference: stripRef(requestId),
-                token: electricityToken,
+                ...(electricityToken ? { token: electricityToken } : {}),
+                ...(pins ? { pins } : {}),
               },
             })
             .eq("id", txId);
@@ -772,6 +819,7 @@ serve(async (req: Request) => {
           transaction_id: txId,
           order_id: normalized.id ?? undefined,
           token: electricityToken,
+          pins,
           amount: plan.amount,
         });
       }

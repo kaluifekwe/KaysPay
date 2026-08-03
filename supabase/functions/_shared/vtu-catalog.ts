@@ -406,3 +406,17 @@ export const VTUNAIJA_CABLE_IDS: Record<TVServiceProvider, number> = {
   dstv: 2,
   startimes: 3,
 };
+
+// VTUnaija's exam_name codes — ONLY the 3 confirmed available via their own
+// support (2026-08-03): "WAEC, NECO, Nabteb and Nbais are available" and
+// "Jamb is not available on our platform currently". WAECREGISTRATION (5)
+// wasn't listed as available either. Only these 3 ids may route to VTUnaija;
+// waec-verification, waec-gce, jamb-utme, jamb-direct-entry stay on
+// VTUAfrica. No price-list endpoint exists for exam pins (unlike data/cable)
+// — EXAM_PIN_TYPES' amounts below are a provisional debit, trued up to
+// VTUnaija's real plan_amount once observed from a live purchase response.
+export const VTUNAIJA_EXAM_IDS: Record<string, number> = {
+  "waec-result": 1,
+  "neco-result": 2,
+  "nabteb-result": 3,
+};

@@ -9,8 +9,9 @@ import {
 } from "../_shared/vtunaija-client.ts";
 
 // Scheduled sweep (see the VTUnaija migration cron) that resolves VTUnaija
-// airtime/data/bill (electricity+TV) orders left 'pending' after
-// vtu-purchase's inline attempt hit an ambiguous outcome (network blip /
+// airtime/data/bill (electricity+TV)/exam_pin (WAEC/NECO/NABTEB result-
+// checking only) orders left 'pending' after vtu-purchase's inline attempt
+// hit an ambiguous outcome (network blip /
 // unrecognized response shape — VTUnaija documents no async "processing"
 // state for any of these, so this should only ever catch a genuine
 // network-level ambiguity, not a normal async order). Only ever transitions
@@ -46,7 +47,7 @@ serve(async (req: Request) => {
       .from("transactions")
       .select("id, type, metadata")
       .eq("status", "pending")
-      .in("type", ["airtime", "data", "bill"])
+      .in("type", ["airtime", "data", "bill", "exam_pin"])
       .eq("metadata->>provider", "vtunaija")
       .not("metadata->>idempotency_key", "is", null)
       .gte("created_at", cutoff)
