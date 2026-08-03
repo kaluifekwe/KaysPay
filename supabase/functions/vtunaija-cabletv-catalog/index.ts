@@ -30,43 +30,61 @@ async function fetchCatalog() {
   let payload: any;
   try {
     payload = await callVTUNaija("/listcabletvplans/", {});
-  } catch {
+  } catch (e) {
+    console.error("vtunaija-cabletv-catalog: provider fetch failed:", e instanceof Error ? e.message : e);
     throw new CatalogSyncError("PROVIDER_FETCH_FAILED");
   }
-  if (!Array.isArray(payload?.cabletvplans)) throw new CatalogSyncError("PROVIDER_FETCH_FAILED");
+  if (!Array.isArray(payload?.cabletvplans)) {
+    console.error("vtunaija-cabletv-catalog: unexpected response shape:", JSON.stringify(payload).slice(0, 500));
+    throw new CatalogSyncError("PROVIDER_FETCH_FAILED");
+  }
 
-  return payload.cabletvplans
-    .filter((raw: Record<string, unknown>) => PROVIDER_NAME_MAP[String(raw.the_cabletv_name).toUpperCase()])
-    .map((raw: Record<string, unknown>) => {
-      const provider = PROVIDER_NAME_MAP[String(raw.the_cabletv_name).toUpperCase()];
-      const planId = String(raw.cabletv_plan_id ?? "");
-      // Owner-confirmed tier, consistent with the data catalog's choice.
-      const priceNaira = Number(raw.price_for_premiumuser);
-      const size = String(raw.size ?? "").trim();
-      const durationDays = String(raw.duration ?? "").trim();
-      if (!/^\d+$/.test(planId) || !size || !Number.isFinite(priceNaira) || priceNaira <= 0) {
-        throw new Error("invalid catalog plan");
-      }
-      return {
-        id: `vtunaija-${provider}-${planId}`,
-        provider,
-        cabletv_plan_id: planId,
-        name: size,
-        validity: durationDays ? `${durationDays} Days` : "See provider",
-        reseller_kobo: Math.round(priceNaira * 100),
-        available: String(raw.status ?? "").toLowerCase() === "on",
-      };
+  const rows: {
+    id: string; provider: typeof PROVIDERS[number]; cabletv_plan_id: string;
+    name: string; validity: string; reseller_kobo: number; available: boolean;
+  }[] = [];
+  let skipped = 0;
+
+  // A single malformed plan must never abort the WHOLE sync (the exact bug
+  // that froze vtunaija-data-catalog's sync silently forever, confirmed live
+  // 2026-08-03) — skip just that one row and keep going.
+  for (const raw of payload.cabletvplans as Record<string, unknown>[]) {
+    const provider = PROVIDER_NAME_MAP[String(raw.the_cabletv_name).toUpperCase()];
+    if (!provider) continue; // SHOWMAX or anything unsupported — not an error
+
+    const planId = String(raw.cabletv_plan_id ?? "");
+    const priceNaira = Number(raw.price_for_premiumuser);
+    const size = String(raw.size ?? "").trim();
+    const durationDays = String(raw.duration ?? "").trim();
+
+    if (!/^\d+$/.test(planId) || !size || !Number.isFinite(priceNaira) || priceNaira <= 0) {
+      skipped++;
+      continue;
+    }
+
+    rows.push({
+      id: `vtunaija-${provider}-${planId}`,
+      provider,
+      cabletv_plan_id: planId,
+      name: size,
+      validity: durationDays ? `${durationDays} Days` : "See provider",
+      reseller_kobo: Math.round(priceNaira * 100),
+      available: String(raw.status ?? "").toLowerCase() === "on",
     });
+  }
+
+  if (skipped > 0) console.warn(`vtunaija-cabletv-catalog: skipped ${skipped} malformed plan(s) this sync`);
+  return rows;
 }
 
 async function refreshCatalog(supabase: ReturnType<typeof adminClient>) {
-  let rows;
-  try {
-    rows = await fetchCatalog();
-  } catch {
-    throw new CatalogSyncError("PROVIDER_FETCH_FAILED");
-  }
+  const rows = await fetchCatalog(); // already logs + throws CatalogSyncError itself
   if (PROVIDERS.some((provider) => rows.filter((row) => row.provider === provider).length < 3) || rows.length < 10) {
+    console.error(
+      "vtunaija-cabletv-catalog: snapshot too small after filtering,",
+      `total=${rows.length}`,
+      PROVIDERS.map((p) => `${p}=${rows.filter((r) => r.provider === p).length}`).join(", "),
+    );
     throw new CatalogSyncError("SNAPSHOT_INVALID");
   }
   const now = new Date().toISOString();
@@ -74,7 +92,10 @@ async function refreshCatalog(supabase: ReturnType<typeof adminClient>) {
   const { error } = await supabase
     .from("vtunaija_cabletv_catalog")
     .upsert(storedRows, { onConflict: "id" });
-  if (error) throw new CatalogSyncError("DATABASE_SAVE_FAILED");
+  if (error) {
+    console.error("vtunaija-cabletv-catalog: database save failed:", error.message);
+    throw new CatalogSyncError("DATABASE_SAVE_FAILED");
+  }
 
   const incomingIds = new Set(rows.map((row) => row.id));
   const { data: existing } = await supabase.from("vtunaija_cabletv_catalog").select("id").eq("available", true);
@@ -99,7 +120,8 @@ serve(async (req: Request) => {
     try {
       const result = await withJobLock(supabase, "vtunaija-cabletv-catalog-sync", () => refreshCatalog(supabase));
       return json({ success: true, ...result });
-    } catch {
+    } catch (e) {
+      console.error("vtunaija-cabletv-catalog: refresh failed:", e instanceof Error ? e.message : e);
       return json({ success: false, error: "Catalogue refresh failed; last valid prices retained." }, 502);
     }
   }

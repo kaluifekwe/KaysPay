@@ -11,11 +11,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { formatNaira } from '../utils/formatCurrency';
-import { vtuService, type TVProvider } from '../services/vtu.service';
+import { vtuService, type TVProvider, type TVBouquet } from '../services/vtu.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import ProviderLogo from '../components/ProviderLogo';
 import { TV_LOGOS } from '../utils/providerLogos';
@@ -26,35 +27,51 @@ interface TVScreenProps {
 
 type BuyState = 'idle' | 'processing' | 'success' | 'error';
 
-interface Bouquet {
-  id: string;
-  name: string;
-  amount: number;
-}
-
 export default function TVScreen({ navigation }: TVScreenProps) {
   const { authorize } = useTransactionAuth();
   const insets = useSafeAreaInsets();
   const [selectedProvider, setSelectedProvider] = useState<TVProvider | null>(null);
-  const [selectedBouquet, setSelectedBouquet] = useState<Bouquet | null>(null);
+  const [selectedBouquet, setSelectedBouquet] = useState<TVBouquet | null>(null);
   const [smartcardNumber, setSmartcardNumber] = useState('');
   const [buyState, setBuyState] = useState<BuyState>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [resultPending, setResultPending] = useState(false);
+  const [bouquets, setBouquets] = useState<TVBouquet[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
 
   const providers = useMemo(() => vtuService.getTVProviders(), []);
 
-  const bouquets = useMemo(() => {
-    if (!selectedProvider) return [];
-    return selectedProvider.bouquets;
-  }, [selectedProvider]);
+  // Bouquets are fetched live (prices/plans can change on VTUnaija's side),
+  // same cache-then-refresh-on-focus pattern DataScreen uses for data bundles.
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    if (!selectedProvider) {
+      setBouquets([]);
+      setCatalogLoading(false);
+      return () => { cancelled = true; };
+    }
+
+    setBouquets(vtuService.getBouquets(selectedProvider.id));
+    setCatalogLoading(true);
+    vtuService.refreshBouquets(selectedProvider.id).then((fresh) => {
+      if (cancelled) return;
+      setBouquets(fresh);
+      setSelectedBouquet((selected) => {
+        if (!selected) return null;
+        return fresh.find((bouquet) => bouquet.id === selected.id) ?? null;
+      });
+    }).finally(() => {
+      if (!cancelled) setCatalogLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [selectedProvider]));
 
   const handleProviderSelect = useCallback((provider: TVProvider) => {
     setSelectedProvider((prev) => (prev?.id === provider.id ? null : provider));
     setSelectedBouquet(null);
   }, []);
 
-  const handleBouquetSelect = useCallback((bouquet: Bouquet) => {
+  const handleBouquetSelect = useCallback((bouquet: TVBouquet) => {
     setSelectedBouquet((prev) => (prev?.id === bouquet.id ? null : bouquet));
   }, []);
 
@@ -217,6 +234,12 @@ export default function TVScreen({ navigation }: TVScreenProps) {
           {bouquets.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.label}>Choose a Bouquet</Text>
+              {catalogLoading ? (
+                <View style={styles.catalogLoadingRow}>
+                  <ActivityIndicator size="small" color={Colors.GREEN} />
+                  <Text style={styles.catalogLoadingText}>Updating prices…</Text>
+                </View>
+              ) : null}
               {bouquets.map((bouquet) => {
                 const isSelected = selectedBouquet?.id === bouquet.id;
                 return (
@@ -246,7 +269,7 @@ export default function TVScreen({ navigation }: TVScreenProps) {
             </View>
           )}
 
-          {selectedProvider && bouquets.length === 0 && (
+          {selectedProvider && bouquets.length === 0 && !catalogLoading && (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateText}>
                 No bouquets available for {selectedProvider.name}
@@ -390,6 +413,16 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.CARD_RADIUS,
     paddingHorizontal: Spacing.CARD_PADDING,
     marginBottom: Spacing.M,
+  },
+  catalogLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.S,
+    marginBottom: Spacing.M,
+  },
+  catalogLoadingText: {
+    color: Colors.GRAY,
+    fontSize: 12,
   },
   bundleCardSelected: {
     borderColor: Colors.GREEN,

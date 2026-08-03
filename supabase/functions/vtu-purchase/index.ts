@@ -19,8 +19,10 @@ import {
   EXAM_PIN_TYPES,
   KOBO,
   NetworkProvider,
-  TV_BOUQUETS,
+  TVServiceProvider,
   VALID_NETWORKS,
+  VTUNAIJA_CABLE_IDS,
+  VTUNAIJA_ELECTRICITY_NAME_MAP,
   VTUNAIJA_NETWORK_IDS,
 } from "../_shared/vtu-catalog.ts";
 import {
@@ -86,12 +88,22 @@ function shouldMeasure(requestId: string): boolean {
  *     an unconfirmed `account_Id` field; /data/ needs no such field and
  *     returns the identical success wording, confirmed the right one to use).
  *     Moved off VTU.ng. Catalog prices come from vtunaija_data_catalog.
- *   - electricity, TV, exam_pin -> VTUAfrica (Phase 2 of the VTUnaija
- *     migration; not yet started — no confirmed VTUnaija API shape for these).
+ *   - electricity -> VTUnaija (/billpayment/). DISCO id resolved via
+ *     vtunaija_electricity_catalog (a live-synced name lookup, not a
+ *     hardcoded numeric code — see VTUNAIJA_ELECTRICITY_NAME_MAP). Moved off
+ *     VTUAfrica. The one-time prepaid meter token is persisted into
+ *     transaction metadata on success, same as the VTUAfrica branch used to.
+ *   - tv -> VTUnaija (/cablesub/). Bouquet catalog is now fully dynamic
+ *     (vtunaija_cabletv_catalog), replacing the old static TV_BOUQUETS map —
+ *     the client (TVScreen.tsx) fetches bouquets live, same pattern as data.
+ *     Moved off VTUAfrica.
+ *   - exam_pin -> VTUAfrica (deferred: VTUnaija only cleanly offers WAEC/NECO/
+ *     NABTEB result-checking, and its one example price didn't match ours —
+ *     pricing confirmation pending before this moves).
  *
- * VTU.ng's and VTUAfrica's client/reconcile/catalog code for airtime+data
- * stays deployed but unreferenced — fast rollback if ever needed, see
- * supabase/ROLLBACK_VTUNAIJA.md.
+ * VTU.ng's and VTUAfrica's client/reconcile/catalog code stays deployed but
+ * unreferenced for airtime/data/electricity/TV — fast rollback if ever
+ * needed, see supabase/ROLLBACK_VTUNAIJA.md.
  */
 class PriceChangedError extends Error {
   constructor(public readonly currentAmountKobo: number) {
@@ -193,17 +205,32 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
       if (!Number.isInteger(amount) || amount < BILL_MIN || amount > BILL_MAX) {
         throw "INVALID_AMOUNT";
       }
+
+      // Resolve the app's own DISCO id to VTUnaija's current numeric
+      // disco_name code via the live-synced lookup, matched by name (not a
+      // hardcoded numeric id — that table refreshes independently, so a
+      // renumbering on VTUnaija's side is absorbed automatically).
+      const discoName = VTUNAIJA_ELECTRICITY_NAME_MAP[biller];
+      if (!discoName) throw "INVALID_PROVIDER";
+      const { data: discoRow } = await supabase
+        .from("vtunaija_electricity_catalog")
+        .select("disco_id")
+        .eq("name", discoName)
+        .eq("available", true)
+        .maybeSingle();
+      if (!discoRow) throw "INVALID_PROVIDER";
+
       return {
         amount,
         txType: "bill",
         network: "N/A",
         recipient: meter,
-        provider: "vtuafrica",
-        endpoint: "/electric",
+        provider: "vtunaija",
+        endpoint: "/billpayment/",
         providerPayload: {
-          service: biller,
-          meterNo: meter,
-          metertype: type,
+          disco_name: discoRow.disco_id,
+          meter_number: meter,
+          MeterType: type,
           amount: amount / KOBO,
         },
       };
@@ -212,21 +239,28 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
     case "tv": {
       const bouquetId = String(body.bouquet_id || "");
       const smartcard = String(body.smartcard_number || "");
-      const bouquet = TV_BOUQUETS[bouquetId];
-      if (!bouquet) throw "INVALID_BOUQUET";
       if (!/^\d{6,20}$/.test(smartcard)) throw "INVALID_SMARTCARD";
+
+      const { data: bouquet } = await supabase
+        .from("vtunaija_cabletv_catalog")
+        .select("provider, cabletv_plan_id, reseller_kobo, available, provider_seen_at")
+        .eq("id", bouquetId)
+        .eq("available", true)
+        .maybeSingle();
+      if (!bouquet) throw "INVALID_BOUQUET";
+      if (new Date(bouquet.provider_seen_at).getTime() < Date.now() - 30 * 60 * 1000) throw "CATALOG_STALE";
+
       return {
-        amount: bouquet.amount, // kobo
+        amount: Number(bouquet.reseller_kobo),
         txType: "bill",
         network: "N/A",
         recipient: smartcard,
-        provider: "vtuafrica",
-        endpoint: "/paytv",
+        provider: "vtunaija",
+        endpoint: "/cablesub/",
         providerPayload: {
-          service: bouquet.serviceId,
-          smartNo: smartcard,
-          variation: bouquet.variationCode,
-          maxamount: bouquet.amount / KOBO,
+          cablename: VTUNAIJA_CABLE_IDS[bouquet.provider as TVServiceProvider],
+          smart_card_number: smartcard,
+          cableplan: bouquet.cabletv_plan_id,
         },
       };
     }
@@ -274,7 +308,7 @@ const VALIDATION_MESSAGES: Record<string, string> = {
   INVALID_PHONE: "Please enter a valid phone number.",
   INVALID_AMOUNT: "Please enter a valid amount.",
   INVALID_BUNDLE: "Please choose a valid data bundle.",
-  CATALOG_STALE: "Data prices are being refreshed. Please try again shortly.",
+  CATALOG_STALE: "Prices are being refreshed. Please try again shortly.",
   INVALID_PROVIDER: "Please choose a valid provider.",
   INVALID_METER: "Please enter a valid meter number.",
   INVALID_BOUQUET: "Please choose a valid package.",
@@ -403,7 +437,8 @@ serve(async (req: Request) => {
         ? (req.network === pp.network && req.plan === pp.plan) || // VTUnaija (current)
           (req.service_id === pp.service_id && req.variation_id === pp.variation_id) || // VTU.ng (retired)
           (req.service === pp.service && req.DataPlan === pp.DataPlan) // VTUAfrica (retired)
-        : req.service === pp.service && req.variation === pp.variation;
+        : (req.cablename === pp.cablename && req.cableplan === pp.cableplan) || // VTUnaija (current)
+          (req.service === pp.service && req.variation === pp.variation); // VTUAfrica (retired)
     });
     if (isSamePlan) {
       return json({
@@ -688,10 +723,10 @@ serve(async (req: Request) => {
     return response;
   }
 
-  // 4c. VTUnaija — airtime only for now (data stays on VTU.ng until
-  // account_Id is confirmed — see the Provider-routing doc comment above).
-  // Same inline-await, never-background pattern as VTUAfrica above: the
-  // EdgeRuntime.waitUntil incident (worker EarlyDropped right after
+  // 4c. VTUnaija — airtime, data, electricity, and TV all route here now
+  // (exam pins remain deferred on VTUAfrica — see the Provider-routing doc
+  // comment above). Same inline-await, never-background pattern as VTUAfrica
+  // above: the EdgeRuntime.waitUntil incident (worker EarlyDropped right after
   // responding, killing an in-flight provider call and leaving a user
   // debited with no airtime delivered) means the provider call MUST be
   // fully awaited before this function ever responds.
@@ -710,10 +745,33 @@ serve(async (req: Request) => {
           { p_tx_id: txId, p_order_id: normalized.id ?? normalized.ident ?? null },
         );
         if (completeError) throw completeError;
+
+        // Electricity's success response carries a one-time prepaid meter
+        // token — never returned again after this response, so persist it
+        // into the transaction's own metadata (same reasoning/shape as the
+        // VTUAfrica electricity branch above) so receipts/History still work.
+        const electricityToken: string | undefined = result?.token ?? result?.electricitytoken;
+        if (electricityToken) {
+          await supabase
+            .from("transactions")
+            .update({
+              metadata: {
+                service: body.service,
+                request: plan.providerPayload,
+                provider: plan.provider,
+                idempotency_key: requestId,
+                provider_reference: stripRef(requestId),
+                token: electricityToken,
+              },
+            })
+            .eq("id", txId);
+        }
+
         return json({
           success: true,
           transaction_id: txId,
           order_id: normalized.id ?? undefined,
+          token: electricityToken,
           amount: plan.amount,
         });
       }

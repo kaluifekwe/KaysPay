@@ -376,3 +376,33 @@ export const VTUNAIJA_NETWORK_IDS: Record<NetworkProvider, number> = {
   "9mobile": 3,
   airtel: 4,
 };
+
+// App-facing DISCO id -> VTUnaija's exact provider name string, confirmed
+// live 2026-08-03 against their /listelectricity/ response (all 12,
+// cross-referenced by name against ELECTRICITY_PROVIDERS above). Used to
+// resolve the app's existing DISCO id to VTUnaija's current numeric
+// disco_name code via vtunaija_electricity_catalog (a name-match, not a
+// hardcoded numeric id, since that table is live-synced and the numeric
+// code itself could change on VTUnaija's side).
+export const VTUNAIJA_ELECTRICITY_NAME_MAP: Record<string, string> = {
+  "ikeja-electric": "Ikeja Electricity Distribution Company",
+  "eko-electric": "Eko Electricity Distribution Company",
+  "kano-electric": "Kano Electricity Distribution Company (KEDCO)",
+  "portharcourt-electric": "Port Harcourt Electricity Distribution Company (PHED)",
+  "jos-electric": "Jos Electricity Distribution Company",
+  "ibadan-electric": "Ibadan Electricity Distribution Company (IBEDC)",
+  "kaduna-electric": "Kaduna Electricity Distribution Company (KEDCO)", // VTUnaija's own label — note it duplicates Kano's "(KEDCO)" acronym; used verbatim, doesn't affect functionality
+  "abuja-electric": "Abuja Electricity Distribution Company (AEDC)",
+  "enugu-electric": "Enugu Electricity Distribution Company (EEDC)",
+  "benin-electric": "Benin Electricity Distribution Company (BEDC)",
+  "yola-electric": "Yola Electricity Distribution Company",
+  "aba-electric": "Aba Electricity Distribution Company",
+};
+
+// VTUnaija's cable provider codes, confirmed from their docs 2026-07-30.
+// SHOWMAX (4) is intentionally omitted — not a supported TVServiceProvider.
+export const VTUNAIJA_CABLE_IDS: Record<TVServiceProvider, number> = {
+  gotv: 1,
+  dstv: 2,
+  startimes: 3,
+};

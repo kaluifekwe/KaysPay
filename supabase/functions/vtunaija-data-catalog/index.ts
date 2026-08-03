@@ -31,46 +31,67 @@ async function fetchCatalog() {
   let payload: any;
   try {
     payload = await callVTUNaija("/listdataplans/", {});
-  } catch {
+  } catch (e) {
+    console.error("vtunaija-data-catalog: provider fetch failed:", e instanceof Error ? e.message : e);
     throw new CatalogSyncError("PROVIDER_FETCH_FAILED");
   }
-  if (!Array.isArray(payload?.dataplans)) throw new CatalogSyncError("PROVIDER_FETCH_FAILED");
+  if (!Array.isArray(payload?.dataplans)) {
+    console.error("vtunaija-data-catalog: unexpected response shape:", JSON.stringify(payload).slice(0, 500));
+    throw new CatalogSyncError("PROVIDER_FETCH_FAILED");
+  }
 
-  return payload.dataplans
-    .filter((raw: Record<string, unknown>) => NETWORK_NAME_MAP[String(raw.the_network_name).toUpperCase()])
-    .map((raw: Record<string, unknown>) => {
-      const network = NETWORK_NAME_MAP[String(raw.the_network_name).toUpperCase()];
-      const dataPlanId = String(raw.data_plan_id ?? "");
-      // Owner-confirmed tier: price_for_premiumuser is what this account is
-      // actually billed, so that's the price passed on to customers.
-      const priceNaira = Number(raw.price_for_premiumuser);
-      const size = String(raw.size ?? "").trim();
-      const datatype = String(raw.the_datatype_name ?? "").trim();
-      const name = datatype ? `${size} (${datatype})` : size;
-      const durationDays = String(raw.duration ?? "").trim();
-      if (!/^\d+$/.test(dataPlanId) || !size || !Number.isFinite(priceNaira) || priceNaira <= 0) {
-        throw new Error("invalid catalog plan");
-      }
-      return {
-        id: `vtunaija-${network}-${dataPlanId}`,
-        network,
-        data_plan_id: dataPlanId,
-        name,
-        validity: durationDays ? `${durationDays} Days` : "See provider",
-        reseller_kobo: Math.round(priceNaira * 100),
-        available: String(raw.status ?? "").toLowerCase() === "on",
-      };
+  const rows: {
+    id: string; network: typeof NETWORKS[number]; data_plan_id: string;
+    name: string; validity: string; reseller_kobo: number; available: boolean;
+  }[] = [];
+  let skipped = 0;
+
+  for (const raw of payload.dataplans as Record<string, unknown>[]) {
+    const network = NETWORK_NAME_MAP[String(raw.the_network_name).toUpperCase()];
+    if (!network) continue; // an unrelated/unsupported network name — not an error
+
+    const dataPlanId = String(raw.data_plan_id ?? "");
+    // Owner-confirmed tier: price_for_premiumuser is what this account is
+    // actually billed, so that's the price passed on to customers.
+    const priceNaira = Number(raw.price_for_premiumuser);
+    const size = String(raw.size ?? "").trim();
+    const datatype = String(raw.the_datatype_name ?? "").trim();
+    const name = datatype ? `${size} (${datatype})` : size;
+    const durationDays = String(raw.duration ?? "").trim();
+
+    // A single malformed plan (odd price, blank name, paused entry) must
+    // never abort the WHOLE sync — skip just that one row and keep going.
+    // Confirmed live 2026-08-03: this used to throw on the first bad row,
+    // silently freezing the entire catalog at its last-good snapshot forever
+    // (the cron kept "running" every 5 min but every attempt failed here).
+    if (!/^\d+$/.test(dataPlanId) || !size || !Number.isFinite(priceNaira) || priceNaira <= 0) {
+      skipped++;
+      continue;
+    }
+
+    rows.push({
+      id: `vtunaija-${network}-${dataPlanId}`,
+      network,
+      data_plan_id: dataPlanId,
+      name,
+      validity: durationDays ? `${durationDays} Days` : "See provider",
+      reseller_kobo: Math.round(priceNaira * 100),
+      available: String(raw.status ?? "").toLowerCase() === "on",
     });
+  }
+
+  if (skipped > 0) console.warn(`vtunaija-data-catalog: skipped ${skipped} malformed plan(s) this sync`);
+  return rows;
 }
 
 async function refreshCatalog(supabase: ReturnType<typeof adminClient>) {
-  let rows;
-  try {
-    rows = await fetchCatalog();
-  } catch {
-    throw new CatalogSyncError("PROVIDER_FETCH_FAILED");
-  }
+  const rows = await fetchCatalog(); // already logs + throws CatalogSyncError itself
   if (NETWORKS.some((network) => rows.filter((row) => row.network === network).length < 3) || rows.length < 10) {
+    console.error(
+      "vtunaija-data-catalog: snapshot too small after filtering,",
+      `total=${rows.length}`,
+      NETWORKS.map((n) => `${n}=${rows.filter((r) => r.network === n).length}`).join(", "),
+    );
     throw new CatalogSyncError("SNAPSHOT_INVALID");
   }
   const now = new Date().toISOString();
@@ -78,7 +99,10 @@ async function refreshCatalog(supabase: ReturnType<typeof adminClient>) {
   const { error } = await supabase
     .from("vtunaija_data_catalog")
     .upsert(storedRows, { onConflict: "id" });
-  if (error) throw new CatalogSyncError("DATABASE_SAVE_FAILED");
+  if (error) {
+    console.error("vtunaija-data-catalog: database save failed:", error.message);
+    throw new CatalogSyncError("DATABASE_SAVE_FAILED");
+  }
 
   // A plan removed entirely from the provider response cannot stay sellable.
   const incomingIds = new Set(rows.map((row) => row.id));
@@ -103,8 +127,13 @@ serve(async (req: Request) => {
     if (!verifyCronSecret(req)) return json({ error: "Unauthorized" }, 401);
     try {
       const result = await withJobLock(supabase, "vtunaija-data-catalog-sync", () => refreshCatalog(supabase));
+      if ("skipped" in result) console.warn("vtunaija-data-catalog: sync skipped, another run already holds the lock");
       return json({ success: true, ...result });
-    } catch {
+    } catch (e) {
+      // The specific failure is already logged inside fetchCatalog/refreshCatalog
+      // (safe codes only, no secrets) — this just confirms the sync as a whole
+      // failed this round, so it's visible even without cross-referencing.
+      console.error("vtunaija-data-catalog: refresh failed:", e instanceof Error ? e.message : e);
       return json({ success: false, error: "Catalogue refresh failed; last valid prices retained." }, 502);
     }
   }

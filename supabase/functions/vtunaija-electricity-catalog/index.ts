@@ -26,38 +26,53 @@ async function fetchCatalog() {
   let payload: any;
   try {
     payload = await callVTUNaija("/listelectricity/", {});
-  } catch {
+  } catch (e) {
+    console.error("vtunaija-electricity-catalog: provider fetch failed:", e instanceof Error ? e.message : e);
     throw new CatalogSyncError("PROVIDER_FETCH_FAILED");
   }
-  if (!Array.isArray(payload?.electricityplanids)) throw new CatalogSyncError("PROVIDER_FETCH_FAILED");
+  if (!Array.isArray(payload?.electricityplanids)) {
+    console.error("vtunaija-electricity-catalog: unexpected response shape:", JSON.stringify(payload).slice(0, 500));
+    throw new CatalogSyncError("PROVIDER_FETCH_FAILED");
+  }
 
-  return payload.electricityplanids
-    .map((raw: Record<string, unknown>) => {
-      const discoId = String(raw.electricity_plan_id ?? "");
-      const name = String(raw.the_electricty_name ?? "").trim();
-      if (!/^\d+$/.test(discoId) || !name) throw new Error("invalid catalog plan");
-      // No `status` field is documented on this endpoint's response — assume
-      // available; the reconcile/purchase path fails closed regardless if a
-      // stale/wrong code ever gets used (INVALID_PROVIDER at resolvePurchase).
-      return { disco_id: discoId, name, available: true };
-    });
+  const rows: { disco_id: string; name: string; available: boolean }[] = [];
+  let skipped = 0;
+
+  // A single malformed row must never abort the whole sync — same lesson
+  // learned live from vtunaija-data-catalog freezing silently forever.
+  for (const raw of payload.electricityplanids as Record<string, unknown>[]) {
+    const discoId = String(raw.electricity_plan_id ?? "");
+    const name = String(raw.the_electricty_name ?? "").trim();
+    if (!/^\d+$/.test(discoId) || !name) {
+      skipped++;
+      continue;
+    }
+    // No `status` field is documented on this endpoint's response — assume
+    // available; the purchase path fails closed regardless (INVALID_PROVIDER)
+    // if a stale/wrong code ever gets used.
+    rows.push({ disco_id: discoId, name, available: true });
+  }
+
+  if (skipped > 0) console.warn(`vtunaija-electricity-catalog: skipped ${skipped} malformed row(s) this sync`);
+  return rows;
 }
 
 async function refreshCatalog(supabase: ReturnType<typeof adminClient>) {
-  let rows;
-  try {
-    rows = await fetchCatalog();
-  } catch {
-    throw new CatalogSyncError("PROVIDER_FETCH_FAILED");
+  const rows = await fetchCatalog(); // already logs + throws CatalogSyncError itself
+  if (rows.length < 6) {
+    console.error(`vtunaija-electricity-catalog: snapshot too small after filtering, total=${rows.length}`);
+    throw new CatalogSyncError("SNAPSHOT_INVALID");
   }
-  if (rows.length < 6) throw new CatalogSyncError("SNAPSHOT_INVALID");
 
   const now = new Date().toISOString();
   const storedRows = rows.map((row) => ({ ...row, provider_seen_at: now, updated_at: now }));
   const { error } = await supabase
     .from("vtunaija_electricity_catalog")
     .upsert(storedRows, { onConflict: "disco_id" });
-  if (error) throw new CatalogSyncError("DATABASE_SAVE_FAILED");
+  if (error) {
+    console.error("vtunaija-electricity-catalog: database save failed:", error.message);
+    throw new CatalogSyncError("DATABASE_SAVE_FAILED");
+  }
 
   const incomingIds = new Set(rows.map((row) => row.disco_id));
   const { data: existing } = await supabase.from("vtunaija_electricity_catalog").select("disco_id").eq("available", true);
@@ -82,20 +97,37 @@ serve(async (req: Request) => {
     try {
       const result = await withJobLock(supabase, "vtunaija-electricity-catalog-sync", () => refreshCatalog(supabase));
       return json({ success: true, ...result });
-    } catch {
+    } catch (e) {
+      console.error("vtunaija-electricity-catalog: refresh failed:", e instanceof Error ? e.message : e);
       return json({ success: false, error: "Catalogue refresh failed; last valid list retained." }, 502);
     }
   }
 
   if (body.health === true) {
-    if (!verifyCronSecret(req)) return json({ error: "Unauthorized" }, 401);
-    const { data: rows, error } = await supabase
+    // Read-only, non-sensitive (DISCO ids/names only) — no cron-secret gate,
+    // matching vtu-data-catalog/vtunaija-cabletv-catalog's health path. Also
+    // bootstraps on an empty table, same as those.
+    let bootstrapCode: string | null = null;
+    let { data: rows, error } = await supabase
       .from("vtunaija_electricity_catalog")
       .select("disco_id, name, provider_seen_at")
       .eq("available", true)
       .order("disco_id", { ascending: true });
     if (error) return json({ healthy: false }, 503);
-    return json({ healthy: (rows ?? []).length > 0, count: (rows ?? []).length, rows });
+    if ((rows ?? []).length === 0) {
+      try {
+        await withJobLock(supabase, "vtunaija-electricity-catalog-sync", () => refreshCatalog(supabase));
+        const refreshed = await supabase
+          .from("vtunaija_electricity_catalog")
+          .select("disco_id, name, provider_seen_at")
+          .eq("available", true)
+          .order("disco_id", { ascending: true });
+        rows = refreshed.data;
+      } catch (e) {
+        bootstrapCode = e instanceof CatalogSyncError ? e.safeCode : "SYNC_UNAVAILABLE";
+      }
+    }
+    return json({ healthy: (rows ?? []).length > 0, count: (rows ?? []).length, rows, bootstrap_code: bootstrapCode });
   }
 
   return json({ error: "This endpoint is cron/service-internal only" }, 403);

@@ -19,10 +19,18 @@ export interface ElectricityProvider {
   type: 'prepaid' | 'postpaid';
 }
 
+export type TVServiceProvider = 'dstv' | 'gotv' | 'startimes';
+
 export interface TVProvider {
+  id: TVServiceProvider;
+  name: string;
+}
+
+export interface TVBouquet {
   id: string;
   name: string;
-  bouquets: { id: string; name: string; amount: number }[];
+  amount: number;
+  validity: string;
 }
 
 export interface ExamType {
@@ -113,56 +121,33 @@ const electricityProviders: ElectricityProvider[] = [
   { id: 'yola-electric', name: 'Yola Electricity (YEDC)', type: 'prepaid' },
 ];
 
-// Real, live catalog pulled directly from VTUAfrica's own "Subscription
-// Plans and Prices" API page (confirmed live, 2026-07-03) — matches the
-// server catalog in `_shared/vtu-catalog.ts` exactly (same ids). TV now
-// routes through VTUAfrica rather than VTU.ng: no GOtv Supa/Supa Plus here,
-// and Startimes is priced by tier + billing cadence (weekly/monthly)
-// instead of Antenna/Dish, plus a "Smart" tier VTU.ng didn't have.
+// Just the 3 supported provider cards — bouquets are fetched live from
+// vtunaija-cabletv-catalog (see refreshBouquets below), the same
+// cache-then-refresh pattern DataScreen already uses for data bundles.
+// Showmax exists on VTUnaija's side but isn't a supported provider here.
 const tvProviders: TVProvider[] = [
-  {
-    id: 'dstv',
-    name: 'DStv',
-    bouquets: [
-      { id: 'dstv-padi', name: 'Padi', amount: 4400 },
-      { id: 'dstv-yanga', name: 'Yanga', amount: 6000 },
-      { id: 'dstv-confam', name: 'Confam', amount: 11000 },
-      { id: 'dstv-compact', name: 'Compact', amount: 19000 },
-      { id: 'dstv-compact-plus', name: 'Compact Plus', amount: 30000 },
-      { id: 'dstv-premium', name: 'Premium', amount: 44500 },
-      { id: 'dstv-asia', name: 'Asia', amount: 14900 },
-      { id: 'dstv-premium-french', name: 'Premium French', amount: 69000 },
-    ],
-  },
-  {
-    id: 'gotv',
-    name: 'GOtv',
-    bouquets: [
-      { id: 'gotv-smallie', name: 'Smallie (1 Month)', amount: 1900 },
-      { id: 'gotv-smallie-3months', name: 'Smallie (3 Months)', amount: 5100 },
-      { id: 'gotv-smallie-1year', name: 'Smallie (1 Year)', amount: 15000 },
-      { id: 'gotv-jinja', name: 'Jinja', amount: 3900 },
-      { id: 'gotv-jolli', name: 'Jolli', amount: 5800 },
-      { id: 'gotv-max', name: 'Max', amount: 8500 },
-    ],
-  },
-  {
-    id: 'startimes',
-    name: 'Startimes',
-    bouquets: [
-      { id: 'startimes-nova-weekly', name: 'Nova (Weekly)', amount: 600 },
-      { id: 'startimes-nova-monthly', name: 'Nova (Monthly)', amount: 1900 },
-      { id: 'startimes-basic-weekly', name: 'Basic (Weekly)', amount: 1250 },
-      { id: 'startimes-basic-monthly', name: 'Basic (Monthly)', amount: 3700 },
-      { id: 'startimes-smart-weekly', name: 'Smart (Weekly)', amount: 1550 },
-      { id: 'startimes-smart-monthly', name: 'Smart (Monthly)', amount: 4700 },
-      { id: 'startimes-classic-weekly', name: 'Classic (Weekly)', amount: 1900 },
-      { id: 'startimes-classic-monthly', name: 'Classic (Monthly)', amount: 5500 },
-      { id: 'startimes-super-weekly', name: 'Super (Weekly)', amount: 3000 },
-      { id: 'startimes-super-monthly', name: 'Super (Monthly)', amount: 9000 },
-    ],
-  },
+  { id: 'dstv', name: 'DStv' },
+  { id: 'gotv', name: 'GOtv' },
+  { id: 'startimes', name: 'Startimes' },
 ];
+
+// Small fallback list, used only when the live vtunaija-cabletv-catalog
+// fetch fails and the cache is empty. Real sample from VTUnaija's
+// /listcabletvplans/ response (confirmed live, 2026-08-03).
+const fallbackBouquets: Record<TVServiceProvider, TVBouquet[]> = {
+  gotv: [
+    { id: 'vtunaija-gotv-1', name: 'GOtv Smallie - monthly N1900', amount: 1900, validity: '30 Days' },
+    { id: 'vtunaija-gotv-2', name: 'GOtv Jinja N3,900', amount: 3900, validity: '30 Days' },
+  ],
+  dstv: [
+    { id: 'vtunaija-dstv-6', name: 'DStv Padi N4,400', amount: 4400, validity: '30 Days' },
+    { id: 'vtunaija-dstv-7', name: 'DStv Yanga N6,000', amount: 6000, validity: '30 Days' },
+  ],
+  startimes: [
+    { id: 'vtunaija-startimes-13', name: 'Nova (Dish) - 2100 Naira - 1 Month', amount: 2100, validity: '30 Days' },
+    { id: 'vtunaija-startimes-14', name: 'Basic (Antenna) - 4,000 Naira - 1 Month', amount: 4000, validity: '30 Days' },
+  ],
+};
 
 // Routed to VTUAfrica's `/exam-pin` endpoint (VTU.ng never had a working
 // exam pin integration). Ids match `_shared/vtu-catalog.ts`'s EXAM_PIN_TYPES
@@ -289,6 +274,39 @@ async function refreshDataBundles(network: NetworkProvider): Promise<DataBundle[
   }
 }
 
+function bouquetCacheKey(provider: TVServiceProvider): string {
+  return `vtu_cabletv_catalog_${provider}`;
+}
+
+function cachedBouquets(provider: TVServiceProvider): TVBouquet[] {
+  const cached = readCache<TVBouquet[]>(bouquetCacheKey(provider));
+  if (cached?.data?.length) return cached.data;
+  return fallbackBouquets[provider];
+}
+
+async function refreshBouquets(provider: TVServiceProvider): Promise<TVBouquet[]> {
+  const cached = readCache<TVBouquet[]>(bouquetCacheKey(provider));
+  if (cached?.data?.length && Date.now() - cached.savedAt < 5 * 60 * 1000) return cached.data;
+  try {
+    const { data, error } = await withTimeout(
+      supabase.functions.invoke('vtunaija-cabletv-catalog', { body: { provider } }),
+      12_000,
+    );
+    if (error || !data?.success || !Array.isArray(data.bouquets) || data.bouquets.length === 0) {
+      return cachedBouquets(provider);
+    }
+    const bouquets = data.bouquets.filter((b: TVBouquet) =>
+      typeof b.id === 'string' && typeof b.name === 'string' &&
+      Number.isFinite(b.amount) && b.amount > 0
+    ) as TVBouquet[];
+    if (bouquets.length === 0) return cachedBouquets(provider);
+    writeCache(bouquetCacheKey(provider), bouquets);
+    return bouquets;
+  } catch {
+    return cachedBouquets(provider);
+  }
+}
+
 export const vtuService = {
   /**
    * Ask the server to verify a single pending order with VTUAfrica right now
@@ -349,6 +367,15 @@ export const vtuService = {
 
   getTVProviders(): TVProvider[] {
     return tvProviders;
+  },
+
+  /** Cached bouquets for a provider — shows instantly while refreshBouquets fetches live prices, same pattern as getDataBundles/refreshDataBundles. */
+  getBouquets(provider: TVServiceProvider): TVBouquet[] {
+    return cachedBouquets(provider);
+  },
+
+  refreshBouquets(provider: TVServiceProvider): Promise<TVBouquet[]> {
+    return refreshBouquets(provider);
   },
 
   getExamTypes(): ExamType[] {

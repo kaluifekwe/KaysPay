@@ -9,13 +9,14 @@ import {
 } from "../_shared/vtunaija-client.ts";
 
 // Scheduled sweep (see the VTUnaija migration cron) that resolves VTUnaija
-// airtime/data orders left 'pending' after vtu-purchase's inline attempt hit
-// an ambiguous outcome (network blip / unrecognized response shape — VTUnaija
-// documents no async "processing" state for either, so this should only ever
-// catch a genuine network-level ambiguity, not a normal async order). Only
-// ever transitions 'pending' -> 'completed'/'refunded' based on VTUnaija's
-// own query answer — never guesses, and never touches a transaction whose
-// provider isn't 'vtunaija'.
+// airtime/data/bill (electricity+TV) orders left 'pending' after
+// vtu-purchase's inline attempt hit an ambiguous outcome (network blip /
+// unrecognized response shape — VTUnaija documents no async "processing"
+// state for any of these, so this should only ever catch a genuine
+// network-level ambiguity, not a normal async order). Only ever transitions
+// 'pending' -> 'completed'/'refunded' based on VTUnaija's own query answer —
+// never guesses, and never touches a transaction whose provider isn't
+// 'vtunaija'.
 //
 // Query-endpoint pairing assumption (NOT yet confirmed with a live forced-
 // timeout test): airtime -> queryTransaction (transaction_id), data ->
@@ -45,7 +46,7 @@ serve(async (req: Request) => {
       .from("transactions")
       .select("id, type, metadata")
       .eq("status", "pending")
-      .in("type", ["airtime", "data"])
+      .in("type", ["airtime", "data", "bill"])
       .eq("metadata->>provider", "vtunaija")
       .not("metadata->>idempotency_key", "is", null)
       .gte("created_at", cutoff)
