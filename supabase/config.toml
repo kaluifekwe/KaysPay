@@ -42,6 +42,9 @@ verify_jwt = true
 [functions.vtuafrica-reconcile]
 verify_jwt = true
 
+[functions.vtunaija-reconcile]
+verify_jwt = true
+
 [functions.fx-sync]
 verify_jwt = true
 

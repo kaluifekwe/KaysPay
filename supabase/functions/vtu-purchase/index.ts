@@ -21,6 +21,7 @@ import {
   NetworkProvider,
   TV_BOUQUETS,
   VALID_NETWORKS,
+  VTUNAIJA_NETWORK_IDS,
 } from "../_shared/vtu-catalog.ts";
 import {
   callVTUNG,
@@ -38,6 +39,13 @@ import {
   vtuAfricaOutcome,
   stripRef,
 } from "../_shared/vtuafrica-client.ts";
+import {
+  callVTUNaija,
+  isVtuNaijaConfigured,
+  normalizeVTUNaijaResult,
+  VTUNaijaError,
+  vtunaijaOutcome,
+} from "../_shared/vtunaija-client.ts";
 
 // VTUAfrica posts terminal provider outcomes here when the initial request times out.
 const VTUAFRICA_WEBHOOK_URL = `${Deno.env.get("SUPABASE_URL")}/functions/v1/vtuafrica-webhook`;
@@ -55,7 +63,7 @@ function newRequestId() {
   return `ksp_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
 }
 
-type Provider = "vtu_ng" | "vtuafrica";
+type Provider = "vtu_ng" | "vtuafrica" | "vtunaija";
 
 // Performance telemetry is deliberately sampled and contains no customer or
 // financial data. A stable hash keeps retries of one idempotent request in the
@@ -72,10 +80,14 @@ function shouldMeasure(requestId: string): boolean {
  * `providerPayload` are in NAIRA because both providers expect naira.
  * Throws a string error code for invalid requests.
  *
- * Provider routing: VTUAfrica now handles every service — airtime, data (all
- * 4 networks), electricity, and TV — moved off VTU.ng by explicit choice.
- * Exam pins were already VTUAfrica-only (VTU.ng never had a working
- * integration for them).
+ * Provider routing (as of the VTUnaija migration, 2026-07-30):
+ *   - airtime -> VTUnaija (moved off VTU.ng; VTU.ng's client/reconcile/catalog
+ *     code stays deployed but unreferenced, for fast rollback if ever needed).
+ *   - data -> VTU.ng for now, pending one field (VTUnaija's `account_Id`)
+ *     still being confirmed with VTUnaija support; will move to VTUnaija once
+ *     that's resolved (Phase 1b).
+ *   - electricity, TV, exam_pin -> VTUAfrica (Phase 2 of the VTUnaija
+ *     migration; not yet started — no confirmed VTUnaija API shape for these).
  */
 class PriceChangedError extends Error {
   constructor(public readonly currentAmountKobo: number) {
@@ -111,9 +123,19 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
         txType: "airtime",
         network,
         recipient: phone,
-        provider: "vtu_ng",
-        endpoint: "/airtime",
-        providerPayload: { service_id: network, phone, amount: amount / KOBO },
+        provider: "vtunaija",
+        endpoint: "/topup/",
+        providerPayload: {
+          network: VTUNAIJA_NETWORK_IDS[network],
+          mobile_number: phone,
+          // Every documented example sends "true" regardless of the actual
+          // recipient — treated as a required constant, not computed per
+          // request. Confirm the real semantics with VTUnaija support before
+          // relying on this at scale (tracked in the VTUnaija migration plan).
+          Ported_number: "true",
+          amount: amount / KOBO,
+          airtime_type: "VTU",
+        },
       };
     }
 
@@ -342,6 +364,9 @@ serve(async (req: Request) => {
   }
   if (plan.provider === "vtuafrica" && !isVtuAfricaConfigured()) {
     return json({ error: "VTUAfrica provider not configured" }, 500);
+  }
+  if (plan.provider === "vtunaija" && !isVtuNaijaConfigured()) {
+    return json({ error: "VTU provider not configured" }, 500);
   }
 
   // 3b. Duplicate guard (data + TV only). The telco/VTUAfrica rejects a repeat
@@ -653,6 +678,83 @@ serve(async (req: Request) => {
     }
 
     return response;
+  }
+
+  // 4c. VTUnaija — airtime only for now (data stays on VTU.ng until
+  // account_Id is confirmed — see the Provider-routing doc comment above).
+  // Same inline-await, never-background pattern as VTUAfrica above: the
+  // EdgeRuntime.waitUntil incident (worker EarlyDropped right after
+  // responding, killing an in-flight provider call and leaving a user
+  // debited with no airtime delivered) means the provider call MUST be
+  // fully awaited before this function ever responds.
+  if (plan.provider === "vtunaija") {
+    try {
+      const result = await callVTUNaija(plan.endpoint, {
+        ...plan.providerPayload,
+        "request-id": requestId,
+      });
+      const outcome = vtunaijaOutcome(result);
+      const normalized = normalizeVTUNaijaResult(result);
+
+      if (outcome === "success") {
+        const { error: completeError } = await supabase.rpc(
+          "complete_service_transaction",
+          { p_tx_id: txId, p_order_id: normalized.id ?? normalized.ident ?? null },
+        );
+        if (completeError) throw completeError;
+        return json({
+          success: true,
+          transaction_id: txId,
+          order_id: normalized.id ?? undefined,
+          amount: plan.amount,
+        });
+      }
+
+      if (outcome === "unknown") {
+        // No documented pending state for VTUnaija airtime, but an
+        // unrecognized/malformed response is NOT proof of failure — hold
+        // pending (its default state), never refund, never resubmit the
+        // purchase call. vtunaija-reconcile settles it via queryTransaction.
+        return json({
+          success: true,
+          pending: true,
+          transaction_id: txId,
+          message: "Your order is still processing. You'll be notified once it completes.",
+        });
+      }
+
+      // outcome === "failed": VTUnaija itself reports failure — no order was
+      // created, safe to refund.
+      await supabase.rpc("refund_service_transaction", {
+        p_tx_id: txId,
+        p_reason: normalized.message || "provider_rejected",
+      });
+      return json({
+        success: false,
+        error: "Purchase failed. You were not charged.",
+      });
+    } catch (e) {
+      if (e instanceof VTUNaijaError) {
+        // Config error — request never reached VTUnaija, refund is safe.
+        await supabase.rpc("refund_service_transaction", {
+          p_tx_id: txId,
+          p_reason: `vtunaija_config: ${e.message}`,
+        });
+        return json({
+          success: false,
+          error: "The provider is temporarily unavailable. You were not charged.",
+        });
+      }
+      // Network/timeout/parse error — genuinely ambiguous (the request may
+      // have reached VTUnaija and been actioned, with only the response
+      // lost). Hold pending; vtunaija-reconcile is the backstop.
+      return json({
+        success: true,
+        pending: true,
+        transaction_id: txId,
+        message: "Your order is still processing. You'll be notified once it completes.",
+      });
+    }
   }
 
   // 4b. VTU.ng — call the provider with the SERVER-SIDE token.

@@ -31,7 +31,7 @@ jobs:
         with:
           deno-version: v2.x
       - name: Test Edge security and VTU logic
-        run: deno test --allow-env=VTUAFRICA_API_KEY,SUPABASE_URL,SUPABASE_ANON_KEY,SUPABASE_SERVICE_ROLE_KEY,CRON_SECRET supabase/functions/_shared/*.test.ts
+        run: deno test --allow-env=VTUAFRICA_API_KEY,VTUNAIJA_API_KEY,SUPABASE_URL,SUPABASE_ANON_KEY,SUPABASE_SERVICE_ROLE_KEY,CRON_SECRET supabase/functions/_shared/*.test.ts
 
       - name: Exercise local resilience harness
         run: npm run load:test -- --requests=3000 --concurrency=100

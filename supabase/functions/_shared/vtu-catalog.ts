@@ -364,3 +364,15 @@ export const EXAM_PIN_TYPES: Record<string, ExamPinType> = Object.fromEntries(
 );
 
 export const VALID_NETWORKS: NetworkProvider[] = ["mtn", "airtel", "glo"];
+
+// VTUnaija's own numeric network codes (confirmed from their docs,
+// 2026-07-30) — DISTINCT from VTU.ng's string service_ids and VTUAfrica's
+// serviceCodes. Only used when providerPayload targets VTUnaija's /topup/ or
+// /internetbundles/ endpoints. 9mobile is included for completeness even
+// though VALID_NETWORKS doesn't currently allow it as a purchasable network.
+export const VTUNAIJA_NETWORK_IDS: Record<NetworkProvider, number> = {
+  mtn: 1,
+  glo: 2,
+  "9mobile": 3,
+  airtel: 4,
+};

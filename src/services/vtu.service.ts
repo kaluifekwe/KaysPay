@@ -38,9 +38,11 @@ export interface VTUResult {
   order_id?: string;
   message?: string;
   error?: string;
-  // VTU.ng's v2 API can be async — the order may still be processing when
-  // the request returns. `pending` means "not failed, just not final yet";
-  // it'll complete or refund on its own shortly after.
+  // Airtime (VTUnaija) is normally synchronous, but an ambiguous/unclear
+  // provider response is held pending rather than guessed; data (still on
+  // VTU.ng pending VTUnaija's account_Id) and other services can be
+  // genuinely async. `pending` means "not failed, just not final yet"; it'll
+  // complete or refund on its own shortly after.
   pending?: boolean;
   // The server transaction id — lets the result screen poll this purchase
   // until it settles (used by the Processing -> Successful status screen).
