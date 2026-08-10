@@ -91,13 +91,19 @@ serve(async (req) => {
   }
   const userIds = [...new Set(rows.map((r) => r.user_id))];
   if (userIds.length > 0) {
-    const { data: names } = await db.rpc("admin_resolve_user_names", { p_user_ids: userIds });
-    const nameByUserId = new Map<string, string | null>(
-      (names || []).map((n: { user_id: string; full_name: string | null }) => [n.user_id, n.full_name] as const),
+    const { data: details } = await db.rpc("admin_resolve_user_details", { p_user_ids: userIds });
+    const detailByUserId = new Map<string, { fullName: string | null; phone: string | null }>(
+      (details || []).map((detail: { user_id: string; full_name: string | null; phone: string | null }) => [
+        detail.user_id,
+        { fullName: detail.full_name, phone: detail.phone },
+      ] as const),
     );
     for (const row of rows as unknown as { user_id: string; users: { full_name: string | null; phone: string | null } | null }[]) {
-      const resolvedName = nameByUserId.get(row.user_id);
-      if (row.users) row.users.full_name = resolvedName ?? null;
+      const resolved = detailByUserId.get(row.user_id);
+      if (row.users && resolved) {
+        row.users.full_name = resolved.fullName;
+        row.users.phone = resolved.phone;
+      }
     }
   }
 
