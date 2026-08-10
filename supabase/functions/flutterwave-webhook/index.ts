@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient } from "../_shared/auth.ts";
 import { redactSecrets } from "../_shared/redact.ts";
+import { processFundingCandidate } from "../_shared/funding-credit.ts";
 
 const FLW_WEBHOOK_SECRET = Deno.env.get("FLUTTERWAVE_WEBHOOK_SECRET");
 
@@ -34,7 +35,14 @@ serve(async (req: Request) => {
     return new Response("Method not allowed", { status: 405 });
   }
 
+  const declaredLength = Number(req.headers.get("content-length") || 0);
+  if (Number.isFinite(declaredLength) && declaredLength > 131_072) {
+    return new Response(JSON.stringify({ error: "Payload too large" }), { status: 413 });
+  }
   const rawBody = await req.text();
+  if (new TextEncoder().encode(rawBody).byteLength > 131_072) {
+    return new Response(JSON.stringify({ error: "Payload too large" }), { status: 413 });
+  }
   const valid = await isValidSignature(rawBody, req.headers.get("flutterwave-signature"));
   if (!valid) {
     return new Response(JSON.stringify({ error: "Invalid signature" }), { status: 401 });
@@ -61,16 +69,20 @@ serve(async (req: Request) => {
         return new Response(JSON.stringify({ error: "Unsupported currency" }), { status: 400 });
       }
 
-      {
-        const { data: va, error: lookupError } = await supabase
-          .from("virtual_accounts")
-          .select("user_id")
-          .eq("customer_code", customerId)
-          .maybeSingle();
-        if (lookupError) throw lookupError;
-        if (!va?.user_id) throw new Error("No wallet mapping for Flutterwave customer");
+      const virtualAccountId = event.data?.virtual_account_id ??
+        event.data?.payment_method_details?.bank_transfer?.virtual_account_id ?? null;
+      const paymentType = String(
+        event.data?.payment_method_details?.type ?? event.data?.payment_type ?? "",
+      ).toLowerCase();
+      // This endpoint funds wallets from virtual-account bank transfers only.
+      // Explicit card/other charge types must never become wallet credits.
+      if (paymentType && paymentType !== "bank_transfer" && !virtualAccountId) {
+        return new Response(JSON.stringify({ status: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
-        {
+      {
           // Confirmed empirically: Flutterwave reports amount in naira
           // (major units), unlike Paystack's kobo — our ledger is
           // kobo-based, so convert.
@@ -78,14 +90,20 @@ serve(async (req: Request) => {
           if (!Number.isSafeInteger(amountKobo) || amountKobo <= 0) {
             return new Response(JSON.stringify({ error: "Invalid charge amount" }), { status: 400 });
           }
-          const { error: creditError } = await supabase.rpc("credit_wallet_funding", {
-            p_user_id: va.user_id,
-            p_reference: chargeId,
-            p_amount: amountKobo,
-            p_source: "flutterwave",
+          const credit = await processFundingCandidate(supabase, {
+            provider: "flutterwave",
+            reference: String(chargeId),
+            transactionId: String(chargeId),
+            amountKobo,
+            currency: String(currency),
+            customerCode: String(customerId),
+            virtualAccountId: virtualAccountId ? String(virtualAccountId) : null,
+            providerCreatedAt: event.data?.created_datetime || null,
+            source: "webhook",
           });
-          if (creditError) throw creditError;
-        }
+          if (credit.outcome === "unmatched" || credit.outcome === "rejected") {
+            throw new Error(`FLUTTERWAVE_FUNDING_${credit.outcome.toUpperCase()}`);
+          }
       }
     }
 

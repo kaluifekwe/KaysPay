@@ -117,9 +117,25 @@ export function createStaticVirtualAccount(
     account_type: "static",
     narration: params.narration,
     bvn: params.bvnOrNin,
-    // Testing whether ANY bank_code is honored for real BVN-verified
-    // accounts (035/Wema was silently overridden to Indulge on the last
-    // live attempt) — trying Access Bank next as a second data point.
+    // Confirmed 2026-08-04: unlike 035/Wema (which Flutterwave silently
+    // overrode to a different bank, "Indulge," on an earlier live attempt),
+    // 044/Access Bank is honored — real users' generated accounts show as
+    // Access Bank, and transfers to them reflect in the wallet correctly.
     bank_code: "044",
   }, idempotencyKey);
+}
+
+/** Read-only list used by the funding reconciliation sweep. */
+export function listFlutterwaveCharges(
+  supabase: ReturnType<typeof adminClient>,
+  params: { from: string; to: string; page: number; size?: number },
+) {
+  const query = new URLSearchParams({
+    status: "succeeded",
+    from: params.from,
+    to: params.to,
+    page: String(params.page),
+    size: String(params.size ?? 50),
+  });
+  return callFlutterwave(supabase, `/charges?${query.toString()}`, "GET");
 }

@@ -28,7 +28,31 @@ export function evaluateFinancialAlerts(m: FinancialMetrics): FinancialAlert[] {
     "critical",
     m.duplicate_provider_refs,
   );
+  add(
+    "unsafe_grants",
+    "Privileged function callable without proper auth (missing anon/authenticated revoke)",
+    "critical",
+    m.unsafe_grants,
+  );
   add("stuck_vtu", "VTU transactions stuck pending", "warning", m.stuck_vtu);
+  add(
+    "funding_unresolved",
+    "Funding events not credited or mapped",
+    "critical",
+    m.funding_unresolved,
+  );
+  add(
+    "funding_reconcile_stale",
+    "Funding reconciliation has not run recently",
+    "critical",
+    m.funding_reconcile_stale,
+  );
+  add(
+    "funding_reconcile_errors",
+    "Funding provider reconciliation errors",
+    "warning",
+    m.funding_reconcile_errors,
+  );
   add(
     "stuck_foreign_numbers",
     "Foreign-number transactions stuck pending",

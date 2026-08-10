@@ -11,6 +11,9 @@ const healthy = {
   completed_24h: 100,
   failed_24h: 2,
   refunded_24h: 1,
+  funding_unresolved: 0,
+  funding_reconcile_stale: 0,
+  funding_reconcile_errors: 0,
 };
 
 Deno.test("healthy financial metrics produce no alerts", () => {
@@ -39,4 +42,17 @@ Deno.test("failure rate requires sufficient sample size", () => {
     refunded_24h: 0,
   });
   assertEquals(alerts.some((a) => a.fingerprint === "high_failure_rate"), true);
+});
+
+Deno.test("unresolved funding and stale reconciliation are critical", () => {
+  const alerts = evaluateFinancialAlerts({
+    ...healthy,
+    funding_unresolved: 1,
+    funding_reconcile_stale: 1,
+    funding_reconcile_errors: 1,
+  });
+  assertEquals(
+    alerts.filter((a) => a.fingerprint.startsWith("funding_")).map((a) => a.severity),
+    ["critical", "critical", "warning"],
+  );
 });
