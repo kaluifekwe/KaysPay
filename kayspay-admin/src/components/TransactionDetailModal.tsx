@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { callAdmin, AdminApiError } from '../lib/adminApi';
-import { isRefundable, formatNaira, serviceLabelForType, TxRow } from '../lib/transactions';
+import { formatFundingProvider, isRefundable, formatNaira, serviceLabelForType, TxRow } from '../lib/transactions';
 import { useAuth } from '../AuthContext';
 
 interface UserDetail {
@@ -75,8 +75,17 @@ export default function TransactionDetailModal({
               <tr><td className="muted">Service</td><td>{serviceLabelForType(transaction.type)} <span className="muted">({transaction.type})</span></td></tr>
               <tr><td className="muted">Amount paid</td><td><strong>{formatNaira(transaction.amount_ngn)}</strong></td></tr>
               <tr><td className="muted">Status</td><td><span className={`badge ${hasConfirmedRefund ? 'refunded' : transaction.status}`}>{hasConfirmedRefund ? 'refunded' : transaction.status}</span></td></tr>
-              <tr><td className="muted">Recipient</td><td>{transaction.recipient_phone || '—'}{transaction.network ? ` (${transaction.network})` : ''}</td></tr>
-              <tr><td className="muted">Order reference</td><td>{transaction.vtu_order_id || '—'}</td></tr>
+              {transaction.type === 'wallet_fund' ? (
+                <>
+                  <tr><td className="muted">Funding provider</td><td>{formatFundingProvider(transaction.funding_provider)}</td></tr>
+                  <tr><td className="muted">Payment reference</td><td>{transaction.funding_reference || '—'}</td></tr>
+                </>
+              ) : (
+                <>
+                  <tr><td className="muted">Recipient</td><td>{transaction.recipient_phone || '—'}{transaction.network ? ` (${transaction.network})` : ''}</td></tr>
+                  <tr><td className="muted">Order reference</td><td>{transaction.vtu_order_id || '—'}</td></tr>
+                </>
+              )}
               <tr><td className="muted">Created</td><td>{new Date(transaction.created_at).toLocaleString('en-GB')}</td></tr>
               <tr><td className="muted">Completed</td><td>{transaction.completed_at ? new Date(transaction.completed_at).toLocaleString('en-GB') : '—'}</td></tr>
               {transaction.service_refunds?.[0] && (

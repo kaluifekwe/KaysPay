@@ -73,8 +73,20 @@ serve(async (req) => {
   // can't embed directly. Batch-resolve it in one extra call rather than
   // one per row.
   const rows = data ?? [];
-  for (const row of rows as unknown as { metadata?: Record<string, unknown>; refund_verification?: unknown }[]) {
+  for (const row of rows as unknown as {
+    type?: string;
+    metadata?: Record<string, unknown>;
+    refund_verification?: unknown;
+    funding_provider?: string | null;
+    funding_reference?: string | null;
+  }[]) {
     row.refund_verification = row.metadata?.refund_verification ?? null;
+    if (row.type === "wallet_fund") {
+      const provider = row.metadata?.source;
+      const reference = row.metadata?.reference ?? row.metadata?.idempotency_reference;
+      row.funding_provider = typeof provider === "string" ? provider : null;
+      row.funding_reference = typeof reference === "string" ? reference : null;
+    }
     delete row.metadata;
   }
   const userIds = [...new Set(rows.map((r) => r.user_id))];

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { callAdmin, AdminApiError } from '../lib/adminApi';
-import { formatNaira, SERVICES, TxRow } from '../lib/transactions';
+import { formatFundingProvider, formatNaira, SERVICES, TxRow } from '../lib/transactions';
 import TransactionDetailModal from '../components/TransactionDetailModal';
 
 interface TxResponse {
@@ -94,13 +94,17 @@ export default function TransactionsPage() {
                   <td>{new Date(r.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
                   <td>{r.users?.full_name || r.users?.phone || '—'}</td>
                   <td>{r.type}</td>
-                  <td>{r.recipient_phone || '—'}{r.network ? ` (${r.network})` : ''}</td>
+                  <td>{r.type === 'wallet_fund'
+                    ? formatFundingProvider(r.funding_provider)
+                    : <>{r.recipient_phone || '—'}{r.network ? ` (${r.network})` : ''}</>}</td>
                   <td>{formatNaira(r.amount_ngn)}</td>
                   <td>{(() => {
                     const status = r.service_refunds?.length ? 'refunded' : r.status;
                     return <span className={`badge ${status}`}>{status}</span>;
                   })()}</td>
-                  <td className="muted">{r.vtu_order_id || '—'}</td>
+                  <td className="muted">{r.type === 'wallet_fund'
+                    ? (r.funding_reference || '—')
+                    : (r.vtu_order_id || '—')}</td>
                 </tr>
               ))}
             </tbody>

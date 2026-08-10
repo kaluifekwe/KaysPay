@@ -9,6 +9,8 @@ export interface TxRow {
   vtu_order_id: string | null;
   created_at: string;
   completed_at: string | null;
+  funding_provider?: string | null;
+  funding_reference?: string | null;
   users: { full_name: string | null; phone: string | null } | null;
   service_refunds?: { reason: string; origin: string; created_at: string }[];
   refund_verification?: {
@@ -19,6 +21,13 @@ export interface TxRow {
     message: string;
     verified_at: string;
   } | null;
+}
+
+export function formatFundingProvider(provider: string | null | undefined): string {
+  if (!provider) return '—';
+  if (provider.toLowerCase() === 'paystack') return 'Paystack';
+  if (provider.toLowerCase() === 'flutterwave') return 'Flutterwave';
+  return provider;
 }
 
 // User-facing service groupings, not raw provider/type granularity — e.g.
