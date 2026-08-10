@@ -14,10 +14,31 @@ const healthy = {
   funding_unresolved: 0,
   funding_reconcile_stale: 0,
   funding_reconcile_errors: 0,
+  unsafe_grants: 0,
+  repeated_pin_lockouts: 0,
+  repeated_pin_resets: 0,
+  repeated_admin_denials: 0,
+  shared_device_accounts: 0,
+  excessive_new_devices: 0,
 };
 
 Deno.test("healthy financial metrics produce no alerts", () => {
   assertEquals(evaluateFinancialAlerts(healthy), []);
+});
+
+Deno.test("security operation anomalies are classified by impact", () => {
+  const alerts = evaluateFinancialAlerts({
+    ...healthy,
+    repeated_pin_lockouts: 1,
+    repeated_pin_resets: 1,
+    repeated_admin_denials: 1,
+    shared_device_accounts: 1,
+    excessive_new_devices: 1,
+  });
+  assertEquals(
+    alerts.slice(-5).map((alert) => alert.severity),
+    ["warning", "critical", "critical", "critical", "warning"],
+  );
 });
 
 Deno.test("wallet invariant and duplicate reference findings are critical", () => {

@@ -199,6 +199,17 @@ th {
 .badge.refunded { background: #f3f4f6; color: #4b5563; }
 .badge.enabled { background: #e3f6ea; color: #1a7a4a; }
 .badge.disabled { background: #fee2e2; color: #b91c1c; }
+.badge.warning { background: #fef3c7; color: #92400e; }
+.badge.critical { background: #fee2e2; color: #991b1b; }
+.badge.open { background: #fee2e2; color: #991b1b; }
+.badge.acknowledged { background: #fef3c7; color: #92400e; }
+.badge.resolved { background: #e3f6ea; color: #166534; }
+
+.stat.alert-stat { border-left: 3px solid var(--error); }
+.stat.alert-stat .value { color: var(--error); }
+
+.table-scroll { overflow-x: auto; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
 button.primary {
   background: var(--green);
@@ -238,6 +249,24 @@ input, select {
   padding: 9px 12px;
   font-size: 13px;
   width: 100%;
+}
+
+textarea {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font: inherit;
+  min-height: 96px;
+  resize: vertical;
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .app-shell { display: block; }
+  .sidebar { width: 100%; padding: 16px; }
+  .sidebar nav { flex-direction: row; overflow-x: auto; }
+  .sidebar nav a { white-space: nowrap; }
+  .main { padding: 20px 16px; }
 }
 
 

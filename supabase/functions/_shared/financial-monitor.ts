@@ -71,6 +71,36 @@ export function evaluateFinancialAlerts(m: FinancialMetrics): FinancialAlert[] {
     "warning",
     m.burst_accounts,
   );
+  add(
+    "repeated_pin_lockouts",
+    "Accounts with repeated transaction PIN lockouts",
+    "warning",
+    m.repeated_pin_lockouts,
+  );
+  add(
+    "repeated_pin_resets",
+    "Accounts with repeated transaction PIN resets",
+    "critical",
+    m.repeated_pin_resets,
+  );
+  add(
+    "repeated_admin_denials",
+    "Repeated denied admin access attempts",
+    "critical",
+    m.repeated_admin_denials,
+  );
+  add(
+    "shared_device_accounts",
+    "Devices associated with several customer accounts",
+    "critical",
+    m.shared_device_accounts,
+  );
+  add(
+    "excessive_new_devices",
+    "Accounts registering an unusual number of devices",
+    "warning",
+    m.excessive_new_devices,
+  );
   const terminal = m.completed_24h + m.failed_24h + m.refunded_24h;
   if (terminal >= 20 && (m.failed_24h + m.refunded_24h) / terminal >= 0.2) {
     alerts.push({

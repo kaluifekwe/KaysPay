@@ -18,6 +18,36 @@ function json(body: unknown, status = 200) {
   });
 }
 
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+async function stuckVtuDetails(db: ReturnType<typeof adminClient>): Promise<string> {
+  const cutoff = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+  const { data, error } = await db
+    .from("transactions")
+    .select("id, type, created_at, metadata")
+    .eq("status", "pending")
+    .in("type", ["airtime", "data", "bill", "exam_pin"])
+    .lt("created_at", cutoff)
+    .order("created_at", { ascending: true })
+    .limit(20);
+  if (error || !data?.length) return "";
+
+  const rows = data.map((tx) => {
+    const metadata = tx.metadata as Record<string, unknown> | null;
+    const reference = metadata?.provider_transaction_id ?? metadata?.provider_reference ?? tx.id;
+    const ageMinutes = Math.max(0, Math.floor((Date.now() - new Date(tx.created_at).getTime()) / 60_000));
+    return `<tr><td>${escapeHtml(reference)}</td><td>${escapeHtml(tx.type)}</td><td>${escapeHtml(metadata?.provider ?? "unknown")}</td><td>${ageMinutes} min</td></tr>`;
+  }).join("");
+  return `<table border="1" cellpadding="6" cellspacing="0"><tr><th>Reference</th><th>Service</th><th>Provider</th><th>Age</th></tr>${rows}</table>`;
+}
+
 serve(async (req) => {
   if (!verifyCronSecret(req)) return json({ error: "Unauthorized" }, 401);
   const db = adminClient();
@@ -49,10 +79,11 @@ serve(async (req) => {
             },
           );
           if (shouldEmail && isResendConfigured()) {
+            const details = alert.fingerprint === "stuck_vtu" ? await stuckVtuDetails(db) : "";
             const sent = await sendEmail(
               ALERT_EMAIL,
               `[${alert.severity.toUpperCase()}] Kay's Pay: ${alert.type}`,
-              `<p>${alert.type}: <b>${alert.value}</b></p><p>No balances or transactions were changed by this monitor.</p>`,
+              `<p>${alert.type}: <b>${alert.value}</b></p>${details}<p>No balances or transactions were changed by this monitor.</p>`,
             );
             if (sent.ok) emailed++;
           }
@@ -68,13 +99,14 @@ serve(async (req) => {
             { p_date: watDate, p_metrics: metrics },
           );
           if (claimed && isResendConfigured()) {
-            await sendEmail(
+            const dailySent = await sendEmail(
               ALERT_EMAIL,
               `Kay's Pay daily operations summary — ${watDate}`,
               `<p>Automated read-only summary for the last 24 hours.</p>${
                 metricsTableHtml(metrics)
               }`,
             );
+            if (dailySent.ok) emailed++;
           }
         }
         return {
@@ -84,9 +116,19 @@ serve(async (req) => {
         };
       },
     );
+    await db.rpc("record_monitoring_health", {
+      p_success: true,
+      p_email_sent: "emailed" in result && result.emailed > 0,
+      p_error_code: null,
+    });
     return json(result);
   } catch (error) {
     console.error("financial-integrity-monitor failed:", redactSecrets(error));
+    await db.rpc("record_monitoring_health", {
+      p_success: false,
+      p_email_sent: false,
+      p_error_code: "MONITOR_RUN_FAILED",
+    });
     return json({ checked: false, error: "Monitoring run failed" }, 500);
   }
 });

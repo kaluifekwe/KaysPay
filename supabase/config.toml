@@ -208,5 +208,8 @@ verify_jwt = true
 [functions.admin-refund]
 verify_jwt = true
 
+[functions.admin-security-alerts]
+verify_jwt = true
+
 [functions.funding-reconcile]
 verify_jwt = false

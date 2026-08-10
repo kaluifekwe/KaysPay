@@ -1,0 +1,145 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { adminClient, readJsonBody, RequestBodyError } from "../_shared/auth.ts";
+import { AdminAuthError, requireAdmin } from "../_shared/admin-auth.ts";
+import { corsHeaders, handleCors } from "../_shared/cors.ts";
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+const VALID_STATUSES = ["open", "acknowledged", "resolved"] as const;
+const VALID_ACTIONS = ["acknowledge", "resolve", "reopen"] as const;
+
+serve(async (req) => {
+  const cors = handleCors(req);
+  if (cors) return cors;
+
+  let admin;
+  try {
+    admin = await requireAdmin(req, "support");
+  } catch (error) {
+    if (error instanceof AdminAuthError) return json({ error: error.message }, error.status);
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const db = adminClient();
+
+  if (req.method === "GET") {
+    const url = new URL(req.url);
+    const status = url.searchParams.get("status") || "open";
+    const severity = url.searchParams.get("severity") || "";
+    const page = Math.max(Number(url.searchParams.get("page") || 1), 1);
+    const pageSize = 30;
+    if (status !== "all" && !VALID_STATUSES.includes(status as typeof VALID_STATUSES[number])) {
+      return json({ error: "Invalid status" }, 400);
+    }
+    if (severity && !["warning", "critical"].includes(severity)) {
+      return json({ error: "Invalid severity" }, 400);
+    }
+
+    let query = db.from("monitoring_alerts")
+      .select("fingerprint,alert_type,severity,details,occurrence_count,first_seen_at,last_seen_at,last_alerted_at,status,acknowledged_at,resolved_at,resolution_notes,updated_at", { count: "exact" })
+      .order("last_seen_at", { ascending: false })
+      .range((page - 1) * pageSize, page * pageSize - 1);
+    if (status !== "all") query = query.eq("status", status);
+    if (severity) query = query.eq("severity", severity);
+
+    const [alertsResult, runResult, eventsResult, statusResult, healthResult] = await Promise.all([
+      query,
+      db.from("monitoring_runs").select("id,created_at,metrics").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      db.from("security_events").select("id,user_id,event_type,severity,source,metadata,created_at").order("created_at", { ascending: false }).limit(50),
+      db.from("monitoring_alerts").select("status"),
+      db.from("monitoring_health").select("last_success_at,last_failure_at,last_email_at,consecutive_failures,last_error_code").eq("singleton", true).maybeSingle(),
+    ]);
+
+    if (alertsResult.error || runResult.error || eventsResult.error || statusResult.error || healthResult.error) {
+      return json({ error: "Could not load security operations" }, 500);
+    }
+    const latestRun = runResult.data;
+    const lastSuccessAt = healthResult.data?.last_success_at || latestRun?.created_at || null;
+    const ageMs = lastSuccessAt ? Date.now() - new Date(lastSuccessAt).getTime() : Number.POSITIVE_INFINITY;
+    const statusCounts = { open: 0, acknowledged: 0, resolved: 0 };
+    for (const item of statusResult.data || []) {
+      if (item.status in statusCounts) statusCounts[item.status as keyof typeof statusCounts]++;
+    }
+
+    // device_hash is useful for server-side correlation but should not be
+    // rendered or returned to a browser administrator.
+    const events = (eventsResult.data || []).map((event) => {
+      const metadata = { ...((event.metadata || {}) as Record<string, unknown>) };
+      delete metadata.device_hash;
+      return { ...event, metadata };
+    });
+
+    return json({
+      success: true,
+      alerts: alertsResult.data || [],
+      total: alertsResult.count || 0,
+      page,
+      page_size: pageSize,
+      status_counts: statusCounts,
+      monitor: {
+        healthy: ageMs <= 20 * 60 * 1000,
+        last_success_at: lastSuccessAt,
+        last_failure_at: healthResult.data?.last_failure_at ?? null,
+        last_email_at: healthResult.data?.last_email_at ?? null,
+        consecutive_failures: healthResult.data?.consecutive_failures ?? 0,
+        last_error_code: healthResult.data?.last_error_code ?? null,
+        age_seconds: Number.isFinite(ageMs) ? Math.max(Math.floor(ageMs / 1000), 0) : null,
+        metrics: latestRun?.metrics ?? {},
+      },
+      recent_events: events,
+    });
+  }
+
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+
+  let body: Record<string, unknown>;
+  try {
+    body = await readJsonBody(req, 2048);
+  } catch (error) {
+    const e = error instanceof RequestBodyError ? error : new RequestBodyError(400, "Invalid request body");
+    return json({ error: e.message }, e.status);
+  }
+
+  const fingerprint = String(body.fingerprint || "");
+  const action = String(body.action || "");
+  const notes = String(body.notes || "").trim();
+  if (!/^[a-z0-9_-]{3,100}$/.test(fingerprint)) return json({ error: "Invalid alert" }, 400);
+  if (!VALID_ACTIONS.includes(action as typeof VALID_ACTIONS[number])) return json({ error: "Invalid action" }, 400);
+  if (notes.length > 500) return json({ error: "Notes must be 500 characters or fewer" }, 400);
+  if (action === "resolve" && notes.length < 3) return json({ error: "Resolution notes are required" }, 400);
+
+  const now = new Date().toISOString();
+  const changes = action === "acknowledge"
+    ? { status: "acknowledged", acknowledged_at: now, acknowledged_by: admin.userId, updated_at: now }
+    : action === "resolve"
+    ? { status: "resolved", resolved_at: now, resolved_by: admin.userId, resolution_notes: notes, updated_at: now }
+    : {
+      status: "open", acknowledged_at: null, acknowledged_by: null,
+      resolved_at: null, resolved_by: null, resolution_notes: null, updated_at: now,
+    };
+
+  const { data: alert, error } = await db.from("monitoring_alerts")
+    .update(changes)
+    .eq("fingerprint", fingerprint)
+    .select("fingerprint,status,updated_at")
+    .maybeSingle();
+  if (error) return json({ error: "Could not update alert" }, 500);
+  if (!alert) return json({ error: "Alert not found" }, 404);
+
+  const actionPastTense = action === "acknowledge" ? "acknowledged" : action === "resolve" ? "resolved" : "reopened";
+  const { error: auditError } = await db.from("admin_actions").insert({
+    admin_user_id: admin.userId,
+    action_type: `security_alert_${actionPastTense}`,
+    target_type: "monitoring_alerts",
+    target_id: fingerprint,
+    reason: notes || null,
+    metadata: { resulting_status: alert.status },
+  });
+  if (auditError) return json({ error: "Alert updated but audit record failed" }, 500);
+  return json({ success: true, alert });
+});
