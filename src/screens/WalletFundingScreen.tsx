@@ -1,15 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  TextInput,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,7 +16,8 @@ import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { formatNaira } from '../utils/formatCurrency';
 import { walletService } from '../services/wallet.service';
-import { virtualAccountService, VirtualAccount } from '../services/virtualAccount.service';
+import { virtualAccountService, VirtualAccount, VirtualAccountProvider } from '../services/virtualAccount.service';
+import ProviderFundingBlock from '../components/ProviderFundingBlock';
 import { supabase } from '../lib/supabase';
 import { useCachedData } from '../hooks/useCachedData';
 
@@ -31,18 +30,32 @@ const QUICK_AMOUNTS = [500, 1000, 2000, 5000, 10000, 20000];
 // side after the credential regeneration) was cleared so the app provisions
 // a fresh account under the current valid credentials. Under live testing.
 const BANK_TRANSFER_FUNDING_ENABLED = true;
+// Paystack Dedicated Virtual Accounts are offered alongside Flutterwave.
+// Paystack account creation and deposit crediting stay fully server-side.
+const PAYSTACK_FUNDING_ENABLED = true;
 
 const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
   const [customAmount, setCustomAmount] = useState('');
   const [loading, setLoading] = useState(false);
-  const [account, setAccount] = useState<VirtualAccount | null>(null);
-  const [accountLoading, setAccountLoading] = useState(false);
-  // True until the first getMine() resolves — so users who already have an
-  // account see a loader instead of a flash of "Get my account number".
-  const [accountInitialLoading, setAccountInitialLoading] = useState(BANK_TRANSFER_FUNDING_ENABLED);
-  const [showBvnInput, setShowBvnInput] = useState(false);
-  const [bvnOrNin, setBvnOrNin] = useState('');
+  const [realtimeBalance, setRealtimeBalance] = useState<number | null>(null);
+  const [paystackCheckStatus, setPaystackCheckStatus] = useState<'idle' | 'checking' | 'credited' | 'waiting'>('idle');
+  const paystackCheckStatusRef = useRef(paystackCheckStatus);
+  const displayedBalanceRef = useRef<number | null>(null);
+  const rapidCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const rapidCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    paystackCheckStatusRef.current = paystackCheckStatus;
+  }, [paystackCheckStatus]);
+
+  const [accounts, setAccounts] = useState<Record<VirtualAccountProvider, VirtualAccount | null>>({
+    flutterwave: null,
+    paystack: null,
+  });
+  // True until the first getAllMine() resolves — so users who already have
+  // an account see a loader instead of a flash of "Get my account number".
+  const [accountsInitialLoading, setAccountsInitialLoading] = useState(BANK_TRANSFER_FUNDING_ENABLED);
 
   // Shows the last-known balance immediately (even on a bad connection),
   // then quietly refreshes in the background. A failed refresh never wipes
@@ -63,14 +76,18 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   } = useCachedData('wallet_balance', fetchBalanceOrThrow);
 
   useEffect(() => {
+    displayedBalanceRef.current = realtimeBalance ?? balance;
+  }, [balance, realtimeBalance]);
+
+  useEffect(() => {
     if (!BANK_TRANSFER_FUNDING_ENABLED) {
-      setAccountInitialLoading(false);
+      setAccountsInitialLoading(false);
       return;
     }
     virtualAccountService
-      .getMine()
-      .then(setAccount)
-      .finally(() => setAccountInitialLoading(false));
+      .getAllMine()
+      .then(setAccounts)
+      .finally(() => setAccountsInitialLoading(false));
   }, []);
 
   // Keep the balance current without the user having to leave and come back:
@@ -85,21 +102,76 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }, [fetchBalance]),
   );
 
-  const handleGetAccount = async () => {
-    if (!/^\d{11}$/.test(bvnOrNin)) {
-      Alert.alert('Bank Transfer', 'Please enter a valid 11-digit BVN or NIN.');
-      return;
-    }
-    setAccountLoading(true);
-    const res = await virtualAccountService.create(bvnOrNin);
-    setAccountLoading(false);
-    if (res.success && res.account) {
-      setAccount(res.account);
-      setShowBvnInput(false);
-    } else {
-      Alert.alert('Bank Transfer', res.error || 'Could not set up your account number.');
-    }
-  };
+  // Refresh immediately when a funding webhook changes this user's wallet.
+  // The 10-second poll above remains as a fallback if Realtime is unavailable
+  // on a weak connection; the subscription removes that polling delay during
+  // normal operation without changing any server-side crediting logic.
+  useEffect(() => {
+    const subscription = walletService.subscribeToBalance(
+      (newBalance) => {
+        const previousBalance = displayedBalanceRef.current;
+        displayedBalanceRef.current = newBalance;
+        setRealtimeBalance(newBalance);
+        if (
+          paystackCheckStatusRef.current === 'checking' &&
+          previousBalance !== null &&
+          newBalance > previousBalance
+        ) {
+          setPaystackCheckStatus('credited');
+        }
+      },
+      (status) => {
+        if (status === 'SUBSCRIBED') fetchBalance();
+      },
+    );
+    return () => subscription.unsubscribe();
+  }, [fetchBalance]);
+
+  const stopRapidBalanceCheck = useCallback(() => {
+    if (rapidCheckIntervalRef.current) clearInterval(rapidCheckIntervalRef.current);
+    if (rapidCheckTimeoutRef.current) clearTimeout(rapidCheckTimeoutRef.current);
+    rapidCheckIntervalRef.current = null;
+    rapidCheckTimeoutRef.current = null;
+  }, []);
+
+  const startPaystackBalanceCheck = useCallback(() => {
+    stopRapidBalanceCheck();
+    setPaystackCheckStatus('checking');
+    const startingBalance = realtimeBalance ?? balance ?? 0;
+    let checkInFlight = false;
+
+    const check = async () => {
+      if (checkInFlight) return;
+      checkInFlight = true;
+      try {
+        const result = await walletService.getWallet();
+        const newBalance = result.wallet?.balance;
+        if (result.success && typeof newBalance === 'number') {
+          setRealtimeBalance(newBalance);
+          if (newBalance > startingBalance) {
+            stopRapidBalanceCheck();
+            setPaystackCheckStatus('credited');
+          }
+        }
+      } finally {
+        checkInFlight = false;
+      }
+    };
+
+    void check();
+    rapidCheckIntervalRef.current = setInterval(() => void check(), 2000);
+    rapidCheckTimeoutRef.current = setTimeout(() => {
+      stopRapidBalanceCheck();
+      setPaystackCheckStatus('waiting');
+    }, 60000);
+  }, [balance, realtimeBalance, stopRapidBalanceCheck]);
+
+  const stopPaystackBalanceCheck = useCallback(() => {
+    stopRapidBalanceCheck();
+    setPaystackCheckStatus('idle');
+  }, [stopRapidBalanceCheck]);
+
+  useEffect(() => stopRapidBalanceCheck, [stopRapidBalanceCheck]);
 
   const getAmount = (): number => {
     if (selectedAmount) return selectedAmount;
@@ -157,7 +229,7 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 </>
               ) : (
                 <>
-                  <Text style={styles.balanceAmount}>{formatNaira(balance ?? 0)}</Text>
+                  <Text style={styles.balanceAmount}>{formatNaira(realtimeBalance ?? balance ?? 0)}</Text>
                   {balanceStale && (
                     <Text style={styles.balanceRetryText}>
                       {balanceLoading ? 'Updating…' : 'May be outdated — tap to refresh'}
@@ -170,68 +242,37 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             {BANK_TRANSFER_FUNDING_ENABLED && (
               <>
                 <Text style={styles.sectionTitle}>Fund by Bank Transfer</Text>
-                {account ? (
-                  <View style={styles.transferCard}>
-                    <Text style={styles.transferHint}>
-                      Transfer any amount to this account. Your wallet is credited automatically.
-                    </Text>
-                    <View style={styles.transferRow}>
-                      <Text style={styles.transferLabel}>Bank</Text>
-                      <Text style={styles.transferValue}>{account.bank_name}</Text>
-                    </View>
-                    <View style={styles.transferRow}>
-                      <Text style={styles.transferLabel}>Account Number</Text>
-                      <Text style={styles.transferAccount} selectable>
-                        {account.account_number}
-                      </Text>
-                    </View>
-                    <View style={styles.transferRow}>
-                      <Text style={styles.transferLabel}>Account Name</Text>
-                      <Text style={styles.transferValue}>{account.account_name}</Text>
-                    </View>
-                  </View>
-                ) : accountInitialLoading ? (
-                  <View style={styles.transferCard}>
-                    <ActivityIndicator color={Colors.GREEN} />
-                  </View>
-                ) : showBvnInput ? (
-                  <View style={styles.transferCard}>
-                    <Text style={styles.transferHint}>
-                      We need your BVN or NIN once to set up your dedicated account number, as required by our banking partner.
-                    </Text>
-                    <View style={styles.inputContainer}>
-                      <TextInput
-                        style={styles.input}
-                        value={bvnOrNin}
-                        onChangeText={(t) => setBvnOrNin(t.replace(/[^0-9]/g, '').slice(0, 11))}
-                        placeholder="Enter your BVN or NIN"
-                        placeholderTextColor={Colors.GRAY}
-                        keyboardType="number-pad"
-                        maxLength={11}
-                      />
-                    </View>
-                    <TouchableOpacity
-                      style={[
-                        styles.transferButton,
-                        bvnOrNin.length !== 11 && styles.fundButtonDisabled,
-                      ]}
-                      onPress={handleGetAccount}
-                      disabled={accountLoading || bvnOrNin.length !== 11}
-                    >
-                      {accountLoading ? (
-                        <ActivityIndicator color={Colors.GREEN} />
-                      ) : (
-                        <Text style={styles.transferButtonText}>Continue</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.transferButton}
-                    onPress={() => setShowBvnInput(true)}
-                  >
-                    <Text style={styles.transferButtonText}>Get my account number</Text>
-                  </TouchableOpacity>
+                <Text style={styles.cbnNotice}>
+                  Nigerian banking regulation (CBN) requires a BVN or NIN to issue any dedicated
+                  account number. This is a standard, one-time step — your details are sent
+                  securely and used only to set up your account.
+                </Text>
+                <ProviderFundingBlock
+                  provider="flutterwave"
+                  providerLabel="Flutterwave"
+                  account={accounts.flutterwave}
+                  initialLoading={accountsInitialLoading}
+                  onCreated={(acct) => setAccounts((prev) => ({ ...prev, flutterwave: acct }))}
+                />
+                {PAYSTACK_FUNDING_ENABLED && (
+                  <ProviderFundingBlock
+                    provider="paystack"
+                    providerLabel="Paystack"
+                    account={accounts.paystack}
+                    initialLoading={accountsInitialLoading}
+                    onCreated={(acct) => setAccounts((prev) => ({ ...prev, paystack: acct }))}
+                    onPaystackCheckStarted={startPaystackBalanceCheck}
+                    onPaystackCheckFailed={stopPaystackBalanceCheck}
+                  />
+                )}
+                {paystackCheckStatus !== 'idle' && (
+                  <Text style={styles.paystackCheckText} accessibilityLiveRegion="polite">
+                    {paystackCheckStatus === 'checking'
+                      ? 'Checking your Paystack transfer…'
+                      : paystackCheckStatus === 'credited'
+                        ? 'Transfer detected — wallet credited.'
+                        : 'Transfer not confirmed yet. Your wallet will update automatically when Paystack confirms it.'}
+                  </Text>
                 )}
               </>
             )}
@@ -325,55 +366,22 @@ const styles = StyleSheet.create({
     color: Colors.GRAY,
     marginHorizontal: Spacing.M,
   },
-  transferButton: {
-    height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    borderRadius: Spacing.BUTTON_RADIUS,
-    borderWidth: 1,
-    borderColor: Colors.GREEN,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  transferButtonText: {
-    ...Typography.BUTTON_TEXT,
-    color: Colors.GREEN,
-  },
-  transferCard: {
-    backgroundColor: Colors.LIGHT_GRAY,
-    borderRadius: 12,
-    padding: Spacing.L,
-  },
-  transferHint: {
-    ...Typography.CAPTION,
-    color: Colors.GRAY,
-    marginBottom: Spacing.M,
-  },
-  transferRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: Spacing.S,
-  },
-  transferLabel: {
-    ...Typography.BODY,
-    color: Colors.GRAY,
-  },
-  transferValue: {
-    ...Typography.BODY,
-    color: Colors.DARK,
-    fontWeight: '600',
-    flexShrink: 1,
-    textAlign: 'right',
-    marginLeft: Spacing.M,
-  },
-  transferAccount: {
-    ...Typography.HEADING,
-    color: Colors.GREEN,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
   sectionTitle: {
     ...Typography.SECTION_HEADING,
     marginBottom: Spacing.M,
+  },
+  cbnNotice: {
+    ...Typography.CAPTION,
+    color: Colors.GRAY,
+    marginBottom: Spacing.L,
+    lineHeight: 18,
+  },
+  paystackCheckText: {
+    ...Typography.CAPTION,
+    color: Colors.GREEN_DARK,
+    marginTop: -Spacing.M,
+    marginBottom: Spacing.L,
+    lineHeight: 18,
   },
   quickAmountsGrid: {
     flexDirection: 'row',
@@ -402,27 +410,10 @@ const styles = StyleSheet.create({
   quickAmountTextSelected: {
     color: Colors.GREEN_DARK,
   },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
-    borderRadius: Spacing.BUTTON_RADIUS,
-    height: Spacing.INPUT_HEIGHT,
-    paddingHorizontal: Spacing.M,
-    marginBottom: Spacing.L,
-    backgroundColor: Colors.WHITE,
-  },
   currencySymbol: {
     ...Typography.BODY,
     color: Colors.GRAY,
     marginRight: Spacing.S,
-  },
-  input: {
-    flex: 1,
-    ...Typography.BODY,
-    color: Colors.DARK,
-    height: '100%',
   },
   fundButton: {
     backgroundColor: Colors.GREEN,

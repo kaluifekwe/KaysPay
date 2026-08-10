@@ -21,6 +21,10 @@ export const StorageKeys = {
   // "Download PDF" — reused on every later download so the folder picker
   // only ever appears the first time.
   DOWNLOAD_FOLDER_URI: 'download_folder_uri',
+  // App-access security state. These are encrypted by SecureStore; the
+  // server remains authoritative for the PIN lock deadline.
+  PRIVACY_BACKGROUNDED_AT: 'privacy_backgrounded_at',
+  PIN_LOCKED_UNTIL: 'pin_locked_until',
 };
 
 // Helper functions using SecureStore (max 2KB per item)

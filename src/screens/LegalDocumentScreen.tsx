@@ -84,7 +84,7 @@ function PrivacyPolicyContent() {
         </Para>
         <Bullet>Payment processors (Flutterwave) — for wallet funding and bank
           account verification.</Bullet>
-        <Bullet>Airtime/data/bills/exam-pin providers (VTU.ng, VTUAfrica) — to deliver the
+        <Bullet>VTUnaija — to deliver airtime, data, electricity, cable TV and exam PIN services and
           specific product you purchased to the recipient number you provide.</Bullet>
         <Bullet>Identity verification providers (Prembly, CheckMyNINBVN) — only when you use NIN/BVN
           verification or update services, to check your NIN/BVN against official records.</Bullet>

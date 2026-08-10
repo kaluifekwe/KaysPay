@@ -50,9 +50,9 @@ export const Strings = {
   // Services
   SERVICE_AIRTIME: "Airtime",
   SERVICE_DATA: "Data",
-  SERVICE_BILLS: "Bills",
-  SERVICE_EXAMS: "Exams",
-  SERVICE_TV: "TV",
+  SERVICE_BILLS: "Electricity",
+  SERVICE_EXAMS: "Exam PIN",
+  SERVICE_TV: "Cable TV",
   SERVICE_ESIM: "Travel eSIM",
   SERVICE_FOREIGN: "Foreign No.",
   SERVICE_DOLLAR_CARD: "Dollar Card",

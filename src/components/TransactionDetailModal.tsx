@@ -5,10 +5,13 @@ import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { formatNaira } from '../utils/formatCurrency';
+import { formatDateTimeFull } from '../utils/formatDateTime';
 import { safeErrorMessage } from '../utils/errorMessages';
 import { downloadPdf, sharePdf } from '../utils/pdf';
-import { buildElectricityReceiptHtml } from '../utils/receipts';
+import { buildElectricityReceiptHtml, buildTransactionReceiptHtml } from '../utils/receipts';
 import { vtuService } from '../services/vtu.service';
+import { supabase } from '../lib/supabase';
+import { withTimeout } from '../utils/network';
 import { buildBvnSlipTraditionalHtml, buildBvnCardHtml, getEmblemBase64 } from '../screens/NinServicesScreen';
 import type { BvnRecord } from '../services/nin.service';
 
@@ -37,16 +40,6 @@ function getStatusColor(status: string) {
     default:
       return Colors.GRAY;
   }
-}
-
-function formatFullDateTime(timestamp: string): string {
-  const date = new Date(timestamp);
-  const day = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-  const hours = date.getHours();
-  const minutes = date.getMinutes().toString().padStart(2, '0');
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  const formattedHours = hours % 12 || 12;
-  return `${day} · ${formattedHours}:${minutes} ${ampm}`;
 }
 
 const GENERIC_FAILURE_MESSAGE =
@@ -90,6 +83,8 @@ const METADATA_LABELS: Record<string, string> = {
   meter_number: 'Meter Number',
   smartcard_number: 'Smartcard Number',
   customer_id: 'Customer ID',
+  customer_name: 'Customer Name',
+  customer_address: 'Address',
   bank_name: 'Bank',
   account_number: 'Account Number',
   account_name: 'Account Name',
@@ -161,14 +156,21 @@ export default function TransactionDetailModal({
 
   const buildElectricityReceipt = () =>
     buildElectricityReceiptHtml({
-      providerName: vtuService.getElectricityProviderName(String(electricityRequest?.service || '')),
-      meterType: String(electricityRequest?.metertype || ''),
-      meterNumber: String(electricityRequest?.meterNo || transaction.recipientPhone || ''),
+      // provider_id/meter_type are stored top-level in metadata (same as
+      // token) — NOT read from metadata.request, whose field names
+      // (disco_name/MeterType/meter_number, VTUnaija's own payload shape)
+      // never matched what this used to read here (service/metertype/
+      // meterNo, a stale leftover from an older payload shape).
+      providerName: vtuService.getElectricityProviderName(String(transaction.metadata?.provider_id || '')),
+      meterType: String(electricityRequest?.MeterType || ''),
+      meterNumber: String(electricityRequest?.meter_number || transaction.recipientPhone || ''),
       amount: transaction.amount,
       token: electricityToken || null,
       units: null,
       orderId: transaction.orderId,
       date: new Date(transaction.timestamp),
+      customerName: transaction.metadata?.customer_name ?? null,
+      customerAddress: transaction.metadata?.customer_address ?? null,
     });
 
   const handleDownloadReceipt = async () => {
@@ -227,29 +229,85 @@ export default function TransactionDetailModal({
     }
   };
 
+  // The universal branded receipt (Download/Share) applies to every
+  // transaction that doesn't already have its own specialized format above
+  // — electricity's token receipt and the BVN slip carry one-time data this
+  // generic template doesn't handle, so they keep their own flow untouched.
+  const showGenericReceipt = !electricityToken && !bvnSlipRecord;
+
+  const buildGenericReceipt = async () => {
+    const { data: { user } } = await withTimeout(supabase.auth.getUser());
+    const senderName =
+      user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'You';
+    return buildTransactionReceiptHtml({
+      label: transaction.label,
+      recipient: transaction.recipientPhone ?? null,
+      network: transaction.network ? transaction.network.toUpperCase() : null,
+      amount: transaction.amount,
+      senderName,
+      timestamp: transaction.timestamp,
+      reference: transaction.orderId,
+      status: transaction.status,
+    });
+  };
+
+  const handleDownloadGenericReceipt = async () => {
+    setGeneratingPdf(true);
+    try {
+      const html = await buildGenericReceipt();
+      await downloadPdf(html, `Receipt_${transaction.id}`);
+      Alert.alert(
+        Platform.OS === 'android' ? 'Downloaded' : 'Saved',
+        Platform.OS === 'android' ? 'Receipt saved to the folder you selected.' : 'Choose "Save to Files" to store it on your device.',
+      );
+    } catch (e) {
+      Alert.alert('Error', safeErrorMessage(e, 'Could not save the receipt. Please try again.'));
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  const handleShareGenericReceipt = async () => {
+    setGeneratingPdf(true);
+    try {
+      const html = await buildGenericReceipt();
+      await sharePdf(html, 'Share your receipt');
+    } catch (e) {
+      Alert.alert('Error', safeErrorMessage(e, 'Could not generate the receipt. Please try again.'));
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={[styles.sheet, { paddingBottom: insets.bottom + Spacing.M }]}>
-          <View style={styles.handle} />
-
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.brandHeader}>
+            <View style={styles.handle} />
+            <View style={styles.brandRow}>
+              <Image source={require('../../assets/icon-green.png')} style={styles.brandLogo} resizeMode="contain" />
+              <Text style={styles.brandName}>Kay's Pay</Text>
+            </View>
             <Text style={styles.label}>{transaction.label}</Text>
-            <Text style={[styles.amount, { color: transaction.direction === 'credit' ? Colors.GREEN : Colors.DARK }]}>
+            <Text style={styles.amount}>
               {transaction.direction === 'credit' ? '+' : '-'}{formatNaira(transaction.amount)}
             </Text>
+          </View>
 
-            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(transaction.status) + '20' }]}>
-              <Text style={[styles.statusText, { color: getStatusColor(transaction.status) }]}>
-                {transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1)}
-              </Text>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Status</Text>
+              <View style={[styles.statusBadge, { backgroundColor: getStatusColor(transaction.status) + '20' }]}>
+                <Text style={[styles.statusText, { color: getStatusColor(transaction.status) }]}>
+                  {transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1)}
+                </Text>
+              </View>
             </View>
-
-            <View style={styles.divider} />
 
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Date</Text>
-              <Text style={styles.rowValue}>{formatFullDateTime(transaction.timestamp)}</Text>
+              <Text style={styles.rowValue}>{formatDateTimeFull(transaction.timestamp)}</Text>
             </View>
 
             {transaction.recipientPhone && (
@@ -289,6 +347,29 @@ export default function TransactionDetailModal({
                 <TouchableOpacity
                   style={[styles.receiptButtonSecondary, generatingPdf && styles.receiptButtonDisabled]}
                   onPress={handleShareReceipt}
+                  disabled={generatingPdf}
+                >
+                  <Text style={styles.receiptButtonSecondaryText}>Share Receipt</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {showGenericReceipt && (
+              <View style={styles.receiptSection}>
+                <TouchableOpacity
+                  style={[styles.receiptButton, generatingPdf && styles.receiptButtonDisabled]}
+                  onPress={handleDownloadGenericReceipt}
+                  disabled={generatingPdf}
+                >
+                  {generatingPdf ? (
+                    <ActivityIndicator color={Colors.WHITE} />
+                  ) : (
+                    <Text style={styles.receiptButtonText}>Download Receipt (PDF)</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.receiptButtonSecondary, generatingPdf && styles.receiptButtonDisabled]}
+                  onPress={handleShareGenericReceipt}
                   disabled={generatingPdf}
                 >
                   <Text style={styles.receiptButtonSecondaryText}>Share Receipt</Text>
@@ -396,46 +477,69 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.WHITE,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingHorizontal: Spacing.L,
-    paddingTop: Spacing.S,
+    overflow: 'hidden',
     maxHeight: '88%',
+  },
+  // The branded header — same look as the shared Download/Share receipt
+  // (utils/receipts.ts's buildTransactionReceiptHtml), so what you see the
+  // moment you open a transaction already matches what gets shared/saved,
+  // not just the exported PDF.
+  brandHeader: {
+    backgroundColor: '#123626',
+    paddingTop: Spacing.S,
+    paddingBottom: Spacing.L,
+    paddingHorizontal: Spacing.L,
   },
   handle: {
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.BORDER,
+    backgroundColor: 'rgba(255,255,255,0.3)',
     alignSelf: 'center',
     marginBottom: Spacing.M,
   },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.S,
+    marginBottom: Spacing.L,
+  },
+  brandLogo: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+  },
+  brandName: {
+    ...Typography.BODY,
+    fontWeight: '800',
+    color: Colors.WHITE,
+  },
   scrollContent: {
+    paddingHorizontal: Spacing.L,
+    paddingTop: Spacing.L,
     paddingBottom: Spacing.M,
   },
   label: {
     ...Typography.SECTION_HEADING,
-    color: Colors.DARK,
+    color: Colors.WHITE,
     textAlign: 'center',
+    opacity: 0.85,
   },
   amount: {
     ...Typography.SCREEN_TITLE,
+    color: Colors.WHITE,
     textAlign: 'center',
     marginTop: Spacing.S,
   },
   statusBadge: {
-    alignSelf: 'center',
     borderRadius: 12,
     paddingHorizontal: Spacing.M,
     paddingVertical: 4,
-    marginTop: Spacing.S,
   },
   statusText: {
     ...Typography.CAPTION,
     fontWeight: '700',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.BORDER,
-    marginVertical: Spacing.L,
   },
   row: {
     flexDirection: 'row',

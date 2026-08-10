@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import type { Wallet, Transaction } from '../types/app.types';
 import { koboToNaira } from '../utils/formatCurrency';
+import { withTimeout } from '../utils/network';
 
 export interface WalletResult {
   success: boolean;
@@ -31,14 +32,12 @@ export interface TransactionSummaryResult {
 export const walletService = {
   async getWallet(): Promise<WalletResult> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await withTimeout(supabase.auth.getUser());
       if (!user) return { success: false, error: 'Not authenticated' };
 
-      const { data, error } = await supabase
-        .from('wallets')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      const { data, error } = await withTimeout(
+        (async () => supabase.from('wallets').select('*').eq('user_id', user.id).maybeSingle())(),
+      );
 
       if (error) throw error;
 
@@ -76,15 +75,17 @@ export const walletService = {
 
   async getRecentTransactions(limit: number = 10): Promise<TransactionResult> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await withTimeout(supabase.auth.getUser());
       if (!user) return { success: false, error: 'Not authenticated' };
 
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(limit);
+      const { data, error } = await withTimeout(
+        (async () => supabase
+          .from('transactions')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(limit))(),
+      );
 
       if (error) throw error;
 
@@ -101,10 +102,10 @@ export const walletService = {
 
   async getTransactionSummary(): Promise<TransactionSummaryResult> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await withTimeout(supabase.auth.getUser());
       if (!user) return { success: false, error: 'Not authenticated' };
 
-      const { data, error } = await supabase.rpc('get_user_transaction_summary');
+      const { data, error } = await withTimeout((async () => supabase.rpc('get_user_transaction_summary'))());
       if (error) throw error;
 
       const summary = data as { total_transactions?: unknown; total_spent_kobo?: unknown } | null;
@@ -124,15 +125,19 @@ export const walletService = {
     }
   },
 
-  subscribeToBalance(callback: (balance: number) => void) {
+  subscribeToBalance(
+    callback: (balance: number) => void,
+    onStatus?: (status: string) => void,
+  ) {
     let subscription: any;
+    let active = true;
 
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user || !active) return;
 
       subscription = supabase
-        .channel('wallet-changes')
+        .channel(`wallet-changes:${user.id}`)
         .on(
           'postgres_changes',
           {
@@ -147,11 +152,14 @@ export const walletService = {
             }
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          if (active) onStatus?.(status);
+        });
     })();
 
     return {
       unsubscribe: () => {
+        active = false;
         subscription?.unsubscribe();
       },
     };

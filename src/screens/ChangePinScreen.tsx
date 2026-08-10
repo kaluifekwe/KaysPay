@@ -31,6 +31,7 @@ export default function ChangePinScreen({ navigation }: ChangePinScreenProps) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const startedRef = useRef(false);
+  const forgotPinSelectedRef = useRef(false);
   const authTokenRef = useRef<string | null>(null);
 
   // Prove identity (current PIN or biometric) before allowing a change —
@@ -40,15 +41,31 @@ export default function ChangePinScreen({ navigation }: ChangePinScreenProps) {
     if (startedRef.current) return;
     startedRef.current = true;
     (async () => {
-      const alreadyHasPin = await authService.hasPIN();
+      // hasPIN() now throws rather than reporting "no PIN" on a failed
+      // check (see auth.service.ts) — defaulting to `true` here on failure
+      // is the safe direction: it means requiring identity verification,
+      // not accidentally skipping straight to setting a new PIN unverified.
+      let alreadyHasPin = true;
+      try {
+        alreadyHasPin = await authService.hasPIN();
+      } catch {
+        // keep the safe default
+      }
       if (!alreadyHasPin) {
         setStep('new');
         return;
       }
 
-      const authResult = await authorize({ title: 'Verify it’s you', subtitle: 'Authorize to change your PIN' });
+      const authResult = await authorize({
+        title: 'Verify it’s you',
+        subtitle: 'Authorize to change your PIN',
+        onForgotPin: () => {
+          forgotPinSelectedRef.current = true;
+          navigation.replace('ForgotPin');
+        },
+      });
       if (!authResult) {
-        navigation.goBack();
+        if (!forgotPinSelectedRef.current) navigation.goBack();
         return;
       }
       authTokenRef.current = authResult.token;

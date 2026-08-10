@@ -20,12 +20,21 @@ import { StorageKeys, storageHelpers } from '../lib/mmkv';
 import { formatNaira } from '../utils/formatCurrency';
 import { walletService } from '../services/wallet.service';
 import { notificationService } from '../services/notification.service';
+import { vtuService } from '../services/vtu.service';
 import { supabase } from '../lib/supabase';
+import { withTimeout } from '../utils/network';
 import type { Transaction } from '../types/app.types';
 
 interface HomeScreenProps {
   navigation: any;
 }
+
+// Buy/sell already work end-to-end (internal wallet<->crypto-balance swap,
+// no provider needed) but stay hidden from real users until the owner is
+// ready to show it — flip to true to reveal the Crypto tile/advert.
+// External-wallet withdrawal will still show "not available yet" even once
+// this is on, since that genuinely needs Yellow Card's approval.
+const CRYPTO_ENABLED = true;
 
 interface QuickAction {
   id: string;
@@ -53,7 +62,7 @@ const ADVERTS: Advert[] = [
   { icon: 'globe-outline', title: 'Travel eSIMs', sub: 'Stay online in 190+ countries', screen: 'TravelEsim' },
   { icon: 'id-card-outline', title: 'Get your BVN slip', sub: 'Verify and download in seconds', screen: 'NinServices' },
   { icon: 'id-card-outline', title: 'Get your NIN slip', sub: 'Verify and download in seconds', screen: 'NinServices' },
-  { icon: 'logo-bitcoin', title: 'Crypto is coming soon', sub: "Buy and sell crypto, soon on Kay's Pay", comingSoon: true },
+  { icon: 'logo-bitcoin', title: "Buy and sell crypto on Kay's Pay", sub: 'USDT, instantly, right from your wallet', screen: 'Crypto', comingSoon: !CRYPTO_ENABLED },
 ];
 
 // One unified icon family (Ionicons outline) in brand green — replaces the
@@ -67,8 +76,9 @@ const quickActions: QuickAction[] = [
   { id: '7', icon: 'globe-outline', label: Strings.SERVICE_ESIM, screen: 'TravelEsim', badge: 'New' },
   // Foreign Number + Dollar Card hidden (owner 2026-07-28) — re-add to restore.
   { id: '11', icon: 'id-card-outline', label: Strings.SERVICE_NIN, screen: 'NinServices', badge: 'New' },
-  // Crypto: not built yet — tapping shows a "coming soon" alert (comingSoon).
-  { id: '99', icon: 'logo-bitcoin', label: 'Crypto', screen: 'Crypto', comingSoon: true, badge: 'Soon' },
+  // Crypto: built and functional (buy/sell), gated behind CRYPTO_ENABLED
+  // until the owner is ready to show real users — see the flag above.
+  { id: '99', icon: 'logo-bitcoin', label: 'Crypto', screen: 'Crypto', comingSoon: !CRYPTO_ENABLED, badge: CRYPTO_ENABLED ? 'New' : 'Soon' },
 ];
 
 // Auto-rotating advert banner (cycles every 3s). Taps navigate to the service,
@@ -145,13 +155,24 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     };
   }, []);
 
+  // Best-effort prefetch of the data-bundle catalog for all three networks
+  // as soon as Home mounts, so the real synced list is usually already
+  // cached by the time the user gets to Data — rather than only starting
+  // the fetch once they've navigated there and picked a network, which is
+  // what made the small hardcoded fallback list visible for a moment first.
+  useEffect(() => {
+    vtuService.refreshDataBundles('mtn').catch(() => {});
+    vtuService.refreshDataBundles('airtel').catch(() => {});
+    vtuService.refreshDataBundles('glo').catch(() => {});
+  }, []);
+
   const loadUnread = async () => {
     setUnreadCount(await notificationService.getUnreadCount());
   };
 
   const loadUserInfo = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await withTimeout(supabase.auth.getUser());
       if (user) {
         const fullName = user.user_metadata?.full_name
           || user.user_metadata?.name

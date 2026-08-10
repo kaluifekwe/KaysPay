@@ -13,6 +13,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { emailVerificationService } from '../services/emailVerification.service';
 import { safeErrorMessage } from '../utils/errorMessages';
+import { storageHelpers } from '../lib/mmkv';
+
+const RESEND_COOLDOWN_MS = 60 * 1000;
+
+function lastSentStorageKey(email: string): string {
+  return `email_otp_last_sent_at:${email.trim().toLowerCase()}`;
+}
 
 const BRAND_GREEN = '#1A5C3A';
 const DARK_TEXT = '#0F1A14';
@@ -61,11 +68,35 @@ export default function EmailCodeScreen(props: any) {
     setInitializing(true);
     setInitError(null);
     try {
+      // A cold app restart (very likely if Android kills the process while
+      // the user switches away to check their email — exactly the target
+      // device class here: older, lower-RAM phones) remounts this screen
+      // from scratch. Auto-resending here would silently invalidate the
+      // code already sitting in the user's inbox — verification only ever
+      // checks the MOST RECENT unused code (see migration 040's
+      // verify_email_verification_code) — with no indication to the user why
+      // their code "stopped working." So this only ever auto-sends ONCE per
+      // signup, the very first time this screen appears; on every later
+      // mount (including after a cold restart), it just shows the entry
+      // boxes and leaves getting a new code entirely up to the user tapping
+      // Resend. A genuinely expired code fails verification with a clear
+      // "This code has expired. Request a new one." message (see
+      // verify-email-otp) — that's the intended way to recover, not a
+      // silent auto-refresh.
+      const key = lastSentStorageKey(email);
+      const lastSentAt = await storageHelpers.getNumber(key);
+      if (lastSentAt) {
+        const elapsed = Date.now() - lastSentAt;
+        setResendTimer(Math.max(0, Math.ceil((RESEND_COOLDOWN_MS - elapsed) / 1000)));
+        return;
+      }
+
       const result = await emailVerificationService.sendCode();
       if (!result.success) {
         setInitError(safeErrorMessage(result.error, 'Could not send verification code.'));
         return;
       }
+      await storageHelpers.setNumber(key, Date.now());
       setResendTimer(59);
     } catch (error: any) {
       setInitError(safeErrorMessage(error, 'Could not send verification code.'));
@@ -109,6 +140,8 @@ export default function EmailCodeScreen(props: any) {
         return;
       }
 
+      await storageHelpers.delete(lastSentStorageKey(email));
+
       // Nothing to navigate to — RequireEmailVerifyNavigator's onComplete
       // swaps the whole root stack once this resolves.
       onVerified?.();
@@ -131,6 +164,7 @@ export default function EmailCodeScreen(props: any) {
         Alert.alert('Error', safeErrorMessage(result.error, 'Failed to resend code. Please try again.'));
         return;
       }
+      await storageHelpers.setNumber(lastSentStorageKey(email), Date.now());
       setResendTimer(59);
       Alert.alert('Code Sent', 'A new verification code has been sent to your email.');
     } catch (error: any) {

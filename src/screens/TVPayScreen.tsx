@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import ProviderLogo from '../components/ProviderLogo';
 import { Colors } from '../constants/colors';
@@ -23,6 +24,16 @@ import { formatNaira } from '../utils/formatCurrency';
 import { TV_LOGOS } from '../utils/providerLogos';
 
 type VerifyState = 'idle' | 'checking' | 'verified' | 'failed';
+
+function formatDueDate(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return value;
+  return date.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
 
 export default function TVPayScreen({ navigation, route }: any) {
   const provider = route.params.provider as TVProvider;
@@ -45,6 +56,12 @@ export default function TVPayScreen({ navigation, route }: any) {
   const [errorMessage, setErrorMessage] = useState('');
   const [savedAccounts, setSavedAccounts] = useState<SavedBillingAccount[]>([]);
   const [cachedPreviewName, setCachedPreviewName] = useState<string | null>(null);
+  const [showManualInput, setShowManualInput] = useState(false);
+
+  const selectedSavedAccount = useMemo(
+    () => savedAccounts.find((account) => account.account_number === smartcardNumber) ?? null,
+    [savedAccounts, smartcardNumber],
+  );
 
   const loadSavedAccounts = useCallback(async () => {
     const accounts = await vtuService.getSavedBillingAccounts('tv', provider.id);
@@ -90,8 +107,16 @@ export default function TVPayScreen({ navigation, route }: any) {
   }, []);
 
   const handleSavedAccountSelect = useCallback((account: SavedBillingAccount) => {
+    setShowManualInput(false);
     handleSmartcardChange(account.account_number);
     setCachedPreviewName(account.customer_name);
+    setVerifiedName(account.customer_name);
+    setVerifyState('verified');
+  }, [handleSmartcardChange]);
+
+  const handleUseAnotherSmartcard = useCallback(() => {
+    setShowManualInput(true);
+    handleSmartcardChange('');
   }, [handleSmartcardChange]);
 
   const handleVerifySmartcard = useCallback(async () => {
@@ -111,6 +136,7 @@ export default function TVPayScreen({ navigation, route }: any) {
       setVerifiedDueDate(result.dueDate);
       setVerifiedRenewalAmount(result.renewalAmount);
       setVerifyState('verified');
+      setShowManualInput(false);
       void loadSavedAccounts();
     } else {
       setVerifiedName(null);
@@ -123,6 +149,27 @@ export default function TVPayScreen({ navigation, route }: any) {
     }
   }, [provider.id, smartcardNumber, loadSavedAccounts]);
 
+  // Saved accounts render immediately from our server-owned verified cache.
+  // Refresh silently so provider latency does not block plan selection; the
+  // purchase endpoint still requires a fresh server verification proof.
+  useEffect(() => {
+    if (!cachedPreviewName || verifyState !== 'verified') return;
+    const digits = smartcardNumber.replace(/\D/g, '');
+    if (digits.length < 8) return;
+
+    let cancelled = false;
+    void vtuService.verifyTVSmartcard(provider.id, digits).then((result) => {
+      if (cancelled || !result.ok || !result.customerName) return;
+      setVerifiedName(result.customerName);
+      setVerifiedBouquet(result.currentBouquet);
+      setVerifiedStatus(result.accountStatus);
+      setVerifiedDueDate(result.dueDate);
+      setVerifiedRenewalAmount(result.renewalAmount);
+      void loadSavedAccounts();
+    });
+    return () => { cancelled = true; };
+  }, [cachedPreviewName, loadSavedAccounts, provider.id, smartcardNumber, verifyState]);
+
   const handleRemoveSavedAccount = useCallback((account: SavedBillingAccount) => {
     Alert.alert(
       'Remove saved account?',
@@ -134,13 +181,20 @@ export default function TVPayScreen({ navigation, route }: any) {
           style: 'destructive',
           onPress: async () => {
             const removed = await vtuService.deleteSavedBillingAccount(account.id);
-            if (removed) setSavedAccounts((current) => current.filter((item) => item.id !== account.id));
-            else Alert.alert('Could not remove account', 'Please try again.');
+            if (!removed) {
+              Alert.alert('Could not remove account', 'Please try again.');
+              return;
+            }
+            setSavedAccounts((current) => current.filter((item) => item.id !== account.id));
+            if (account.account_number === smartcardNumber) {
+              setShowManualInput(true);
+              handleSmartcardChange('');
+            }
           },
         },
       ],
     );
-  }, [provider.name]);
+  }, [handleSmartcardChange, provider.name, smartcardNumber]);
 
   useEffect(() => {
     const digits = smartcardNumber.replace(/\D/g, '');
@@ -213,29 +267,66 @@ export default function TVPayScreen({ navigation, route }: any) {
             <Text style={styles.label}>Smartcard Number</Text>
             {savedAccounts.length > 0 ? (
               <View style={styles.savedAccounts}>
-                <Text style={styles.savedLabel}>Previously used smartcards</Text>
+                <Text style={styles.savedLabel}>Saved smartcards</Text>
                 {savedAccounts.map((account) => (
-                  <View key={account.id} style={styles.savedAccount}>
+                  <View
+                    key={account.id}
+                    style={[
+                      styles.savedAccount,
+                      selectedSavedAccount?.id === account.id && styles.savedAccountSelected,
+                    ]}
+                  >
                     <TouchableOpacity style={styles.savedAccountSelect} onPress={() => handleSavedAccountSelect(account)} activeOpacity={0.75}>
-                      <Text style={styles.savedNumber}>{account.account_number}</Text>
-                      <Text style={styles.savedName} numberOfLines={1}>{account.customer_name}</Text>
+                      <View
+                        style={[
+                          styles.savedAccountIcon,
+                          selectedSavedAccount?.id === account.id && styles.savedAccountIconSelected,
+                        ]}
+                      >
+                        <Ionicons
+                          name={selectedSavedAccount?.id === account.id ? 'checkmark' : 'card-outline'}
+                          size={20}
+                          color={selectedSavedAccount?.id === account.id ? Colors.WHITE : Colors.GREEN}
+                        />
+                      </View>
+                      <View style={styles.savedAccountCopy}>
+                        <Text style={styles.savedNumber}>{account.account_number}</Text>
+                        <Text style={styles.savedName} numberOfLines={1}>{account.customer_name}</Text>
+                      </View>
+                      {selectedSavedAccount?.id === account.id ? (
+                        <Text style={styles.selectedBadge}>Selected</Text>
+                      ) : null}
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.removeSavedButton} onPress={() => handleRemoveSavedAccount(account)} activeOpacity={0.75}>
+                      <Ionicons name="trash-outline" size={18} color={Colors.ERROR} />
                       <Text style={styles.removeSavedText}>Remove</Text>
                     </TouchableOpacity>
                   </View>
                 ))}
+
+                {!showManualInput ? (
+                  <TouchableOpacity
+                    style={styles.useAnotherButton}
+                    onPress={handleUseAnotherSmartcard}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons name="add" size={22} color={Colors.GREEN} />
+                    <Text style={styles.useAnotherText}>Use another smartcard</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             ) : null}
-            <TextInput
-              style={styles.input}
-              value={smartcardNumber}
-              onChangeText={handleSmartcardChange}
-              placeholder="Enter smartcard number"
-              placeholderTextColor={Colors.GRAY}
-              keyboardType="number-pad"
-              maxLength={13}
-            />
+            {(savedAccounts.length === 0 || showManualInput) ? (
+              <TextInput
+                style={styles.input}
+                value={smartcardNumber}
+                onChangeText={handleSmartcardChange}
+                placeholder="Enter smartcard number"
+                placeholderTextColor={Colors.GRAY}
+                keyboardType="number-pad"
+                maxLength={13}
+              />
+            ) : null}
 
             {verifyState === 'checking' && (
               <View style={styles.statusRow}>
@@ -248,13 +339,32 @@ export default function TVPayScreen({ navigation, route }: any) {
             ) : null}
             {verifyState === 'verified' && verifiedName && (
               <View style={styles.verifiedCard}>
-                <Text style={styles.verifiedTitle}>✓ Verified — {verifiedName}</Text>
+                <View style={styles.verifiedHeading}>
+                  <View style={styles.verifiedIcon}>
+                    <Ionicons name="checkmark" size={16} color={Colors.WHITE} />
+                  </View>
+                  <Text style={styles.verifiedTitle}>Account verified</Text>
+                </View>
+                <Text style={styles.verifiedName}>{verifiedName}</Text>
+
+                {(verifiedRenewalAmount !== null || verifiedDueDate) ? (
+                  <View style={styles.verifiedFacts}>
+                    {verifiedRenewalAmount !== null ? (
+                      <View style={styles.verifiedFact}>
+                        <Text style={styles.verifiedFactLabel}>Renewal amount</Text>
+                        <Text style={styles.verifiedFactValue}>{formatNaira(verifiedRenewalAmount)}</Text>
+                      </View>
+                    ) : null}
+                    {verifiedDueDate ? (
+                      <View style={styles.verifiedFact}>
+                        <Text style={styles.verifiedFactLabel}>Due date</Text>
+                        <Text style={styles.verifiedFactValue}>{formatDueDate(verifiedDueDate)}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
                 {verifiedStatus ? <Text style={styles.verifiedDetail}>Account status: {verifiedStatus}</Text> : null}
                 {verifiedBouquet ? <Text style={styles.verifiedDetail}>Current bouquet: {verifiedBouquet}</Text> : null}
-                {verifiedRenewalAmount !== null ? (
-                  <Text style={styles.verifiedDetail}>Renewal amount: {formatNaira(verifiedRenewalAmount)}</Text>
-                ) : null}
-                {verifiedDueDate ? <Text style={styles.verifiedDetail}>Due date: {verifiedDueDate}</Text> : null}
                 {verifiedStatus?.toLowerCase() === 'suspended' ? (
                   <Text style={styles.statusExplanation}>
                     This subscription is currently inactive. Renewing the correct package may reactivate it.
@@ -344,14 +454,21 @@ const styles = StyleSheet.create({
   subtitle: { ...Typography.CAPTION, color: Colors.GRAY },
   section: { marginBottom: Spacing.XL },
   label: { ...Typography.SECTION_HEADING, marginBottom: Spacing.M },
-  savedAccounts: { marginBottom: Spacing.M },
+  savedAccounts: { marginBottom: Spacing.M, gap: Spacing.M },
   savedLabel: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.S },
-  savedAccount: { minHeight: 60, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: Colors.BORDER, borderRadius: Spacing.BUTTON_RADIUS, marginBottom: Spacing.S },
-  savedAccountSelect: { flex: 1, minHeight: 58, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S, justifyContent: 'center' },
-  removeSavedButton: { minWidth: 72, minHeight: 58, justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing.S },
+  savedAccount: { minHeight: 72, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: Colors.BORDER, borderRadius: Spacing.BUTTON_RADIUS, backgroundColor: Colors.WHITE },
+  savedAccountSelected: { borderColor: Colors.GREEN, backgroundColor: Colors.GREEN_10 },
+  savedAccountSelect: { flex: 1, minHeight: 70, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S, flexDirection: 'row', alignItems: 'center', gap: Spacing.M },
+  savedAccountIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.GREEN_LIGHT },
+  savedAccountIconSelected: { backgroundColor: Colors.GREEN },
+  savedAccountCopy: { flex: 1 },
+  selectedBadge: { ...Typography.CAPTION, color: Colors.GREEN_DARK, fontWeight: '700', backgroundColor: Colors.GREEN_LIGHT, borderRadius: 12, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S },
+  removeSavedButton: { minWidth: 76, minHeight: 70, justifyContent: 'center', alignItems: 'center', gap: Spacing.XS, paddingHorizontal: Spacing.S },
   removeSavedText: { ...Typography.CAPTION, color: Colors.ERROR, fontWeight: '600' },
   savedNumber: { ...Typography.BODY, color: Colors.DARK, fontWeight: '600' },
   savedName: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: 2 },
+  useAnotherButton: { minHeight: Spacing.TOUCH_TARGET_MIN, borderWidth: 1, borderStyle: 'dashed', borderColor: Colors.GREEN_MID, borderRadius: Spacing.BUTTON_RADIUS, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: Spacing.M },
+  useAnotherText: { ...Typography.BODY, color: Colors.GREEN, fontWeight: '700' },
   cachedPreview: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: Spacing.S },
   input: {
     height: Spacing.INPUT_HEIGHT,
@@ -364,9 +481,16 @@ const styles = StyleSheet.create({
   },
   statusRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', marginTop: Spacing.S },
   statusText: { ...Typography.BODY, color: Colors.GRAY, marginLeft: Spacing.S },
-  verifiedCard: { marginTop: Spacing.M, padding: Spacing.M, borderRadius: Spacing.CARD_RADIUS, backgroundColor: Colors.GREEN_LIGHT },
+  verifiedCard: { marginTop: Spacing.M, padding: Spacing.L, borderRadius: Spacing.CARD_RADIUS, backgroundColor: Colors.GREEN_LIGHT },
+  verifiedHeading: { flexDirection: 'row', alignItems: 'center', gap: Spacing.M },
+  verifiedIcon: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.GREEN },
   verifiedTitle: { ...Typography.BODY, color: Colors.GREEN_DARK, fontWeight: '700' },
-  verifiedDetail: { ...Typography.CAPTION, color: Colors.GREEN_DARK, marginTop: 4 },
+  verifiedName: { ...Typography.BODY, color: Colors.DARK, marginTop: Spacing.M },
+  verifiedFacts: { flexDirection: 'row', gap: Spacing.L, marginTop: Spacing.L },
+  verifiedFact: { flex: 1 },
+  verifiedFactLabel: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.S },
+  verifiedFactValue: { ...Typography.CARD_TITLE, color: Colors.DARK },
+  verifiedDetail: { ...Typography.CAPTION, color: Colors.GREEN_DARK, marginTop: Spacing.M },
   statusExplanation: { ...Typography.CAPTION, color: Colors.DARK, marginTop: Spacing.S },
   verifyError: { ...Typography.ERROR, marginTop: Spacing.S },
   tryAgainButton: {

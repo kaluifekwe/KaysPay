@@ -19,10 +19,9 @@ export const EXAM_LOGOS: Partial<Record<string, ImageSourcePropType>> = {
   neco: require('../../assets/logos/neco.png'),
   nabteb: require('../../assets/logos/nabteb.png'),
   jamb: require('../../assets/logos/jamb.png'),
+  nbais: require('../../assets/logos/nbais.png'),
 };
 
-// Enugu (EEDC), Kano (KEDCO), Yola (YEDC), and Aba (ABEDC) have no usable
-// clean logo image available — those fall back to an initials badge instead.
 export const ELECTRICITY_LOGOS: Partial<Record<string, ImageSourcePropType>> = {
   'ikeja-electric': require('../../assets/logos/ikeja-electric.png'),
   'eko-electric': require('../../assets/logos/eko-electric.png'),
@@ -32,6 +31,10 @@ export const ELECTRICITY_LOGOS: Partial<Record<string, ImageSourcePropType>> = {
   'benin-electric': require('../../assets/logos/benin-electric.png'),
   'abuja-electric': require('../../assets/logos/abuja-electric.png'),
   'portharcourt-electric': require('../../assets/logos/portharcourt-electric.png'),
+  'enugu-electric': require('../../assets/logos/enugu-electric.png'),
+  'kano-electric': require('../../assets/logos/kano-electric.png'),
+  'yola-electric': require('../../assets/logos/yola-electric.png'),
+  'aba-electric': require('../../assets/logos/aba-electric.jpg'),
 };
 
 // BetBiga, Paripesa, and Naira Million have no usable clean logo available

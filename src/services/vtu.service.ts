@@ -607,8 +607,8 @@ export const vtuService = {
    * BEFORE any money moves, via VTUnaija's own /billpayment/verify/ lookup.
    * Read-only — safe to call on every meter-number edit. `ok: false` covers
    * both "this meter doesn't exist" and "couldn't reach the verify service
-   * right now" — the caller should treat both the same way (warn, let the
-   * user double-check and explicitly choose to proceed if they're sure).
+   * right now". The caller must not authorize payment until the server has a
+   * fresh verification proof.
    */
   async getSavedBillingAccounts(
     service: 'tv' | 'electricity',

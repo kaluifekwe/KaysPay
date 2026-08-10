@@ -9,6 +9,7 @@ import {
   StatusBar,
   ActivityIndicator,
   Modal,
+  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +17,7 @@ import { Colors } from '../constants/colors';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
 import { useCachedData } from '../hooks/useCachedData';
+import { formatDateTimeFull, formatDateTimeShort, relativeLabel } from '../utils/formatDateTime';
 import {
   notificationService,
   type AppNotification,
@@ -29,18 +31,19 @@ const ICONS: Record<NotificationType, keyof typeof Ionicons.glyphMap> = {
   system: 'notifications-outline',
 };
 
-function timeAgo(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return '';
-  const s = Math.max(1, Math.floor((Date.now() - t) / 1000));
-  if (s < 60) return 'just now';
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m} min${m > 1 ? 's' : ''} ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d} day${d > 1 ? 's' : ''} ago`;
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+// Derived purely from already-fetched fields (title/type) — a failed
+// transaction previously looked visually identical to a successful one,
+// which was the main thing making the list read as generic/unpolished.
+function accentColor(item: AppNotification): string {
+  if (item.title.toLowerCase().includes('failed')) return Colors.ERROR;
+  if (item.type === 'withdrawal') return Colors.BLUE;
+  if (item.type === 'system') return Colors.GRAY;
+  return Colors.GREEN;
+}
+
+function timestampLabel(iso: string): string {
+  const relative = relativeLabel(iso);
+  return relative ? `${relative} · ${formatDateTimeShort(iso)}` : formatDateTimeShort(iso);
 }
 
 export default function NotificationsScreen({ navigation }: { navigation: any }) {
@@ -49,7 +52,11 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
   );
   const notifications = data || [];
   const unreadCount = notifications.filter((n) => !n.read).length;
-  const [selected, setSelected] = useState<AppNotification | null>(null);
+  const [detailItem, setDetailItem] = useState<AppNotification | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Map<string, AppNotification>>(new Map());
+  // Deriving from size (rather than a separate boolean) means deselecting
+  // the last selected item automatically exits selection mode for free.
+  const selectionMode = selectedIds.size > 0;
   const insets = useSafeAreaInsets();
 
   const markAsRead = useCallback(
@@ -73,32 +80,88 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
     }
   }, [refresh]);
 
-  const renderNotification = ({ item }: { item: AppNotification }) => (
-    <TouchableOpacity
-      style={[styles.notificationCard, !item.read && styles.unreadCard]}
-      onPress={() => {
-        setSelected(item);
-        if (!item.read) markAsRead(item.id);
-      }}
-      activeOpacity={0.7}
-    >
-      <View style={styles.iconContainer}>
-        <Ionicons name={ICONS[item.type] || 'notifications-outline'} size={22} color={Colors.GREEN} />
-      </View>
-      <View style={styles.notificationContent}>
-        <View style={styles.titleRow}>
-          <Text style={[styles.notificationTitle, !item.read && styles.unreadTitle]} numberOfLines={1}>
-            {item.title}
-          </Text>
-          {!item.read && <View style={styles.unreadDot} />}
-        </View>
-        <Text style={styles.notificationBody} numberOfLines={2}>
-          {item.body}
-        </Text>
-        <Text style={styles.timestamp}>{timeAgo(item.createdAt)}</Text>
-      </View>
-    </TouchableOpacity>
+  const toggleSelect = useCallback((item: AppNotification) => {
+    setSelectedIds((prev) => {
+      const next = new Map(prev);
+      if (next.has(item.id)) next.delete(item.id);
+      else next.set(item.id, item);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Map()), []);
+
+  const deleteIds = useCallback(
+    (ids: string[], onDone: () => void) => {
+      Alert.alert(
+        ids.length > 1 ? 'Delete notifications' : 'Delete notification',
+        `Delete ${ids.length > 1 ? `these ${ids.length} notifications` : 'this notification'}? This can't be undone.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await notificationService.deleteNotifications(ids);
+                onDone();
+                refresh();
+              } catch {
+                Alert.alert('Error', 'Could not delete. Please try again.');
+              }
+            },
+          },
+        ],
+      );
+    },
+    [refresh],
   );
+
+  const deleteSelected = useCallback(
+    () => deleteIds(Array.from(selectedIds.keys()), clearSelection),
+    [deleteIds, selectedIds, clearSelection],
+  );
+
+  const renderNotification = ({ item }: { item: AppNotification }) => {
+    const isSelected = selectedIds.has(item.id);
+    const color = accentColor(item);
+    return (
+      <TouchableOpacity
+        style={[styles.notificationCard, !item.read && styles.unreadCard, isSelected && styles.selectedCard]}
+        onPress={() => {
+          if (selectionMode) {
+            toggleSelect(item);
+            return;
+          }
+          setDetailItem(item);
+          if (!item.read) markAsRead(item.id);
+        }}
+        onLongPress={() => toggleSelect(item)}
+        activeOpacity={0.7}
+      >
+        {selectionMode && (
+          <View style={[styles.checkbox, isSelected && styles.checkboxChecked]}>
+            {isSelected && <Text style={styles.checkboxTick}>✓</Text>}
+          </View>
+        )}
+        <View style={[styles.iconContainer, { backgroundColor: `${color}1A` }]}>
+          <Ionicons name={ICONS[item.type] || 'notifications-outline'} size={22} color={color} />
+        </View>
+        <View style={styles.notificationContent}>
+          <View style={styles.titleRow}>
+            <Text style={[styles.notificationTitle, !item.read && styles.unreadTitle]} numberOfLines={1}>
+              {item.title}
+            </Text>
+            {!item.read && <View style={styles.unreadDot} />}
+          </View>
+          <Text style={styles.notificationBody} numberOfLines={2}>
+            {item.body}
+          </Text>
+          <Text style={styles.timestamp}>{timestampLabel(item.createdAt)}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   const renderEmpty = () =>
     loading ? (
@@ -117,19 +180,39 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.WHITE} />
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity
-            onPress={() => (navigation?.canGoBack?.() ? navigation.goBack() : navigation?.navigate?.('HomeTabs'))}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          >
-            <Ionicons name="chevron-back" size={26} color={Colors.DARK} />
-          </TouchableOpacity>
-          <Text style={styles.screenTitle}>Notifications</Text>
-        </View>
-        {unreadCount > 0 && (
-          <TouchableOpacity style={styles.markAllButton} onPress={markAllAsRead}>
-            <Text style={styles.markAllText}>Mark all read</Text>
-          </TouchableOpacity>
+        {selectionMode ? (
+          <>
+            <View style={styles.headerLeft}>
+              <TouchableOpacity onPress={clearSelection} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <Ionicons name="close" size={26} color={Colors.DARK} />
+              </TouchableOpacity>
+              <Text style={styles.screenTitle}>{selectedIds.size} selected</Text>
+            </View>
+            <TouchableOpacity
+              onPress={deleteSelected}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={styles.trashButton}
+            >
+              <Ionicons name="trash-outline" size={22} color={Colors.ERROR} />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <View style={styles.headerLeft}>
+              <TouchableOpacity
+                onPress={() => (navigation?.canGoBack?.() ? navigation.goBack() : navigation?.navigate?.('HomeTabs'))}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Ionicons name="chevron-back" size={26} color={Colors.DARK} />
+              </TouchableOpacity>
+              <Text style={styles.screenTitle}>Notifications</Text>
+            </View>
+            {unreadCount > 0 && (
+              <TouchableOpacity style={styles.markAllButton} onPress={markAllAsRead}>
+                <Text style={styles.markAllText}>Mark all read</Text>
+              </TouchableOpacity>
+            )}
+          </>
         )}
       </View>
       <FlatList
@@ -145,25 +228,33 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
       />
 
       <Modal
-        visible={!!selected}
+        visible={!!detailItem}
         transparent
         animationType="slide"
-        onRequestClose={() => setSelected(null)}
+        onRequestClose={() => setDetailItem(null)}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + Spacing.M }]}>
             <View style={styles.modalHandle} />
-            {selected && (
+            {detailItem && (
               <>
-                <View style={styles.modalIcon}>
-                  <Ionicons name={ICONS[selected.type] || 'notifications-outline'} size={28} color={Colors.GREEN} />
+                <View style={[styles.modalIcon, { backgroundColor: `${accentColor(detailItem)}1A` }]}>
+                  <Ionicons name={ICONS[detailItem.type] || 'notifications-outline'} size={28} color={accentColor(detailItem)} />
                 </View>
-                <Text style={styles.modalTitle}>{selected.title}</Text>
-                <Text style={styles.modalTime}>{timeAgo(selected.createdAt)}</Text>
-                <Text style={styles.modalBody}>{selected.body}</Text>
+                <Text style={styles.modalTitle}>{detailItem.title}</Text>
+                <Text style={styles.modalTime}>{formatDateTimeFull(detailItem.createdAt)}</Text>
+                <Text style={styles.modalBody}>{detailItem.body}</Text>
+                <TouchableOpacity
+                  style={styles.modalDelete}
+                  activeOpacity={0.7}
+                  onPress={() => deleteIds([detailItem.id], () => setDetailItem(null))}
+                >
+                  <Ionicons name="trash-outline" size={16} color={Colors.ERROR} />
+                  <Text style={styles.modalDeleteText}>Delete</Text>
+                </TouchableOpacity>
               </>
             )}
-            <TouchableOpacity style={styles.modalClose} onPress={() => setSelected(null)} activeOpacity={0.7}>
+            <TouchableOpacity style={styles.modalClose} onPress={() => setDetailItem(null)} activeOpacity={0.7}>
               <Text style={styles.modalCloseText}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -218,10 +309,11 @@ const styles = StyleSheet.create({
   },
   notificationCard: {
     flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: Colors.WHITE,
-    borderRadius: 14,
-    padding: Spacing.M,
-    marginBottom: Spacing.M,
+    borderRadius: Spacing.CARD_RADIUS,
+    padding: Spacing.CARD_PADDING,
+    marginBottom: Spacing.L,
     borderWidth: 1,
     borderColor: '#EDF0EE',
     shadowColor: '#0F1A14',
@@ -234,11 +326,36 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.GREEN_LIGHT,
     borderColor: Colors.GREEN_MID,
   },
+  selectedCard: {
+    borderColor: Colors.GREEN,
+    borderWidth: 2,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: Colors.BORDER,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: Spacing.M,
+  },
+  checkboxChecked: {
+    borderColor: Colors.GREEN,
+    backgroundColor: Colors.GREEN,
+  },
+  checkboxTick: {
+    color: Colors.WHITE,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  trashButton: {
+    padding: Spacing.XS,
+  },
   iconContainer: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#EAF4EE',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: Spacing.M,
@@ -341,6 +458,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: Spacing.L,
+  },
+  modalDelete: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: Spacing.S,
+    paddingHorizontal: Spacing.M,
+    marginBottom: Spacing.S,
+  },
+  modalDeleteText: {
+    ...Typography.CAPTION,
+    color: Colors.ERROR,
+    fontWeight: '600',
   },
   modalClose: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,

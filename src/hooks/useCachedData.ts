@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { readCache, writeCache } from '../utils/cache';
+import { withTimeout } from '../utils/network';
 
 export interface UseCachedDataResult<T> {
   data: T | null;
@@ -46,9 +47,18 @@ export function useCachedData<T>(
   const scope = options.scope ?? 'user';
 
   const load = useCallback(async () => {
-    const userId = scope === 'global'
-      ? 'global'
-      : (await supabase.auth.getUser()).data.user?.id;
+    // Resolving who's asking (to build the scoped cache key) used to sit
+    // outside any try/finally — a hang or failure here left `loading` stuck
+    // true forever, since setLoading(false) below was never reached. Now
+    // timeout-protected and degrades to an unscoped fetch instead of hanging.
+    let userId: string | undefined;
+    try {
+      userId = scope === 'global'
+        ? 'global'
+        : (await withTimeout(supabase.auth.getUser())).data.user?.id;
+    } catch {
+      userId = undefined;
+    }
     const scopedKey = userId ? `${scope}_${userId}_${key}` : null;
     const cached = scopedKey ? readCache<T>(scopedKey, userId) : null;
     if (cached) {
@@ -65,10 +75,17 @@ export function useCachedData<T>(
       setIsStale(false);
       setError(null);
       if (scopedKey) {
-        const currentUserId = scope === 'global'
-          ? 'global'
-          : (await supabase.auth.getUser()).data.user?.id;
-        if (currentUserId === userId) writeCache(scopedKey, fresh, userId);
+        // Own try/catch: a failure here just means "skip caching this
+        // result" — it must not retroactively turn an already-successful
+        // fetch (setData already ran above) into a reported error.
+        try {
+          const currentUserId = scope === 'global'
+            ? 'global'
+            : (await withTimeout(supabase.auth.getUser())).data.user?.id;
+          if (currentUserId === userId) writeCache(scopedKey, fresh, userId);
+        } catch {
+          // skip caching this round
+        }
       }
     } catch (e) {
       if (!cached) {

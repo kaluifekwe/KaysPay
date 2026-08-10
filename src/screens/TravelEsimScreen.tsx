@@ -135,6 +135,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
   const [resultPending, setResultPending] = useState(false);
   const [resultMessage, setResultMessage] = useState('');
   const [resultQrUrl, setResultQrUrl] = useState<string | null>(null);
+  const [resultAppleInstallUrl, setResultAppleInstallUrl] = useState<string | null>(null);
 
   const [viewingEsim, setViewingEsim] = useState<MyEsim | null>(null);
 
@@ -199,6 +200,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
         setResultPending(!!result.pending);
         setResultMessage(result.message || '');
         setResultQrUrl(result.qrcode_url || null);
+        setResultAppleInstallUrl(result.direct_apple_installation_url || null);
         setBuyState('success');
         refreshMyEsims();
       } else {
@@ -220,6 +222,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
     setCountrySearch('');
     setResultPending(false);
     setResultQrUrl(null);
+    setResultAppleInstallUrl(null);
     setTab('my');
   }, []);
 
@@ -272,7 +275,24 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
             {resultQrUrl && (
               <View style={styles.qrContainer}>
                 <Image source={{ uri: resultQrUrl }} style={styles.qrImage} resizeMode="contain" />
-                <Text style={styles.qrHint}>Scan this QR code in your phone's eSIM settings to install</Text>
+                {Platform.OS === 'ios' && resultAppleInstallUrl ? (
+                  <TouchableOpacity
+                    style={[styles.primaryButton, styles.installButton]}
+                    onPress={() => Linking.openURL(resultAppleInstallUrl)}
+                  >
+                    <Text style={styles.primaryButtonText}>Install on this iPhone</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={styles.qrHint}>
+                    Scan this QR in your phone's eSIM settings (Settings → Cellular/Mobile → Add eSIM). If it's the
+                    same phone you're viewing this on, view the QR on another device first — a phone can't scan its
+                    own screen.
+                  </Text>
+                )}
+                <Text style={[styles.qrHint, { marginTop: Spacing.M }]}>
+                  Install it now while you have Wi-Fi — switch it on only once you land. Most plans start counting
+                  days from first connection abroad, not from purchase.
+                </Text>
               </View>
             )}
           </View>
@@ -391,6 +411,9 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
             <Text style={styles.selectedCountryName}>{selectedCountry.name}</Text>
           </View>
           <Text style={styles.label}>Select a plan</Text>
+          <Text style={styles.compatNote}>
+            Requires a carrier-unlocked, eSIM-compatible phone. Not sure? Check Settings on your phone before buying.
+          </Text>
 
           {loadingPlans ? (
             <View style={styles.loadingContainer}>
@@ -536,7 +559,8 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
               </View>
             )}
             <Text style={styles.qrHint}>
-              Scan this QR on the phone you want the eSIM on: Settings → Cellular / Mobile → Add eSIM.
+              Scan this QR on the phone you want the eSIM on: Settings → Cellular / Mobile → Add eSIM. If it's the
+              same phone, view the QR on another device first — a phone can't scan its own screen.
             </Text>
             {viewingEsim?.iccid ? <Text style={styles.iccidText}>ICCID: {viewingEsim.iccid}</Text> : null}
             {Platform.OS === 'ios' && !!viewingEsim?.appleInstallUrl && (
@@ -681,6 +705,8 @@ const styles = StyleSheet.create({
   myView: { ...Typography.CAPTION, color: Colors.GREEN, fontWeight: '700', marginLeft: Spacing.M },
   emptyText: { ...Typography.BODY, color: Colors.GRAY, textAlign: 'center', paddingVertical: Spacing.XL },
 
+  compatNote: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.M },
+  installButton: { marginTop: Spacing.M, alignSelf: 'stretch' },
   selectedCountryChip: {
     flexDirection: 'row',
     alignItems: 'center',

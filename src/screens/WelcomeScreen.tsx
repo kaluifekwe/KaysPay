@@ -16,9 +16,15 @@ import { Ionicons } from '@expo/vector-icons';
 const { width } = Dimensions.get('window');
 const BRAND_GREEN = '#1A5C3A';
 const DARK_BG = '#0F1A14';
+const SCREEN_BG = '#123626';
+// Text color inside the WHITE inner cards (recharge list, foreign numbers) —
+// unrelated to the page background, kept dark for contrast on those cards.
 const SLIDE_TITLE_COLOR = '#0F1A14';
 const SLIDE_SUBTITLE_COLOR = '#6B7280';
-const DOT_INACTIVE = '#D1D5DB';
+// Text color directly on the dark page background (header, slide title/subtitle).
+const PAGE_TEXT_PRIMARY = '#FFFFFF';
+const PAGE_TEXT_SECONDARY = 'rgba(255,255,255,0.75)';
+const DOT_INACTIVE = 'rgba(255,255,255,0.35)';
 const WHITE = '#FFFFFF';
 
 interface WelcomeScreenProps {
@@ -313,7 +319,7 @@ export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {
               styles.dot,
               {
                 width: isActive ? 24 : 8,
-                backgroundColor: isActive ? BRAND_GREEN : DOT_INACTIVE,
+                backgroundColor: isActive ? WHITE : DOT_INACTIVE,
               },
             ]}
           />
@@ -324,11 +330,11 @@ export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={WHITE} />
+      <StatusBar barStyle="light-content" backgroundColor={SCREEN_BG} />
 
       <View style={styles.header}>
         <View style={styles.logoTile}>
-          <Image source={require('../../assets/icon.png')} style={styles.logoImg} resizeMode="contain" />
+          <Image source={require('../../assets/icon-green.png')} style={styles.logoImg} resizeMode="contain" />
         </View>
         <Text style={styles.appName}>Kay's Pay</Text>
         <Text style={styles.tagline}>Nigeria's All-in-One Payment App</Text>
@@ -357,8 +363,8 @@ export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {
             index,
           })}
         />
-        {renderDots()}
       </View>
+      {renderDots()}
 
       <View style={styles.bottomSection}>
         <TouchableOpacity style={styles.signUpButton} onPress={handleSignUp} activeOpacity={0.8}>
@@ -380,7 +386,7 @@ export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: WHITE,
+    backgroundColor: SCREEN_BG,
   },
   header: {
     alignItems: 'center',
@@ -409,16 +415,23 @@ const styles = StyleSheet.create({
   appName: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 26,
-    color: SLIDE_TITLE_COLOR,
+    color: PAGE_TEXT_PRIMARY,
     marginBottom: 2,
   },
   tagline: {
     fontSize: 13,
-    color: SLIDE_SUBTITLE_COLOR,
+    color: PAGE_TEXT_SECONDARY,
   },
   slidesContainer: {
     flex: 1,
     minHeight: 0,
+    // 'flex-end' (not 'center') deliberately sends all the leftover vertical
+    // space to the TOP of this block instead of splitting it evenly above
+    // and below the slide — that's what previously left a large empty gap
+    // between the dots and the Sign Up/Login buttons. Pinning to the bottom
+    // means the dots (now rendered as their own sibling right after this
+    // View, not inside it) sit directly under the slide with no extra gap.
+    justifyContent: 'flex-end',
   },
   slide: {
     alignItems: 'center',
@@ -440,13 +453,13 @@ const styles = StyleSheet.create({
   slideTitle: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 22,
-    color: SLIDE_TITLE_COLOR,
+    color: PAGE_TEXT_PRIMARY,
     textAlign: 'center',
     marginBottom: 8,
   },
   slideSubtitle: {
     fontSize: 14,
-    color: SLIDE_SUBTITLE_COLOR,
+    color: PAGE_TEXT_SECONDARY,
     textAlign: 'center',
     lineHeight: 20,
     numberOfLines: 2,
@@ -493,7 +506,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingTop: 8,
+    paddingBottom: 16,
   },
   dot: {
     height: 8,
@@ -507,7 +521,7 @@ const styles = StyleSheet.create({
   },
   signUpButton: {
     height: 52,
-    backgroundColor: BRAND_GREEN,
+    backgroundColor: WHITE,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
@@ -516,12 +530,12 @@ const styles = StyleSheet.create({
   signUpText: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 16,
-    color: WHITE,
+    color: BRAND_GREEN,
   },
   loginButton: {
     height: 52,
     borderWidth: 2,
-    borderColor: BRAND_GREEN,
+    borderColor: WHITE,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
@@ -530,11 +544,11 @@ const styles = StyleSheet.create({
   loginText: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 16,
-    color: BRAND_GREEN,
+    color: WHITE,
   },
   terms: {
     fontSize: 11,
-    color: '#9CA3AF',
+    color: 'rgba(255,255,255,0.6)',
     textAlign: 'center',
     lineHeight: 16,
   },

@@ -236,6 +236,7 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
           )}
 
           <View style={styles.section}>
+            <Text style={styles.recipientHeading}>Choose recipients</Text>
             <View style={styles.contactActions}>
               <TouchableOpacity
                 style={styles.contactActionCard}
@@ -244,12 +245,15 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
                 accessibilityRole="button"
                 accessibilityLabel="Choose one phone number from your contacts"
               >
-                <Ionicons name="person-circle-outline" size={27} color={Colors.GREEN} />
-                <View style={styles.contactActionCopy}>
-                  <Text style={styles.contactActionTitle}>Choose from phone contacts</Text>
-                  <Text style={styles.contactActionDescription}>Select one saved phone number</Text>
+                <View style={styles.contactActionIcon}>
+                  <Ionicons name="person" size={24} color={Colors.WHITE} />
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={Colors.GREEN} />
+                <Text style={styles.contactActionTitle}>Choose one contact</Text>
+                <Text style={styles.contactActionDescription}>Pick a saved number</Text>
+                <View style={styles.contactActionButton}>
+                  <Text style={styles.contactActionButtonText}>Choose</Text>
+                  <Ionicons name="arrow-forward" size={18} color={Colors.WHITE} />
+                </View>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -259,12 +263,15 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
                 accessibilityRole="button"
                 accessibilityLabel="Select multiple phone numbers from your contacts"
               >
-                <Ionicons name="people-outline" size={27} color={Colors.GREEN} />
-                <View style={styles.contactActionCopy}>
-                  <Text style={styles.contactActionTitle}>Send to multiple people</Text>
-                  <Text style={styles.contactActionDescription}>Select multiple numbers from your contacts</Text>
+                <View style={styles.contactActionIcon}>
+                  <Ionicons name="people" size={24} color={Colors.WHITE} />
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={Colors.GREEN} />
+                <Text style={styles.contactActionTitle}>Send to many</Text>
+                <Text style={styles.contactActionDescription}>Select multiple contacts</Text>
+                <View style={styles.contactActionButton}>
+                  <Text style={styles.contactActionButtonText}>Select</Text>
+                  <Ionicons name="arrow-forward" size={18} color={Colors.WHITE} />
+                </View>
               </TouchableOpacity>
             </View>
 
@@ -473,6 +480,10 @@ const styles = StyleSheet.create({
     ...Typography.SECTION_HEADING,
     marginBottom: Spacing.M,
   },
+  recipientHeading: {
+    ...Typography.SECTION_HEADING,
+    marginBottom: Spacing.M,
+  },
   contactActions: {
     flexDirection: 'row',
     gap: Spacing.M,
@@ -480,32 +491,48 @@ const styles = StyleSheet.create({
   },
   contactActionCard: {
     flex: 1,
-    minHeight: 88,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.M,
-    paddingVertical: Spacing.M,
-    paddingHorizontal: Spacing.M,
+    minHeight: 156,
+    gap: Spacing.S,
+    padding: Spacing.L,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
     borderColor: Colors.GREEN_MID,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: Colors.GREEN_10,
+    boxShadow: '0 2px 4px rgba(15, 61, 39, 0.10)',
   },
-  contactActionCopy: {
-    flex: 1,
-    gap: Spacing.XS,
+  contactActionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.GREEN,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   contactActionTitle: {
     ...Typography.CARD_TITLE,
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 13,
+    lineHeight: 18,
     color: Colors.DARK,
   },
   contactActionDescription: {
     ...Typography.CAPTION,
-    fontSize: 10,
-    lineHeight: 14,
+    fontSize: 11,
+    lineHeight: 16,
     color: Colors.GRAY,
+  },
+  contactActionButton: {
+    minHeight: Spacing.TOUCH_TARGET_MIN,
+    marginTop: 'auto',
+    borderRadius: Spacing.TOUCH_TARGET_MIN / 2,
+    backgroundColor: Colors.GREEN,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.M,
+  },
+  contactActionButtonText: {
+    ...Typography.BUTTON_TEXT,
+    fontSize: 13,
   },
   phoneInput: {
     height: Spacing.INPUT_HEIGHT,

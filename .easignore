@@ -1,0 +1,43 @@
+# Dependencies and generated output
+node_modules/
+.expo/
+dist/
+web-build/
+android/
+ios/
+
+# Source control and local agent/editor state
+.git/
+.claude/
+.codex/
+.agents/
+
+# Secrets and local environment overrides
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p8
+*.p12
+*.pem
+*.key
+google-service-account*.json
+
+# Non-mobile projects and backend sources are deployed separately
+kayspay-admin/
+kayspay-advert/
+docs/
+supabase/
+
+# Temporary/debug/build artifacts
+tmp/
+scratch-*
+*.log
+*.aab
+*.apk
+screenshot*.png
+emulator_screenshot.png
+phone_log.txt
+expo_*.txt
+metro*.log

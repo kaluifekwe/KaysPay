@@ -25,7 +25,32 @@ import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtect
 import ResultStatusView from '../components/ResultStatusView';
 import { sharePdf, downloadPdf } from '../utils/pdf';
 
-const DISCLAIMER = 'This is a reprint of verified NIN details for convenience and is not a replacement for the official NIMC card.';
+// Forces a second PDF page — expo-print's HTML-to-PDF renderer (Chromium on
+// Android, WebKit on iOS) honors page-break-before, so this always lands on
+// its own page regardless of how much content fills the front. Text matches
+// the disclaimer printed on the back of a real NIN slip/card, verbatim.
+const NIN_BACK_PAGE_CSS = `
+    .back-page { page-break-before: always; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .disclaimer-box { max-width: 460px; border: 2px solid #333; border-radius: 12px; padding: 22px 26px; text-align: center; }
+    .disclaimer-box h1 { font-size: 20px; letter-spacing: 1.5px; margin: 0 0 4px; }
+    .disclaimer-box .tagline { font-style: italic; font-size: 12px; margin-bottom: 16px; }
+    .disclaimer-box p { font-size: 11px; line-height: 1.6; margin: 10px 0; text-align: left; }
+    .disclaimer-box .caution { font-size: 15px; font-weight: 800; margin: 16px 0 6px; }`;
+
+function ninDisclaimerBackPageHtml(): string {
+  return `
+    <div class="back-page">
+      <div class="disclaimer-box">
+        <h1>DISCLAIMER</h1>
+        <div class="tagline">Trust, but verify</div>
+        <p>Kindly ensure each time this ID is presented, that you verify the credentials using a Government-APPROVED verification resource. The details on the front of this NIN Slip must EXACTLY match the verification result.</p>
+        <div class="caution">CAUTION!</div>
+        <p>If this NIN was not issued to the person on the front, please DO NOT attempt to scan, photocopy or replicate the personal data contained herein.</p>
+        <p>You are only permitted to scan the barcode for the purpose of identity verification.</p>
+        <p>The FEDERAL GOVERNMENT of NIGERIA assumes no responsibility if you accept any variance in the scan result or do not scan the 2D barcode overleaf.</p>
+      </div>
+    </div>`;
+}
 
 // Two slip types the user picks up front (prices confirmed by owner 2026-07-26).
 // `valueKobo` is now the ACTUAL charge — the server re-derives the same price
@@ -139,8 +164,7 @@ function buildRegularSlipHtml(record: NinRecord, fullName: string, nin: string, 
     .nin-value { border: 2px solid #c0392b; border-radius: 4px; padding: 1px 6px; display: inline-block; }
     .photo { width: 90px; height: 100px; object-fit: cover; border: 1px solid #999; margin-left: 16px; }
     .photo-blank { background: #ddd; }
-    .note { font-size: 9.5px; color: #444; margin-top: 8px; border-top: 1px solid #ccc; padding-top: 6px; }
-    .disclaimer { margin-top: 14px; font-size: 9px; color: #999; font-style: italic; text-align: center; }
+    .note { font-size: 9.5px; color: #444; margin-top: 8px; border-top: 1px solid #ccc; padding-top: 6px; }${NIN_BACK_PAGE_CSS}
   </style></head>
   <body>
     <div class="slip">
@@ -168,8 +192,8 @@ function buildRegularSlipHtml(record: NinRecord, fullName: string, nin: string, 
         <strong>Address:</strong> ${record.residence_address || 'N/A'}, ${record.residence_town || ''} ${record.residence_state || ''}<br/>
         Note: This transaction slip does not confer the right to the General Multipurpose Card.
       </div>
-      <div class="disclaimer">${DISCLAIMER}</div>
     </div>
+    ${ninDisclaimerBackPageHtml()}
   </body></html>`;
 }
 
@@ -201,8 +225,7 @@ function buildStandardSlipHtml(record: NinRecord, fullName: string, nin: string,
     .issue-value { font-size: 10px; font-weight: 700; color: #14231a; }
     .nin-row { text-align: center; margin-top: 20px; position: relative; }
     .nin-label { font-size: 10px; color: #16281f; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; }
-    .nin-digits { font-size: 28px; font-weight: 800; letter-spacing: 8px; margin-top: 4px; font-family: 'Courier New', monospace; color: #0d1a12; }
-    .disclaimer { max-width: 540px; margin: 12px auto 0; font-size: 9px; color: #999; font-style: italic; text-align: center; }
+    .nin-digits { font-size: 28px; font-weight: 800; letter-spacing: 8px; margin-top: 4px; font-family: 'Courier New', monospace; color: #0d1a12; }${NIN_BACK_PAGE_CSS}
   </style></head>
   <body>
     <div class="card">
@@ -244,7 +267,7 @@ function buildStandardSlipHtml(record: NinRecord, fullName: string, nin: string,
         <div class="nin-digits">${(record.nin || nin || '').replace(/(\d{3})(?=\d)/g, '$1 ')}</div>
       </div>
     </div>
-    <div class="disclaimer">${DISCLAIMER}</div>
+    ${ninDisclaimerBackPageHtml()}
   </body></html>`;
 }
 
@@ -1107,7 +1130,6 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 <Text style={styles.readyText}>
                   Your {SLIP_TIERS.find((t) => t.id === selectedTier)?.name} is ready to download.
                 </Text>
-                <Text style={styles.printDisclaimer}>{DISCLAIMER}</Text>
                 <TouchableOpacity
                   style={[styles.primaryButton, generatingPdf && styles.primaryButtonDisabled]}
                   onPress={handleDownload}

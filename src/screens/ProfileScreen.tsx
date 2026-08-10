@@ -18,6 +18,7 @@ import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
 import { formatNaira } from '../utils/formatCurrency';
 import { supabase } from '../lib/supabase';
+import { withTimeout } from '../utils/network';
 import { walletService } from '../services/wallet.service';
 import { kycService } from '../services/kyc.service';
 import { SUPPORT_EMAIL } from './LegalDocumentScreen';
@@ -54,7 +55,7 @@ const ProfileScreen = ({ navigation }: any) => {
 
   const loadUserInfo = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await withTimeout(supabase.auth.getUser());
       if (user) {
         const fullName = user.user_metadata?.full_name
           || user.user_metadata?.name

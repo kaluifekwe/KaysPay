@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -22,7 +23,20 @@ interface BillsScreenProps {
 }
 
 export default function BillsScreen({ navigation }: BillsScreenProps) {
-  const providers = useMemo(() => vtuService.getElectricityProviders(), []);
+  const [providers, setProviders] = useState<ElectricityProvider[]>(() =>
+    vtuService.getElectricityProviders()
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      setProviders(vtuService.getElectricityProviders());
+      void vtuService.refreshElectricityProviders(true).then((available) => {
+        if (active) setProviders(available);
+      });
+      return () => { active = false; };
+    }, [])
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>

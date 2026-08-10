@@ -13,10 +13,13 @@ import BulkSendReviewScreen from '../screens/BulkSendReviewScreen';
 import BillsScreen from '../screens/BillsScreen';
 import ElectricityPayScreen from '../screens/ElectricityPayScreen';
 import ExamPinsScreen from '../screens/ExamPinsScreen';
+import ExamPinPayScreen from '../screens/ExamPinPayScreen';
 import TVScreen from '../screens/TVScreen';
+import TVPayScreen from '../screens/TVPayScreen';
 import NinServicesScreen from '../screens/NinServicesScreen';
 import TravelEsimScreen from '../screens/TravelEsimScreen';
 import WalletFundingScreen from '../screens/WalletFundingScreen';
+import CryptoScreen from '../screens/CryptoScreen';
 import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
 import ForeignNumbersScreen from '../screens/ForeignNumbersScreen';
 import DollarCardsScreen from '../screens/DollarCardsScreen';
@@ -26,6 +29,7 @@ import ProfileScreen from '../screens/ProfileScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
 import KycScreen from '../screens/KycScreen';
 import ChangePinScreen from '../screens/ChangePinScreen';
+import ForgotPinScreen from '../screens/ForgotPinScreen';
 import LegalDocumentScreen from '../screens/LegalDocumentScreen';
 import ActiveSessionsScreen from '../screens/ActiveSessionsScreen';
 import { authService } from '../services/auth.service';
@@ -48,10 +52,13 @@ function MainStackScreen() {
       <MainStack.Screen name="Bills" component={BillsScreen} />
       <MainStack.Screen name="ElectricityPay" component={ElectricityPayScreen} />
       <MainStack.Screen name="ExamPins" component={ExamPinsScreen} />
+      <MainStack.Screen name="ExamPinPay" component={ExamPinPayScreen} />
       <MainStack.Screen name="TV" component={TVScreen} />
+      <MainStack.Screen name="TVPay" component={TVPayScreen} />
       <MainStack.Screen name="NinServices" component={NinServicesScreen} />
       <MainStack.Screen name="TravelEsim" component={TravelEsimScreen} />
       <MainStack.Screen name="WalletFunding" component={WalletFundingScreen} />
+      <MainStack.Screen name="Crypto" component={CryptoScreen} />
       <MainStack.Screen name="TransactionHistory" component={TransactionHistoryScreen} />
       <MainStack.Screen name="ForeignNumber" component={ForeignNumbersScreen} />
       <MainStack.Screen name="DollarCard" component={DollarCardsScreen} />
@@ -61,6 +68,7 @@ function MainStackScreen() {
       <MainStack.Screen name="Kyc" component={KycScreen} />
       <MainStack.Screen name="Settings" component={SettingsScreen} />
       <MainStack.Screen name="ChangePin" component={ChangePinScreen} />
+      <MainStack.Screen name="ForgotPin" component={ForgotPinScreen} />
       <MainStack.Screen name="LegalDocument" component={LegalDocumentScreen} />
       <MainStack.Screen name="ActiveSessions" component={ActiveSessionsScreen} />
     </MainStack.Navigator>
@@ -81,17 +89,41 @@ export default function AppNavigator() {
   // Whether the signed-in user has created a transaction PIN yet. A session
   // existing is NOT enough to reach the Main app — this is what actually
   // gates it, checked fresh on every launch and every auth state change.
-  const [hasPin, setHasPin] = useState(false);
+  // Defaults to true ("assume yes") rather than false: hasPIN() throws when
+  // the check itself fails (network timeout etc, see auth.service.ts), and
+  // treating that the same as a confirmed "no PIN" used to re-trigger the
+  // Create Transaction PIN gate for already-onboarded users every time their
+  // connection blipped. A genuinely new user's real `false` still comes
+  // through below once the check actually succeeds.
+  const [hasPin, setHasPin] = useState(true);
 
   useEffect(() => {
     checkAuth();
 
     const { data } = authService.onAuthStateChange(async (session) => {
+      // Resolve everything BEFORE touching state — awaiting hasPIN() here
+      // means isAuth/hasVerifiedEmail/hasPin would otherwise land in
+      // separate renders, and the app would briefly render "signed in,
+      // verified, no PIN yet" for an already-PIN'd user (flashing the
+      // Create Transaction PIN gate on every login) before the real check
+      // catches up a moment later.
       const authed = !!session;
+      const verified = authed ? session.user.user_metadata?.email_otp_verified === true : false;
+      let pin: boolean | null = null;
+      if (authed) {
+        try {
+          pin = await authService.hasPIN();
+        } catch {
+          // Check failed — leave hasPin at its previous value instead of
+          // wrongly downgrading a confirmed PIN owner back to the gate.
+        }
+      }
+
       setIsAuth(authed);
       setUserEmail(session?.user?.email || '');
-      setHasVerifiedEmail(authed ? session.user.user_metadata?.email_otp_verified === true : false);
-      setHasPin(authed ? await authService.hasPIN() : false);
+      setHasVerifiedEmail(verified);
+      if (!authed) setHasPin(true); // reset the default for whoever signs in next
+      else if (pin !== null) setHasPin(pin);
     });
 
     return () => {
@@ -135,7 +167,14 @@ export default function AppNavigator() {
       if (authed) {
         setUserEmail(session.user.email || '');
         setHasVerifiedEmail(session.user.user_metadata?.email_otp_verified === true);
-        setHasPin(await authService.hasPIN());
+        // Own try/catch, deliberately separate from the session check above —
+        // a failed PIN check must never be mistaken for "not signed in" and
+        // log the user out.
+        try {
+          setHasPin(await authService.hasPIN());
+        } catch {
+          // leave hasPin at its default/previous value
+        }
       }
     } catch (error) {
       setIsAuth(false);
@@ -169,7 +208,11 @@ export default function AppNavigator() {
                   // real server state now so a user who set their PIN during
                   // signup skips the redundant "Create Transaction PIN" gate.
                   // It still shows only if the PIN genuinely didn't save.
-                  setHasPin(await authService.hasPIN());
+                  try {
+                    setHasPin(await authService.hasPIN());
+                  } catch {
+                    // leave hasPin at its current value if the check fails
+                  }
                   setHasVerifiedEmail(true);
                 }}
               />

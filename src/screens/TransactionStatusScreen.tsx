@@ -18,7 +18,7 @@ type TxStatus = 'processing' | 'success' | 'failed';
 export type PurchaseRequest =
   | { kind: 'airtime'; phone: string; network: NetworkProvider; amount: number; authToken: string }
   | { kind: 'data'; phone: string; network: NetworkProvider; bundle: DataBundle; authToken: string }
-  | { kind: 'electricity'; providerId: string; meterNumber: string; amount: number; type: 'prepaid' | 'postpaid'; authToken: string }
+  | { kind: 'electricity'; providerId: string; meterNumber: string; amount: number; type: 'prepaid' | 'postpaid'; authToken: string; customerName?: string; customerAddress?: string }
   | { kind: 'tv'; providerId: string; smartcardNumber: string; bouquetId: string; amount: number; authToken: string }
   | { kind: 'exam'; examType: ExamType; quantity: number; profileCode?: string; authToken: string };
 
@@ -29,7 +29,7 @@ interface Params {
   paymentMethod?: string;
   request?: PurchaseRequest; // run on mount
   // Electricity only — data needed to (re)build the PDF receipt on success.
-  electricity?: { providerName: string; meterType: string };
+  electricity?: { providerName: string; meterType: string; customerName?: string; customerAddress?: string };
   // Fallback (not used by the request flow):
   status?: TxStatus;
   transactionId?: string;
@@ -45,7 +45,7 @@ const SUCCESS_GREEN = '#22A45D';
 const POLL_INTERVAL_MS = 1500;
 const POLL_MAX_MS = 45000; // after this, reconcile + notifications take over
 
-type FullResult = VTUResult & { token?: string; pins?: string[]; units?: string };
+type FullResult = VTUResult & { token?: string; pins?: string[]; serials?: string[]; units?: string };
 
 async function runRequest(req: PurchaseRequest, key: string): Promise<FullResult> {
   switch (req.kind) {
@@ -54,7 +54,7 @@ async function runRequest(req: PurchaseRequest, key: string): Promise<FullResult
     case 'data':
       return vtuService.buyData(req.phone, req.network, req.bundle, req.authToken, key);
     case 'electricity':
-      return vtuService.buyElectricity(req.providerId, req.meterNumber, req.amount, req.type, req.authToken, key);
+      return vtuService.buyElectricity(req.providerId, req.meterNumber, req.amount, req.type, req.authToken, key, req.customerName, req.customerAddress);
     case 'tv':
       return vtuService.buyTVSubscription(req.providerId, req.smartcardNumber, req.bouquetId, req.amount, req.authToken, key);
     case 'exam':
@@ -64,7 +64,7 @@ async function runRequest(req: PurchaseRequest, key: string): Promise<FullResult
 
 // Result screen shown the moment Pay is tapped. It runs the purchase itself and
 // shows Processing -> Successful/Failed, so there's no spinner on the Pay
-// button first. A slow (VTUAfrica) order returns 'pending' and the screen polls
+// button first. A slow provider response returns 'pending' and the screen polls
 // the transaction until it settles.
 export default function TransactionStatusScreen({ navigation, route }: Props) {
   const p = (route.params || {}) as Params;
@@ -75,6 +75,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
   const [units, setUnits] = useState<string | undefined>();
   const [orderId, setOrderId] = useState<string | undefined>();
   const [pins, setPins] = useState<string[] | undefined>();
+  const [serials, setSerials] = useState<string[] | undefined>();
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [priceChanged, setPriceChanged] = useState(false);
   const [currentAmount, setCurrentAmount] = useState<number | undefined>();
@@ -98,7 +99,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
     }
   }, []);
 
-  const settleSuccess = useCallback((m?: { token?: string; pins?: string[]; order_id?: string; units?: string }) => {
+  const settleSuccess = useCallback((m?: { token?: string; pins?: string[]; serials?: string[]; order_id?: string; units?: string }) => {
     if (settledRef.current || !mountedRef.current) return;
     settledRef.current = true;
     stopPolling();
@@ -106,6 +107,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
     if (m?.units) setUnits(m.units);
     if (m?.order_id) setOrderId(m.order_id);
     if (m?.pins && m.pins.length) setPins(m.pins);
+    if (m?.serials && m.serials.length) setSerials(m.serials);
     setStatus('success');
   }, [stopPolling]);
 
@@ -146,9 +148,13 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
           if (result.units) setUnits(result.units);
           if (result.order_id) setOrderId(result.order_id);
           if (result.pins && result.pins.length) setPins(result.pins);
+          if (result.serials && result.serials.length) setSerials(result.serials);
           if (result.transaction_id) setTxId(result.transaction_id);
           if (!result.pending) settleSuccess();
         } else {
+          if (result.code === 'PLAN_DISABLED' && p.request?.kind === 'data') {
+            void vtuService.refreshDataBundles(p.request.network, true);
+          }
           if (result.code === 'PRICE_CHANGED') {
             setPriceChanged(true);
             setCurrentAmount(result.current_amount);
@@ -174,7 +180,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
 
   // Watch the order settle by idempotency key — small, cheap reads that survive
   // bad networks, plus an on-demand provider verify so it flips the instant
-  // VTUAfrica confirms rather than waiting on the 30s reconcile sweep.
+  // VTUnaija confirms rather than waiting on the scheduled reconcile sweep.
   useEffect(() => {
     if (status !== 'processing' || !p.request) return;
     startedRef.current = Date.now();
@@ -201,7 +207,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
         if (!data) return; // order not recorded yet — keep watching
 
         const s = data.status;
-        const m = (data.metadata ?? {}) as { token?: string; pins?: string[]; order_id?: string };
+        const m = (data.metadata ?? {}) as { token?: string; pins?: string[]; serials?: string[]; order_id?: string };
 
         if (s === 'completed') {
           settleSuccess(m);
@@ -242,6 +248,8 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
         token: token ?? null,
         units: units ?? null,
         orderId: orderId ?? null,
+        customerName: p.electricity?.customerName ?? null,
+        customerAddress: p.electricity?.customerAddress ?? null,
       }),
     [p.electricity, p.recipient, p.amount, token, units, orderId],
   );
@@ -308,10 +316,22 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
         ) : null}
 
         <View style={styles.detailBlock}>
+          {p.electricity?.customerName ? (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Customer Name</Text>
+              <Text style={styles.detailValue}>{p.electricity.customerName}</Text>
+            </View>
+          ) : null}
           {p.recipient ? (
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Recipient</Text>
               <Text style={styles.detailValue}>{p.recipient}</Text>
+            </View>
+          ) : null}
+          {p.electricity?.customerAddress ? (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Address</Text>
+              <Text style={[styles.detailValue, styles.tokenValue]}>{p.electricity.customerAddress}</Text>
             </View>
           ) : null}
           <View style={styles.detailRow}>
@@ -337,6 +357,14 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
               <Text style={styles.detailLabel}>{pins.length > 1 ? 'PINs' : 'PIN'}</Text>
               <Text style={[styles.detailValue, styles.tokenValue]} selectable>
                 {pins.join('\n')}
+              </Text>
+            </View>
+          ) : null}
+          {serials && serials.length ? (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>{serials.length > 1 ? 'Serials' : 'Serial'}</Text>
+              <Text style={[styles.detailValue, styles.tokenValue]} selectable>
+                {serials.join('\n')}
               </Text>
             </View>
           ) : null}

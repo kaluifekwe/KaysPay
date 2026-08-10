@@ -12,6 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
@@ -33,6 +34,7 @@ import ContactPickerModal from '../components/ContactPickerModal';
 import ProviderLogo from '../components/ProviderLogo';
 import { PickedContact } from '../services/contacts.service';
 import { NETWORK_LOGOS } from '../utils/providerLogos';
+import { isRestrictedPlanName } from '../utils/planWarnings';
 
 interface DataScreenProps {
   navigation: any;
@@ -68,6 +70,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   const [errorMessage, setErrorMessage] = useState('');
   const [pickerMode, setPickerMode] = useState<'closed' | 'single' | 'multi'>('closed');
   const [bundles, setBundles] = useState<DataBundle[]>([]);
+  const [bundlesNetwork, setBundlesNetwork] = useState<NetworkProvider | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
 
   const detectedNetwork = useMemo(() => {
@@ -88,28 +91,48 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   }, [detectedNetwork]);
 
   const effectiveNetwork = selectedNetwork || autoDetectedNetwork;
+  const displayedBundles = bundlesNetwork === effectiveNetwork ? bundles : [];
+  const catalogTransitioning = effectiveNetwork !== null && bundlesNetwork !== effectiveNetwork;
+  const catalogBusy = catalogLoading || catalogTransitioning;
 
   useFocusEffect(useCallback(() => {
     let cancelled = false;
     if (!effectiveNetwork) {
       setBundles([]);
+      setBundlesNetwork(null);
       setCatalogLoading(false);
       return () => { cancelled = true; };
     }
 
-    setBundles(vtuService.getDataBundles(effectiveNetwork));
-    setCatalogLoading(true);
-    vtuService.refreshDataBundles(effectiveNetwork).then((fresh) => {
+    const cached = vtuService.getDataBundles(effectiveNetwork);
+    setBundles(cached);
+    setBundlesNetwork(effectiveNetwork);
+    // Only show the loading row on a true first-load (no cached bundles at
+    // all) — the refresh below still runs silently in the background every
+    // time so prices stay current, but the user doesn't need to see it.
+    // NOTE: `cached` is never truly empty — getDataBundles() falls back to a
+    // small hardcoded sample list when there's no real synced catalog yet —
+    // so checking cached.length here would never detect a genuine first
+    // load. hasCachedDataBundles() checks for REAL cached data specifically.
+    setCatalogLoading(!vtuService.hasCachedDataBundles(effectiveNetwork));
+    const applyFreshCatalog = (fresh: DataBundle[]) => {
       if (cancelled) return;
       setBundles(fresh);
+      setBundlesNetwork(effectiveNetwork);
       setSelectedBundle((selected) => {
         if (!selected) return null;
         return fresh.find((bundle) => bundle.id === selected.id) ?? null;
       });
-    }).finally(() => {
+    };
+    const refresh = () => vtuService.refreshDataBundles(effectiveNetwork, true).then(applyFreshCatalog).finally(() => {
       if (!cancelled) setCatalogLoading(false);
     });
-    return () => { cancelled = true; };
+    void refresh();
+    const availability = vtuService.subscribeToDataAvailability(effectiveNetwork, () => { void refresh(); });
+    return () => {
+      cancelled = true;
+      availability.unsubscribe();
+    };
   }, [effectiveNetwork]));
 
   const handlePhoneChange = useCallback((text: string) => {
@@ -128,8 +151,22 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   }, []);
 
   const handleBundleSelect = useCallback((bundle: DataBundle) => {
-    setSelectedBundle((prev) => (prev?.id === bundle.id ? null : bundle));
-  }, []);
+    setSelectedBundle((prev) => {
+      if (prev?.id === bundle.id) return null; // deselecting — no warning needed
+      if (isRestrictedPlanName(bundle.name)) {
+        Alert.alert(
+          'Restricted plan',
+          `This plan can fail if you owe airtime on ${networkLabel(effectiveNetwork ?? bundle.network)}. Only continue if you have no outstanding airtime balance.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Continue', onPress: () => setSelectedBundle(bundle) },
+          ],
+        );
+        return prev; // don't select yet — wait for confirmation
+      }
+      return bundle;
+    });
+  }, [effectiveNetwork]);
 
   const handleContactSelect = useCallback((c: PickedContact) => {
     if (c.network === '9mobile') {
@@ -146,10 +183,22 @@ export default function DataScreen({ navigation }: DataScreenProps) {
     (contacts: PickedContact[]) => {
       setPickerMode('closed');
       const supported = contacts.filter((contact) => contact.network !== '9mobile');
+      if (supported.length === 0) {
+        // Every picked contact was 9mobile — don't just close the picker on
+        // a dead end; let the user try a different selection right away.
+        Alert.alert(
+          '9mobile unavailable',
+          'All the contacts you picked are on 9mobile, which is currently unsupported. Choose different contacts to continue.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Choose Again', onPress: () => setPickerMode('multi') },
+          ],
+        );
+        return;
+      }
       if (supported.length !== contacts.length) {
         Alert.alert('9mobile removed', '9mobile contacts were excluded from this purchase.');
       }
-      if (supported.length === 0) return;
       if (supported.length === 1) {
         handleContactSelect(supported[0]);
         return;
@@ -278,25 +327,46 @@ export default function DataScreen({ navigation }: DataScreenProps) {
           )}
 
           <View style={styles.section}>
-            <View style={styles.labelRow}>
-              <Text style={styles.label}>Phone Number</Text>
-              <View style={styles.labelRowButtons}>
-                <TouchableOpacity
-                  style={styles.contactsBtn}
-                  onPress={() => setPickerMode('single')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.contactsBtnText}>📇 Contacts</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.contactsBtn}
-                  onPress={() => setPickerMode('multi')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.contactsBtnText}>👥 Bulk Send</Text>
-                </TouchableOpacity>
-              </View>
+            <Text style={styles.recipientHeading}>Choose recipients</Text>
+            <View style={styles.contactActions}>
+              <TouchableOpacity
+                style={styles.contactActionCard}
+                onPress={() => setPickerMode('single')}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Choose one phone number from your contacts"
+              >
+                <View style={styles.contactActionIcon}>
+                  <Ionicons name="person" size={24} color={Colors.WHITE} />
+                </View>
+                <Text style={styles.contactActionTitle}>Choose one contact</Text>
+                <Text style={styles.contactActionDescription}>Pick a saved number</Text>
+                <View style={styles.contactActionButton}>
+                  <Text style={styles.contactActionButtonText}>Choose</Text>
+                  <Ionicons name="arrow-forward" size={18} color={Colors.WHITE} />
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.contactActionCard}
+                onPress={() => setPickerMode('multi')}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Select multiple phone numbers from your contacts"
+              >
+                <View style={styles.contactActionIcon}>
+                  <Ionicons name="people" size={24} color={Colors.WHITE} />
+                </View>
+                <Text style={styles.contactActionTitle}>Send to many</Text>
+                <Text style={styles.contactActionDescription}>Select multiple contacts</Text>
+                <View style={styles.contactActionButton}>
+                  <Text style={styles.contactActionButtonText}>Select</Text>
+                  <Ionicons name="arrow-forward" size={18} color={Colors.WHITE} />
+                </View>
+              </TouchableOpacity>
             </View>
+
+            <Text style={styles.label}>Phone Number</Text>
             <TextInput
               style={styles.phoneInput}
               value={phoneNumber}
@@ -346,16 +416,20 @@ export default function DataScreen({ navigation }: DataScreenProps) {
             </View>
           </View>
 
-          {bundles.length > 0 && (
+          {effectiveNetwork && (catalogBusy || displayedBundles.length > 0) && (
             <View style={styles.section}>
               <Text style={styles.label}>Choose a Bundle</Text>
-              {catalogLoading ? (
+              {catalogBusy ? (
                 <View style={styles.catalogLoadingRow}>
                   <ActivityIndicator size="small" color={Colors.GREEN} />
-                  <Text style={styles.catalogLoadingText}>Updating reseller prices…</Text>
+                  <Text style={styles.catalogLoadingText}>
+                    {catalogTransitioning
+                      ? `Loading ${networkLabel(effectiveNetwork)} bundles…`
+                      : 'Updating reseller prices…'}
+                  </Text>
                 </View>
               ) : null}
-              {bundles.map((bundle) => {
+              {displayedBundles.map((bundle) => {
                 const isSelected = selectedBundle?.id === bundle.id;
                 return (
                   <TouchableOpacity
@@ -392,7 +466,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
             </View>
           )}
 
-          {effectiveNetwork && bundles.length === 0 && !catalogLoading && (
+          {effectiveNetwork && displayedBundles.length === 0 && !catalogBusy && (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateText}>
                 No bundles available for {networkLabel(effectiveNetwork)}
@@ -460,7 +534,10 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: Spacing.SCREEN_PADDING,
     paddingTop: Spacing.M,
-    paddingBottom: 120,
+    // See ExamPinsScreen.tsx's identical comment — 120 only fit the Pay
+    // button alone; a hint line above it could push it taller than that,
+    // hiding content behind it with no way to scroll past.
+    paddingBottom: 180,
   },
   backButton: {
     width: 48,
@@ -485,28 +562,59 @@ const styles = StyleSheet.create({
     ...Typography.SECTION_HEADING,
     marginBottom: Spacing.M,
   },
-  labelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.S,
+  recipientHeading: {
+    ...Typography.SECTION_HEADING,
+    marginBottom: Spacing.M,
   },
-  labelRowButtons: {
+  contactActions: {
     flexDirection: 'row',
+    gap: Spacing.M,
+    marginBottom: Spacing.L,
+  },
+  contactActionCard: {
+    flex: 1,
+    minHeight: 156,
     gap: Spacing.S,
+    padding: Spacing.L,
+    borderRadius: Spacing.BUTTON_RADIUS,
+    borderWidth: 1,
+    borderColor: Colors.GREEN_MID,
+    backgroundColor: Colors.GREEN_10,
+    boxShadow: '0 2px 4px rgba(15, 61, 39, 0.10)',
   },
-  contactsBtn: {
+  contactActionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.GREEN,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contactActionTitle: {
+    ...Typography.CARD_TITLE,
+    fontSize: 13,
+    lineHeight: 18,
+    color: Colors.DARK,
+  },
+  contactActionDescription: {
+    ...Typography.CAPTION,
+    fontSize: 11,
+    lineHeight: 16,
+    color: Colors.GRAY,
+  },
+  contactActionButton: {
+    minHeight: Spacing.TOUCH_TARGET_MIN,
+    marginTop: 'auto',
+    borderRadius: Spacing.TOUCH_TARGET_MIN / 2,
+    backgroundColor: Colors.GREEN,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Spacing.S,
-    paddingHorizontal: Spacing.M,
-    borderRadius: Spacing.BUTTON_RADIUS,
-    backgroundColor: Colors.GREEN_LIGHT,
+    justifyContent: 'center',
+    gap: Spacing.M,
   },
-  contactsBtnText: {
-    ...Typography.CAPTION,
-    color: Colors.GREEN,
-    fontWeight: '600',
+  contactActionButtonText: {
+    ...Typography.BUTTON_TEXT,
+    fontSize: 13,
   },
   phoneInput: {
     height: Spacing.INPUT_HEIGHT,

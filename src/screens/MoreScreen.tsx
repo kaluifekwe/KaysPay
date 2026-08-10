@@ -8,6 +8,7 @@ import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { authService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
+import { withTimeout } from '../utils/network';
 
 interface Row {
   icon: keyof typeof Ionicons.glyphMap;
@@ -51,7 +52,7 @@ export default function MoreScreen({ navigation }: any) {
       let active = true;
       (async () => {
         try {
-          const { data: { user } } = await supabase.auth.getUser();
+          const { data: { user } } = await withTimeout(supabase.auth.getUser());
           if (!active || !user) return;
           setName(user.user_metadata?.full_name || user.user_metadata?.name || '');
           setEmail(user.email || '');

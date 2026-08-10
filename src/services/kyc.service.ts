@@ -24,10 +24,9 @@ export const kycService = {
   /** Reads the caller's own row directly (RLS scopes it) — no Edge Function needed for a read. */
   async getStatus(): Promise<KycStatus> {
     try {
-      const { data } = await supabase
-        .from('user_kyc')
-        .select('status, verified_record')
-        .maybeSingle();
+      const { data } = await withTimeout(
+        (async () => supabase.from('user_kyc').select('status, verified_record').maybeSingle())(),
+      );
       if (!data || data.status !== 'verified') return { verified: false };
       const record = data.verified_record as any;
       const verifiedName = [record?.firstname, record?.middlename, record?.surname].filter(Boolean).join(' ');

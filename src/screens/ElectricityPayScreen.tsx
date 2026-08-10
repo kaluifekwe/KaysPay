@@ -14,6 +14,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -54,16 +55,20 @@ export default function ElectricityPayScreen(props: any) {
   // Pre-payment meter verification (see ElectricityPayScreen weakness raised
   // by the owner: nothing today confirms a meter number is real before the
   // PIN is charged). Debounced auto-check against VTUnaija's own verify
-  // endpoint; `proceedWithoutVerify` lets the user explicitly continue if
-  // verification fails or is unavailable, rather than hard-blocking a
-  // legitimate payment on a flaky check.
+  // endpoint. Saved server-verified accounts render immediately while a
+  // silent refresh runs; new or changed meters must verify before payment.
   const [verifyState, setVerifyState] = useState<VerifyState>('idle');
   const [verifiedName, setVerifiedName] = useState<string | null>(null);
   const [verifiedAddress, setVerifiedAddress] = useState<string | null>(null);
   const [verifyError, setVerifyError] = useState<string | null>(null);
-  const [proceedWithoutVerify, setProceedWithoutVerify] = useState(false);
   const [savedAccounts, setSavedAccounts] = useState<SavedBillingAccount[]>([]);
   const [cachedPreviewName, setCachedPreviewName] = useState<string | null>(null);
+  const [showManualInput, setShowManualInput] = useState(false);
+
+  const selectedSavedAccount = useMemo(
+    () => savedAccounts.find((account) => account.account_number === meterNumber) ?? null,
+    [meterNumber, savedAccounts],
+  );
 
   const loadSavedAccounts = useCallback(async () => {
     const accounts = await vtuService.getSavedBillingAccounts('electricity', provider.id);
@@ -81,32 +86,36 @@ export default function ElectricityPayScreen(props: any) {
     isValidMeter &&
     isValidAmount &&
     buyState !== 'processing' &&
-    (verifyState === 'verified' || proceedWithoutVerify);
+    verifyState === 'verified';
 
   // Any edit to the meter number invalidates whatever was verified before —
   // never let a stale "✓ verified" carry over to a different meter number.
   useEffect(() => {
+    setMeterNumber('');
     setVerifyState('idle');
     setVerifiedName(null);
     setVerifiedAddress(null);
     setVerifyError(null);
-    setProceedWithoutVerify(false);
-  }, [meterNumber, provider.id]);
+    setCachedPreviewName(null);
+  }, [provider.id]);
 
   useEffect(() => {
     if (!isValidMeter) return;
     const handle = setTimeout(async () => {
-      setVerifyState('checking');
+      const usingCachedVerification = cachedPreviewName !== null;
+      if (!usingCachedVerification) setVerifyState('checking');
       const res = await vtuService.verifyElectricityMeter(provider.id, meterNumber.trim());
       setVerifyState((current) => {
         // A newer keystroke may have already reset this back to 'idle' while
         // the request was in flight — don't resurrect a stale result.
+        if (usingCachedVerification) return res.ok ? 'verified' : current;
         if (current !== 'checking') return current;
         return res.ok ? 'verified' : 'failed';
       });
       if (res.ok) {
         setVerifiedName(res.customerName);
         setVerifiedAddress(res.customerAddress);
+        setShowManualInput(false);
         void loadSavedAccounts();
       } else {
         setVerifyError(res.error || 'Could not verify this meter number.');
@@ -114,18 +123,7 @@ export default function ElectricityPayScreen(props: any) {
     }, 700);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meterNumber, isValidMeter, provider.id, loadSavedAccounts]);
-
-  const handleProceedAnyway = useCallback(() => {
-    Alert.alert(
-      'Continue without verification?',
-      "We couldn't confirm this meter number belongs to a real account. Only continue if you're sure the meter number is correct — a wrong meter number means the units go to someone else's meter, not yours.",
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: "I'm sure, continue", onPress: () => setProceedWithoutVerify(true) },
-      ],
-    );
-  }, []);
+  }, [meterNumber, isValidMeter, provider.id, loadSavedAccounts, cachedPreviewName]);
 
   // The single next thing the user must do before Pay can proceed — so the
   // greyed button is never a silent dead end. null once everything's ready.
@@ -135,18 +133,31 @@ export default function ElectricityPayScreen(props: any) {
     if (numericAmount > 500000) return 'Maximum amount is ₦500,000';
     if (!isValidAmount) return 'Enter an amount of at least ₦500';
     if (verifyState === 'checking') return 'Verifying meter number…';
-    if (verifyState === 'failed' && !proceedWithoutVerify) return 'Could not verify meter number';
+    if (verifyState === 'failed') return 'Could not verify meter number';
     return null;
-  }, [buyState, isValidMeter, numericAmount, isValidAmount, verifyState, proceedWithoutVerify]);
+  }, [buyState, isValidMeter, numericAmount, isValidAmount, verifyState]);
 
   const handleMeterChange = useCallback((text: string) => {
     setMeterNumber(text.replace(/[^0-9]/g, '').slice(0, 13));
     setCachedPreviewName(null);
+    setVerifyState('idle');
+    setVerifiedName(null);
+    setVerifiedAddress(null);
+    setVerifyError(null);
   }, []);
 
   const handleSavedAccountSelect = useCallback((account: SavedBillingAccount) => {
+    setShowManualInput(false);
     handleMeterChange(account.account_number);
     setCachedPreviewName(account.customer_name);
+    setVerifiedName(account.customer_name);
+    setVerifiedAddress(account.customer_address);
+    setVerifyState('verified');
+  }, [handleMeterChange]);
+
+  const handleUseAnotherMeter = useCallback(() => {
+    setShowManualInput(true);
+    handleMeterChange('');
   }, [handleMeterChange]);
 
   const handleRemoveSavedAccount = useCallback((account: SavedBillingAccount) => {
@@ -160,13 +171,20 @@ export default function ElectricityPayScreen(props: any) {
           style: 'destructive',
           onPress: async () => {
             const removed = await vtuService.deleteSavedBillingAccount(account.id);
-            if (removed) setSavedAccounts((current) => current.filter((item) => item.id !== account.id));
-            else Alert.alert('Could not remove meter', 'Please try again.');
+            if (!removed) {
+              Alert.alert('Could not remove meter', 'Please try again.');
+              return;
+            }
+            setSavedAccounts((current) => current.filter((item) => item.id !== account.id));
+            if (account.account_number === meterNumber) {
+              setShowManualInput(true);
+              handleMeterChange('');
+            }
           },
         },
       ],
     );
-  }, [provider.name]);
+  }, [handleMeterChange, meterNumber, provider.name]);
 
   const handleQuickAmount = useCallback((quickAmount: number) => {
     setAmount(quickAmount.toString());
@@ -340,35 +358,73 @@ export default function ElectricityPayScreen(props: any) {
           <View style={styles.section}>
             <Text style={styles.label}>Meter Number</Text>
             <View style={styles.arrearsNotice}>
+              <Ionicons name="information-circle-outline" size={22} color={Colors.GREEN} />
               <Text style={styles.arrearsNoticeText}>
                 Your electricity provider may apply outstanding debt or a minimum payment requirement. The final amount and units are determined by your DISCO.
               </Text>
             </View>
             {savedAccounts.length > 0 ? (
               <View style={styles.savedAccounts}>
-                <Text style={styles.savedLabel}>Previously used meters</Text>
+                <Text style={styles.savedLabel}>Saved meters</Text>
                 {savedAccounts.map((account) => (
-                  <View key={account.id} style={styles.savedAccount}>
+                  <View
+                    key={account.id}
+                    style={[
+                      styles.savedAccount,
+                      selectedSavedAccount?.id === account.id && styles.savedAccountSelected,
+                    ]}
+                  >
                     <TouchableOpacity style={styles.savedAccountSelect} onPress={() => handleSavedAccountSelect(account)} activeOpacity={0.75}>
-                      <Text style={styles.savedNumber}>{account.account_number}</Text>
-                      <Text style={styles.savedName} numberOfLines={1}>{account.customer_name}</Text>
+                      <View
+                        style={[
+                          styles.savedAccountIcon,
+                          selectedSavedAccount?.id === account.id && styles.savedAccountIconSelected,
+                        ]}
+                      >
+                        <Ionicons
+                          name={selectedSavedAccount?.id === account.id ? 'checkmark' : 'flash-outline'}
+                          size={20}
+                          color={selectedSavedAccount?.id === account.id ? Colors.WHITE : Colors.GREEN}
+                        />
+                      </View>
+                      <View style={styles.savedAccountCopy}>
+                        <Text style={styles.savedNumber}>{account.account_number}</Text>
+                        <Text style={styles.savedName} numberOfLines={1}>{account.customer_name}</Text>
+                      </View>
+                      {selectedSavedAccount?.id === account.id ? (
+                        <Text style={styles.selectedBadge}>Selected</Text>
+                      ) : null}
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.removeSavedButton} onPress={() => handleRemoveSavedAccount(account)} activeOpacity={0.75}>
+                      <Ionicons name="trash-outline" size={18} color={Colors.ERROR} />
                       <Text style={styles.removeSavedText}>Remove</Text>
                     </TouchableOpacity>
                   </View>
                 ))}
+
+                {!showManualInput ? (
+                  <TouchableOpacity
+                    style={styles.useAnotherButton}
+                    onPress={handleUseAnotherMeter}
+                    activeOpacity={0.75}
+                  >
+                    <Ionicons name="add" size={22} color={Colors.GREEN} />
+                    <Text style={styles.useAnotherText}>Use another meter</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             ) : null}
-            <TextInput
-              style={styles.input}
-              value={meterNumber}
-              onChangeText={handleMeterChange}
-              placeholder="Enter meter number"
-              placeholderTextColor={Colors.GRAY}
-              keyboardType="number-pad"
-              maxLength={13}
-            />
+            {(savedAccounts.length === 0 || showManualInput) ? (
+              <TextInput
+                style={styles.input}
+                value={meterNumber}
+                onChangeText={handleMeterChange}
+                placeholder="Enter meter number"
+                placeholderTextColor={Colors.GRAY}
+                keyboardType="number-pad"
+                maxLength={13}
+              />
+            ) : null}
             {verifyState === 'checking' && (
               <View style={styles.verifyRow}>
                 <ActivityIndicator size="small" color={Colors.GRAY} />
@@ -379,22 +435,27 @@ export default function ElectricityPayScreen(props: any) {
               <Text style={styles.cachedPreview}>Previously verified: {cachedPreviewName}</Text>
             ) : null}
             {verifyState === 'verified' && verifiedName && (
-              <View style={styles.verifyRow}>
-                <Text style={styles.verifySuccessText}>✓ {verifiedName}</Text>
+              <View style={styles.verifiedCard}>
+                <View style={styles.verifiedHeading}>
+                  <View style={styles.verifiedIcon}>
+                    <Ionicons name="checkmark" size={16} color={Colors.WHITE} />
+                  </View>
+                  <Text style={styles.verifiedTitle}>Meter verified</Text>
+                </View>
+                <Text style={styles.verifiedName}>{verifiedName}</Text>
+                {verifiedAddress ? (
+                  <View style={styles.verifiedAddressRow}>
+                    <Text style={styles.verifiedAddressLabel}>Service address</Text>
+                    <Text style={styles.verifiedAddressValue}>{verifiedAddress}</Text>
+                  </View>
+                ) : null}
               </View>
             )}
             {verifyState === 'failed' && (
               <View style={styles.verifyFailedBlock}>
                 <Text style={styles.verifyFailedText}>
-                  {proceedWithoutVerify
-                    ? "Proceeding without verification — double-check this meter number."
-                    : (verifyError || 'Could not verify this meter number.')}
+                  {verifyError || 'Could not verify this meter number.'}
                 </Text>
-                {!proceedWithoutVerify && (
-                  <TouchableOpacity onPress={handleProceedAnyway}>
-                    <Text style={styles.verifyProceedLink}>I'm sure this is correct, continue anyway</Text>
-                  </TouchableOpacity>
-                )}
               </View>
             )}
           </View>
@@ -562,19 +623,33 @@ const styles = StyleSheet.create({
   amountInput: { flex: 1, ...Typography.BODY, color: Colors.DARK },
   amountError: { ...Typography.ERROR, marginTop: Spacing.S },
   verifyRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.S },
-  arrearsNotice: { backgroundColor: Colors.GREEN_LIGHT, borderRadius: Spacing.BUTTON_RADIUS, padding: Spacing.M, marginBottom: Spacing.M },
-  arrearsNoticeText: { ...Typography.CAPTION, color: Colors.DARK, lineHeight: 19 },
-  savedAccounts: { marginBottom: Spacing.M },
+  arrearsNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.M, backgroundColor: Colors.GREEN_10, borderWidth: 1, borderColor: Colors.GREEN_LIGHT, borderRadius: Spacing.BUTTON_RADIUS, padding: Spacing.M, marginBottom: Spacing.M },
+  arrearsNoticeText: { ...Typography.CAPTION, flex: 1, color: Colors.DARK, lineHeight: 19 },
+  savedAccounts: { marginBottom: Spacing.M, gap: Spacing.M },
   savedLabel: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.S },
-  savedAccount: { minHeight: 60, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: Colors.BORDER, borderRadius: Spacing.BUTTON_RADIUS, marginBottom: Spacing.S },
-  savedAccountSelect: { flex: 1, minHeight: 58, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S, justifyContent: 'center' },
-  removeSavedButton: { minWidth: 72, minHeight: 58, justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing.S },
+  savedAccount: { minHeight: 72, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: Colors.BORDER, borderRadius: Spacing.BUTTON_RADIUS, backgroundColor: Colors.WHITE },
+  savedAccountSelected: { borderColor: Colors.GREEN, backgroundColor: Colors.GREEN_10 },
+  savedAccountSelect: { flex: 1, minHeight: 70, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S, flexDirection: 'row', alignItems: 'center', gap: Spacing.M },
+  savedAccountIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.GREEN_LIGHT },
+  savedAccountIconSelected: { backgroundColor: Colors.GREEN },
+  savedAccountCopy: { flex: 1 },
+  selectedBadge: { ...Typography.CAPTION, color: Colors.GREEN_DARK, fontWeight: '700', backgroundColor: Colors.GREEN_LIGHT, borderRadius: 12, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S },
+  removeSavedButton: { minWidth: 76, minHeight: 70, justifyContent: 'center', alignItems: 'center', gap: Spacing.XS, paddingHorizontal: Spacing.S },
   removeSavedText: { ...Typography.CAPTION, color: Colors.ERROR, fontWeight: '600' },
   savedNumber: { ...Typography.BODY, color: Colors.DARK, fontWeight: '600' },
   savedName: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: 2 },
+  useAnotherButton: { minHeight: Spacing.TOUCH_TARGET_MIN, borderWidth: 1, borderStyle: 'dashed', borderColor: Colors.GREEN_MID, borderRadius: Spacing.BUTTON_RADIUS, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: Spacing.M },
+  useAnotherText: { ...Typography.BODY, color: Colors.GREEN, fontWeight: '700' },
   cachedPreview: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: Spacing.S },
   verifyCheckingText: { ...Typography.CAPTION, color: Colors.GRAY, marginLeft: Spacing.S },
-  verifySuccessText: { ...Typography.CAPTION, color: Colors.GREEN, fontFamily: 'Helvetica-Bold' },
+  verifiedCard: { marginTop: Spacing.M, padding: Spacing.L, borderRadius: Spacing.CARD_RADIUS, backgroundColor: Colors.GREEN_LIGHT },
+  verifiedHeading: { flexDirection: 'row', alignItems: 'center', gap: Spacing.M },
+  verifiedIcon: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.GREEN },
+  verifiedTitle: { ...Typography.BODY, color: Colors.GREEN_DARK, fontWeight: '700' },
+  verifiedName: { ...Typography.BODY, color: Colors.DARK, marginTop: Spacing.M },
+  verifiedAddressRow: { marginTop: Spacing.L, paddingTop: Spacing.M, borderTopWidth: 1, borderTopColor: Colors.WHITE_50, gap: Spacing.S },
+  verifiedAddressLabel: { ...Typography.CAPTION, color: Colors.GRAY },
+  verifiedAddressValue: { ...Typography.BODY, color: Colors.DARK, fontWeight: '600' },
   verifyFailedBlock: { marginTop: Spacing.S },
   verifyFailedText: { ...Typography.CAPTION, color: Colors.ERROR },
   verifyProceedLink: { ...Typography.CAPTION, color: Colors.PURPLE, marginTop: Spacing.S, textDecorationLine: 'underline' },

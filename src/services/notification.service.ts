@@ -51,10 +51,20 @@ export const notificationService = {
   },
 
   async markRead(id: string): Promise<void> {
-    await supabase.rpc('mark_notification_read', { p_id: id });
+    await withTimeout((async () => supabase.rpc('mark_notification_read', { p_id: id }))());
   },
 
   async markAllRead(): Promise<void> {
-    await supabase.rpc('mark_all_notifications_read');
+    await withTimeout((async () => supabase.rpc('mark_all_notifications_read'))());
+  },
+
+  // Destructive, so unlike markRead/markAllRead (best-effort/silent) this
+  // throws — the screen should show a real error on failure, not swallow it.
+  async deleteNotifications(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const { error } = await withTimeout(
+      (async () => supabase.rpc('delete_notifications', { p_ids: ids }))(),
+    );
+    if (error) throw new Error(error.message || 'Could not delete notifications');
   },
 };

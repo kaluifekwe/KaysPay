@@ -52,7 +52,7 @@ export function parseNairaInput(input: string): number {
 }
 
 export function calculateAirtimeCharge(amount: number, network: string): number {
-  // VTU.ng charge rates (example rates)
+  // Service charge rates (example rates)
   const chargeRates: Record<string, number> = {
     MTN: 0.03, // 3%
     Airtel: 0.02, // 2%
