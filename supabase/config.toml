@@ -3,8 +3,8 @@ project_id = "xswlrzhtxrzugoxdonjc"
 # Per-function JWT verification, captured in version control instead of only
 # living in dashboard clicks. Found during a security audit (2026-07-06) that
 # this being unmanaged/invisible to code review is exactly how payroll-execute
-# and vtuafrica-reconcile ended up deployed with verify_jwt=false and no
-# in-code auth check — a gap that went unnoticed until the live deployment
+# and a retired reconciliation function ended up deployed with verify_jwt=false
+# and no in-code auth check — a gap that went unnoticed until the live deployment
 # was checked directly. This file is the source of truth going forward;
 # `supabase functions deploy` applies whatever's set here.
 #
@@ -23,32 +23,47 @@ project_id = "xswlrzhtxrzugoxdonjc"
 [functions.flutterwave-webhook]
 verify_jwt = false
 
-[functions.vtu-webhook]
-verify_jwt = false
-
-[functions.vtuafrica-webhook]
+[functions.paystack-webhook]
 verify_jwt = false
 
 # --- Cron-only: JWT + separate x-cron-secret check ---
-[functions.vtu-reconcile]
-verify_jwt = true
-
-[functions.vtu-data-catalog]
-verify_jwt = true
-
 [functions.vtunaija-data-catalog]
 verify_jwt = true
 
+[functions.vtunaija-exam-catalog]
+verify_jwt = true
+
 [functions.vtunaija-electricity-catalog]
+verify_jwt = true
+
+[functions.verify-electricity-meter]
+verify_jwt = true
+
+[functions.verify-tv-smartcard]
+verify_jwt = true
+
+[functions.request-pin-reset]
+verify_jwt = true
+
+[functions.confirm-pin-reset]
+verify_jwt = true
+
+[functions.crypto-quote]
+verify_jwt = true
+
+[functions.crypto-buy]
+verify_jwt = true
+
+[functions.crypto-sell]
+verify_jwt = true
+
+[functions.crypto-withdraw]
 verify_jwt = true
 
 [functions.vtunaija-cabletv-catalog]
 verify_jwt = true
 
 [functions.nin-reconcile]
-verify_jwt = true
-
-[functions.vtuafrica-reconcile]
 verify_jwt = true
 
 [functions.vtunaija-reconcile]
@@ -73,10 +88,19 @@ verify_jwt = true
 [functions.create-virtual-account]
 verify_jwt = true
 
+[functions.requery-paystack-dva]
+verify_jwt = true
+
 [functions.send-email-otp]
 verify_jwt = true
 
 [functions.verify-email-otp]
+verify_jwt = true
+
+[functions.request-profile-change]
+verify_jwt = true
+
+[functions.confirm-profile-change]
 verify_jwt = true
 
 # Forgot-password: called by a logged-OUT user with the app's anon key
@@ -150,3 +174,36 @@ verify_jwt = true
 # own order.
 [functions.vtu-verify-order]
 verify_jwt = true
+
+# Admin panel (kayspay-admin/). All require a valid JWT; each function then
+# does its own admin_users role check via requireAdmin() — verify_jwt alone
+# only proves the caller has SOME KaysPay account, not that they're an admin.
+[functions.admin-bootstrap]
+verify_jwt = true
+
+[functions.admin-dashboard-stats]
+verify_jwt = true
+
+[functions.admin-transactions]
+verify_jwt = true
+
+[functions.admin-user-lookup]
+verify_jwt = true
+
+[functions.admin-service-controls]
+verify_jwt = true
+
+[functions.admin-vtu-plan-controls]
+verify_jwt = true
+
+[functions.admin-invite]
+verify_jwt = true
+
+[functions.admin-manage]
+verify_jwt = true
+
+[functions.admin-refund]
+verify_jwt = true
+
+[functions.funding-reconcile]
+verify_jwt = false

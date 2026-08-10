@@ -10,6 +10,7 @@ import {
   readJsonBody,
   RequestBodyError,
 } from "../_shared/auth.ts";
+import { confirmServiceRefund } from "../_shared/service-refund.ts";
 import {
   AIRTIME_MAX,
   AIRTIME_MIN,
@@ -19,39 +20,22 @@ import {
   EXAM_PIN_TYPES,
   KOBO,
   NetworkProvider,
+  resolveVtunaijaDiscoId,
   TVServiceProvider,
   VALID_NETWORKS,
   VTUNAIJA_CABLE_IDS,
-  VTUNAIJA_ELECTRICITY_NAME_MAP,
   VTUNAIJA_EXAM_IDS,
   VTUNAIJA_NETWORK_IDS,
 } from "../_shared/vtu-catalog.ts";
 import {
-  callVTUNG,
-  isVtuConfigured,
-  NON_TERMINAL_STATUSES,
-  SUCCESS_STATUSES,
-  VTUAuthError,
-} from "../_shared/vtu-client.ts";
-import {
-  callVTUAfrica,
-  isVtuAfricaConfigured,
-  normalizeVTUAfricaResult,
-  queryVTUAfrica,
-  VTUAfricaError,
-  vtuAfricaOutcome,
-  stripRef,
-} from "../_shared/vtuafrica-client.ts";
-import {
   callVTUNaija,
   isVtuNaijaConfigured,
+  normalizeCableTVSmartcardVerification,
   normalizeVTUNaijaResult,
   VTUNaijaError,
+  verifyCableTVSmartcard,
   vtunaijaOutcome,
 } from "../_shared/vtunaija-client.ts";
-
-// VTUAfrica posts terminal provider outcomes here when the initial request times out.
-const VTUAFRICA_WEBHOOK_URL = `${Deno.env.get("SUPABASE_URL")}/functions/v1/vtuafrica-webhook`;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -61,20 +45,59 @@ function json(body: unknown, status = 200) {
 }
 
 function newRequestId() {
-  // VTU.ng caps request_id at 50 chars — this is well within that, and
+  // VTU.ng caps request_id at 50 chars 鈥?this is well within that, and
   // doubles as our own idempotency key (one id, one meaning, everywhere).
   return `ksp_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
 }
 
-type Provider = "vtu_ng" | "vtuafrica" | "vtunaija";
+// Translates VTUnaija's own failure message into a specific, actionable
+// reason when we recognize the pattern 鈥?an allowlist with a safe generic
+// fallback, NOT a pass-through of raw provider text. Some VTUnaija messages
+// aren't fit for display (e.g. the bare "failed, failed, failed. Something
+// went wrong" seen on a live purchase) and must never reach the user as-is.
+function friendlyVtunaijaFailureMessage(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (lower.includes("owing") && lower.includes("airtime")) {
+    return "This plan can't be delivered if you owe airtime on this network. Clear any airtime debt first, or choose a different plan.";
+  }
+  if (lower.includes("does not exist") || lower.includes("refresh your plan")) {
+    return "This plan is temporarily unavailable. Please refresh and choose a different plan.";
+  }
+  return "Purchase failed. You were not charged.";
+}
 
-// Performance telemetry is deliberately sampled and contains no customer or
-// financial data. A stable hash keeps retries of one idempotent request in the
-// same sample while avoiding Math.random() differences between invocations.
-function shouldMeasure(requestId: string): boolean {
-  let hash = 0;
-  for (let i = 0; i < requestId.length; i++) hash = (hash * 31 + requestId.charCodeAt(i)) >>> 0;
-  return hash % 10 === 0; // 10% sample: useful percentiles without a write per purchase.
+type Provider = "vtunaija";
+
+const CATALOG_STALE_MS = 30 * 60 * 1000;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const CRON_SECRET = Deno.env.get("CRON_SECRET");
+
+// A stale catalog (provider_seen_at older than 30 min 鈥?normally caused by
+// the 5-min sync cron missing a beat, e.g. job-lock contention or one
+// transient provider fetch failure) used to fail the purchase outright with
+// a plain "Failed" screen and no transaction created, even though the user
+// was never actually charged. Since that on-demand sync is exactly what the
+// scheduled cron already does, triggering it inline here first (same
+// refresh path, just called synchronously instead of waiting for the next
+// tick) resolves almost all of these without ever surfacing to the user.
+// Falls through to a real CATALOG_STALE only if the provider call itself
+// fails or the sync still can't produce a fresh row.
+async function refreshVtunaijaCatalogInline(
+  fn: "vtunaija-data-catalog" | "vtunaija-cabletv-catalog" | "vtunaija-exam-catalog",
+): Promise<boolean> {
+  if (!SUPABASE_URL || !CRON_SECRET) return false;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/${fn}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-cron-secret": CRON_SECRET },
+      body: JSON.stringify({ refresh: true }),
+    });
+    if (!res.ok) return false;
+    const body = await res.json();
+    return body?.success === true;
+  } catch {
+    return false; // the regular reconcile/cron path remains the backstop
+  }
 }
 
 /**
@@ -85,36 +108,43 @@ function shouldMeasure(requestId: string): boolean {
  *
  * Provider routing (as of the VTUnaija migration, 2026-08-03):
  *   - airtime -> VTUnaija (/topup/). Moved off VTU.ng.
- *   - data -> VTUnaija (/data/, NOT /internetbundles/ — that endpoint needed
+ *   - data -> VTUnaija (/data/, NOT /internetbundles/ 鈥?that endpoint needed
  *     an unconfirmed `account_Id` field; /data/ needs no such field and
  *     returns the identical success wording, confirmed the right one to use).
  *     Moved off VTU.ng. Catalog prices come from vtunaija_data_catalog.
  *   - electricity -> VTUnaija (/billpayment/). DISCO id resolved via
  *     vtunaija_electricity_catalog (a live-synced name lookup, not a
- *     hardcoded numeric code — see VTUNAIJA_ELECTRICITY_NAME_MAP). Moved off
+ *     hardcoded numeric code 鈥?see VTUNAIJA_ELECTRICITY_NAME_MAP). Moved off
  *     VTUAfrica. The one-time prepaid meter token is persisted into
  *     transaction metadata on success, same as the VTUAfrica branch used to.
  *   - tv -> VTUnaija (/cablesub/). Bouquet catalog is now fully dynamic
- *     (vtunaija_cabletv_catalog), replacing the old static TV_BOUQUETS map —
- *     the client (TVScreen.tsx) fetches bouquets live, same pattern as data.
+ *     (vtunaija_cabletv_catalog), replacing the old static TV_BOUQUETS map 鈥? *     the client (TVScreen.tsx) fetches bouquets live, same pattern as data.
  *     Moved off VTUAfrica.
- *   - exam_pin: WAEC/NECO/NABTEB result-checking (only these 3 — confirmed
- *     available via VTUnaija's own support) -> VTUnaija (/exam/). No
- *     price-list endpoint exists for exam pins, so the debited amount is
- *     provisional (our last-known price) until a live purchase reveals
- *     VTUnaija's real plan_amount, at which point EXAM_PIN_TYPES should be
- *     updated to match (owner-approved approach, 2026-08-03). JAMB
- *     (confirmed NOT available on VTUnaija) and WAEC Verification/GCE (no
- *     confirmed VTUnaija product) stay on VTUAfrica, unchanged.
+ *   - exam_pin -> VTUnaija (/exam/), mirroring its six documented Exam IDs:
+ *     WAEC, NECO, NABTEB, JAMB, WAEC Registration and NBAIS. Quantity is
+ *     intentionally restricted to one until its multi-PIN response format is
+ *     confirmed. Both the returned PIN and serial are persisted.
  *
  * VTU.ng's and VTUAfrica's client/reconcile/catalog code stays deployed but
- * unreferenced for airtime/data/electricity/TV — fast rollback if ever
+ * unreferenced for airtime/data/electricity/TV 鈥?fast rollback if ever
  * needed, see supabase/ROLLBACK_VTUNAIJA.md.
  */
 class PriceChangedError extends Error {
   constructor(public readonly currentAmountKobo: number) {
     super("PRICE_CHANGED");
   }
+}
+
+// Trims/caps an opaque display-only string before it's persisted into
+// transaction metadata (e.g. the meter's verified customer name/address).
+// Never used for any money decision 鈥?purely for receipts/History 鈥?but
+// still capped and type-checked since it ultimately rides into HTML (the
+// PDF receipt template) and a client-controlled field must never be trusted
+// as-is.
+function safeDisplayString(v: unknown, maxLen = 200): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const trimmed = v.trim();
+  return trimmed ? trimmed.slice(0, maxLen) : undefined;
 }
 
 async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClient>): Promise<{
@@ -125,6 +155,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
   provider: Provider;
   endpoint: string;
   providerPayload: Record<string, unknown>;
+  availability?: { network: string; familyKey: string; planId: string };
 }> {
   const service = String(body?.service || "");
 
@@ -151,7 +182,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
           network: VTUNAIJA_NETWORK_IDS[network],
           mobile_number: phone,
           // Every documented example sends "true" regardless of the actual
-          // recipient — treated as a required constant, not computed per
+          // recipient 鈥?treated as a required constant, not computed per
           // request. Confirm the real semantics with VTUnaija support before
           // relying on this at scale (tracked in the VTUnaija migration plan).
           Ported_number: "true",
@@ -169,32 +200,50 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
       if (!VALID_NETWORKS.includes(network)) throw "INVALID_NETWORK";
       if (!/^0\d{10}$/.test(phone)) throw "INVALID_PHONE";
 
-      const { data: bundle } = await supabase
-        .from("vtunaija_data_catalog")
-        .select("network, data_plan_id, reseller_kobo, available, provider_seen_at")
-        .eq("id", bundleId)
-        .eq("network", network)
-        .eq("available", true)
-        .maybeSingle();
+      const bundleQuery = () =>
+        supabase
+          .from("vtunaija_data_catalog")
+          .select("id, network, data_plan_id, family_key, reseller_kobo, available, provider_seen_at")
+          .eq("id", bundleId)
+          .eq("network", network)
+          .eq("available", true)
+          .maybeSingle();
+
+      let { data: bundle } = await bundleQuery();
       if (!bundle) throw "INVALID_BUNDLE";
-      if (new Date(bundle.provider_seen_at).getTime() < Date.now() - 30 * 60 * 1000) throw "CATALOG_STALE";
+      if (new Date(bundle.provider_seen_at).getTime() < Date.now() - CATALOG_STALE_MS) {
+        const refreshed = await refreshVtunaijaCatalogInline("vtunaija-data-catalog");
+        if (refreshed) ({ data: bundle } = await bundleQuery());
+        if (!bundle || new Date(bundle.provider_seen_at).getTime() < Date.now() - CATALOG_STALE_MS) {
+          throw "CATALOG_STALE";
+        }
+      }
       const amount = Number(bundle.reseller_kobo);
       const quotedAmount = Number(body.quoted_amount_kobo);
       if (Number.isFinite(quotedAmount) && quotedAmount > 0 && quotedAmount !== amount) {
         throw new PriceChangedError(amount);
       }
+      const { data: planEnabled, error: controlError } = await supabase.rpc("is_vtu_plan_enabled", {
+        p_provider: "vtunaija",
+        p_network: network,
+        p_family_key: bundle.family_key,
+        p_plan_id: bundle.id,
+      });
+      if (controlError) throw "AVAILABILITY_UNAVAILABLE";
+      if (planEnabled !== true) throw "PLAN_DISABLED";
       return {
         amount,
         txType: "data",
         network,
         recipient: phone,
         provider: "vtunaija",
+        availability: { network, familyKey: bundle.family_key, planId: bundle.id },
         endpoint: "/data/",
         providerPayload: {
           network: VTUNAIJA_NETWORK_IDS[network],
           mobile_number: phone,
           plan: bundle.data_plan_id,
-          // Same unconfirmed-but-documented-default as airtime — see the
+          // Same unconfirmed-but-documented-default as airtime 鈥?see the
           // Ported_number comment in the airtime case above.
           Ported_number: "true",
         },
@@ -213,18 +262,11 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
       }
 
       // Resolve the app's own DISCO id to VTUnaija's current numeric
-      // disco_name code via the live-synced lookup, matched by name (not a
-      // hardcoded numeric id — that table refreshes independently, so a
-      // renumbering on VTUnaija's side is absorbed automatically).
-      const discoName = VTUNAIJA_ELECTRICITY_NAME_MAP[biller];
-      if (!discoName) throw "INVALID_PROVIDER";
-      const { data: discoRow } = await supabase
-        .from("vtunaija_electricity_catalog")
-        .select("disco_id")
-        .eq("name", discoName)
-        .eq("available", true)
-        .maybeSingle();
-      if (!discoRow) throw "INVALID_PROVIDER";
+      // disco_name code via the live-synced lookup 鈥?same helper
+      // verify-electricity-meter uses, so a meter verified for a DISCO
+      // always resolves to the identical code at purchase time.
+      const discoId = await resolveVtunaijaDiscoId(supabase, biller);
+      if (!discoId) throw "INVALID_PROVIDER";
 
       return {
         amount,
@@ -234,7 +276,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
         provider: "vtunaija",
         endpoint: "/billpayment/",
         providerPayload: {
-          disco_name: discoRow.disco_id,
+          disco_name: discoId,
           meter_number: meter,
           MeterType: type,
           amount: amount / KOBO,
@@ -247,14 +289,23 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
       const smartcard = String(body.smartcard_number || "");
       if (!/^\d{6,20}$/.test(smartcard)) throw "INVALID_SMARTCARD";
 
-      const { data: bouquet } = await supabase
-        .from("vtunaija_cabletv_catalog")
-        .select("provider, cabletv_plan_id, reseller_kobo, available, provider_seen_at")
-        .eq("id", bouquetId)
-        .eq("available", true)
-        .maybeSingle();
+      const bouquetQuery = () =>
+        supabase
+          .from("vtunaija_cabletv_catalog")
+          .select("provider, cabletv_plan_id, reseller_kobo, available, provider_seen_at")
+          .eq("id", bouquetId)
+          .eq("available", true)
+          .maybeSingle();
+
+      let { data: bouquet } = await bouquetQuery();
       if (!bouquet) throw "INVALID_BOUQUET";
-      if (new Date(bouquet.provider_seen_at).getTime() < Date.now() - 30 * 60 * 1000) throw "CATALOG_STALE";
+      if (new Date(bouquet.provider_seen_at).getTime() < Date.now() - CATALOG_STALE_MS) {
+        const refreshed = await refreshVtunaijaCatalogInline("vtunaija-cabletv-catalog");
+        if (refreshed) ({ data: bouquet } = await bouquetQuery());
+        if (!bouquet || new Date(bouquet.provider_seen_at).getTime() < Date.now() - CATALOG_STALE_MS) {
+          throw "CATALOG_STALE";
+        }
+      }
 
       return {
         amount: Number(bouquet.reseller_kobo),
@@ -278,18 +329,32 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
       if (!exam) throw "INVALID_EXAM_TYPE";
       if (!exam.quantityOptions.includes(quantity)) throw "INVALID_QUANTITY";
 
-      // WAEC/NECO/NABTEB result-checking pins move to VTUnaija (confirmed
-      // available via their own support, 2026-08-03). JAMB (confirmed NOT
-      // available on VTUnaija at all) and WAEC Verification/GCE (no
-      // confirmed VTUnaija product) stay on VTUAfrica, unchanged below.
       const vtunaijaExamCode = VTUNAIJA_EXAM_IDS[examId];
       if (vtunaijaExamCode) {
+        const examQuery = () => supabase
+          .from("vtunaija_exam_catalog")
+          .select("customer_kobo, available, requires_review, provider_seen_at")
+          .eq("id", examId)
+          .maybeSingle();
+        let { data: liveExam, error: examError } = await examQuery();
+        if (examError || !liveExam) throw "CATALOG_STALE";
+        if (new Date(liveExam.provider_seen_at).getTime() < Date.now() - CATALOG_STALE_MS) {
+          const refreshed = await refreshVtunaijaCatalogInline("vtunaija-exam-catalog");
+          if (refreshed) ({ data: liveExam, error: examError } = await examQuery());
+          if (examError || !liveExam || new Date(liveExam.provider_seen_at).getTime() < Date.now() - CATALOG_STALE_MS) {
+            throw "CATALOG_STALE";
+          }
+        }
+        if (liveExam.available !== true || liveExam.requires_review === true) throw "EXAM_UNAVAILABLE";
+        const unitAmount = Number(liveExam.customer_kobo);
+        if (!Number.isSafeInteger(unitAmount) || unitAmount <= 0) throw "CATALOG_STALE";
+        const totalAmount = unitAmount * quantity;
+        const quotedAmount = Number(body.quoted_amount_kobo);
+        if (!Number.isSafeInteger(quotedAmount) || quotedAmount !== totalAmount) {
+          throw new PriceChangedError(totalAmount);
+        }
         return {
-          // Provisional debit — VTUnaija has no price-list endpoint for exam
-          // pins, so this is our last-known price until a live purchase
-          // response reveals their real plan_amount (owner-approved
-          // approach, 2026-08-03: use their real price once observed).
-          amount: exam.amount * quantity, // kobo
+          amount: totalAmount,
           txType: "exam_pin",
           network: "N/A",
           recipient: null,
@@ -302,27 +367,9 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
         };
       }
 
-      // VTUAfrica requires profilecode + recipient email (`sender`) + phone
-      // for JAMB. The current app collects only profilecode, so accepting this
-      // purchase would debit a user for a request the provider may reject.
-      // Keep JAMB fail-closed until the mobile form and server validation ship.
-      if (exam.requiresProfileCode) throw "JAMB_TEMPORARILY_UNAVAILABLE";
-
-      const providerPayload: Record<string, unknown> = {
-        service: exam.serviceCode,
-        product_code: exam.productCode,
-        quantity,
-      };
-
-      return {
-        amount: exam.amount * quantity, // kobo
-        txType: "exam_pin",
-        network: "N/A",
-        recipient: null,
-        provider: "vtuafrica",
-        endpoint: "/exam-pin",
-        providerPayload,
-      };
+      // Every app-visible exam must map to a documented VTUnaija Exam ID.
+      // Fail closed if the catalog and routing table ever drift apart.
+      throw "INVALID_EXAM_TYPE";
     }
 
     default:
@@ -331,13 +378,15 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
 }
 
 // Turn the internal validation codes thrown by resolvePurchase into clear,
-// user-facing sentences — the client shows this text directly, so it must
+// user-facing sentences 鈥?the client shows this text directly, so it must
 // never be a raw code like "INVALID_PHONE".
 const VALIDATION_MESSAGES: Record<string, string> = {
   INVALID_NETWORK: "Please choose a valid network.",
   INVALID_PHONE: "Please enter a valid phone number.",
   INVALID_AMOUNT: "Please enter a valid amount.",
   INVALID_BUNDLE: "Please choose a valid data bundle.",
+  PLAN_DISABLED: "This data bundle is temporarily unavailable. Please choose another plan.",
+  AVAILABILITY_UNAVAILABLE: "Plan availability could not be verified. Please try again shortly.",
   CATALOG_STALE: "Prices are being refreshed. Please try again shortly.",
   INVALID_PROVIDER: "Please choose a valid provider.",
   INVALID_METER: "Please enter a valid meter number.",
@@ -345,8 +394,8 @@ const VALIDATION_MESSAGES: Record<string, string> = {
   INVALID_SMARTCARD: "Please enter a valid smartcard number.",
   INVALID_EXAM_TYPE: "Please choose a valid exam type.",
   INVALID_QUANTITY: "Please choose a valid quantity.",
+  EXAM_UNAVAILABLE: "This Exam PIN is temporarily unavailable while its new provider price is reviewed.",
   INVALID_PROFILE_CODE: "Please enter your JAMB profile code.",
-  JAMB_TEMPORARILY_UNAVAILABLE: "JAMB PIN purchases are temporarily unavailable while we complete a provider update.",
   UNKNOWN_SERVICE: "This service isn't available right now.",
 };
 function friendlyValidation(code: string): string {
@@ -357,11 +406,10 @@ function friendlyValidation(code: string): string {
 console.info("[build] phase5-financial-controls-20260801");
 
 serve(async (req: Request) => {
-  const requestStartedAt = performance.now();
   const cors = handleCors(req);
   if (cors) return cors;
 
-  // 1. Authenticate from the JWT — never trust a client-sent user id.
+  // 1. Authenticate from the JWT 鈥?never trust a client-sent user id.
   const user = await getAuthUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
 
@@ -406,7 +454,7 @@ serve(async (req: Request) => {
   }
 
   // 2. Require server-verified proof the PIN/biometric step-up just ran for
-  // THIS request — a valid JWT alone is not enough to move money.
+  // THIS request 鈥?a valid JWT alone is not enough to move money.
   let plan;
   try {
     plan = await resolvePurchase(body, supabase);
@@ -416,10 +464,90 @@ serve(async (req: Request) => {
         success: false,
         code: "PRICE_CHANGED",
         current_amount: code.currentAmountKobo / KOBO,
-        error: `The price changed to ₦${(code.currentAmountKobo / KOBO).toLocaleString("en-NG")}. Please confirm again.`,
+        error: `The price changed to 鈧?{(code.currentAmountKobo / KOBO).toLocaleString("en-NG")}. Please confirm again.`,
       });
     }
-    return json({ error: friendlyValidation(String(code)) }, 400);
+    const validationCode = String(code);
+    return json({ success: false, code: validationCode, error: friendlyValidation(validationCode) }, 400);
+  }
+
+  const requestId = String(body.idempotency_key || newRequestId());
+
+  // Idempotency short-circuit 鈥?settle from an already-actioned request
+  // BEFORE ever touching the PIN/biometric token. Previously the token was
+  // consumed unconditionally on every call, and the idempotency check only
+  // lived inside debit_for_service, called much later. That meant an
+  // ordinary network retry (same idempotency key, e.g. one item in a bulk
+  // send whose response got dropped) still burned a use of the shared
+  // multi-use token even though nothing new was ever going to be charged 鈥?  // enough retries in one batch could exhaust the token mid-send and force
+  // a fresh PIN entry for no real reason. Checking here first means a
+  // retry of an already-resolved (or already in-flight) request costs
+  // nothing: no token spent, no provider call repeated.
+  const { data: existingTx } = await supabase
+    .from("transactions")
+    .select("id, status, amount_ngn, metadata")
+    .eq("metadata->>idempotency_key", requestId)
+    .maybeSingle();
+
+  if (existingTx) {
+    const md = (existingTx.metadata ?? {}) as Record<string, unknown>;
+    if (existingTx.status === "completed") {
+      return json({
+        success: true,
+        transaction_id: existingTx.id,
+        order_id: md.order_id,
+        token: md.token,
+        pins: md.pins,
+        amount: existingTx.amount_ngn,
+      });
+    }
+    if (existingTx.status === "failed" || existingTx.status === "refunded") {
+      return json({
+        success: false,
+        error: "This purchase already failed and was refunded. Please start a new purchase.",
+      });
+    }
+    // Still 'pending' 鈥?genuinely ambiguous/in-flight from an earlier
+    // attempt. Never resubmit the provider call for it; the reconcile
+    // sweep is what settles this, same as everywhere else in this file.
+    return json({
+      success: true,
+      pending: true,
+      transaction_id: existingTx.id,
+      message: "Your order is still processing. You'll be notified once it completes.",
+    });
+  }
+
+  // Re-verify TV ownership server-side before any PIN token is consumed or
+  // wallet money moves. The client-side verification is UX only and cannot
+  // be trusted by a financial endpoint.
+  let verifiedTVCustomerName: string | null = null;
+  let verifiedTVCurrentBouquet: string | null = null;
+  if (body.service === "tv") {
+    if (!isVtuNaijaConfigured()) {
+      return json({ success: false, error: "Smartcard verification isn't available right now." }, 503);
+    }
+    try {
+      const payload = plan.providerPayload as Record<string, unknown>;
+      const verificationResult = await verifyCableTVSmartcard(
+        String(payload.cablename || ""),
+        String(payload.smart_card_number || ""),
+      );
+      const verified = normalizeCableTVSmartcardVerification(verificationResult);
+      if (!verified.ok || !verified.customerName) {
+        return json({
+          success: false,
+          error: "This smartcard number could not be verified for the selected TV provider.",
+        }, 400);
+      }
+      verifiedTVCustomerName = verified.customerName;
+      verifiedTVCurrentBouquet = verified.currentBouquet;
+    } catch {
+      return json({
+        success: false,
+        error: "Could not verify this smartcard number right now. Please try again.",
+      }, 503);
+    }
   }
 
   const authorized = await consumeAuthToken(supabase, user.id, body.auth_token);
@@ -430,13 +558,7 @@ serve(async (req: Request) => {
     }, 401);
   }
 
-  if (plan.provider === "vtu_ng" && !isVtuConfigured()) {
-    return json({ error: "VTU provider not configured" }, 500);
-  }
-  if (plan.provider === "vtuafrica" && !isVtuAfricaConfigured()) {
-    return json({ error: "VTUAfrica provider not configured" }, 500);
-  }
-  if (plan.provider === "vtunaija" && !isVtuNaijaConfigured()) {
+  if (!isVtuNaijaConfigured()) {
     return json({ error: "VTU provider not configured" }, 500);
   }
 
@@ -464,11 +586,8 @@ serve(async (req: Request) => {
           unknown
         >;
       return body.service === "data"
-        ? (req.network === pp.network && req.plan === pp.plan) || // VTUnaija (current)
-          (req.service_id === pp.service_id && req.variation_id === pp.variation_id) || // VTU.ng (retired)
-          (req.service === pp.service && req.DataPlan === pp.DataPlan) // VTUAfrica (retired)
-        : (req.cablename === pp.cablename && req.cableplan === pp.cableplan) || // VTUnaija (current)
-          (req.service === pp.service && req.variation === pp.variation); // VTUAfrica (retired)
+        ? req.network === pp.network && req.plan === pp.plan
+        : req.cablename === pp.cablename && req.cableplan === pp.cableplan;
     });
     if (isSamePlan) {
       return json({
@@ -479,10 +598,7 @@ serve(async (req: Request) => {
     }
   }
 
-  const requestId = String(body.idempotency_key || newRequestId());
-
   // 4. Atomically debit + create the pending transaction.
-  const debitStartedAt = performance.now();
   const { data: txId, error: debitError } = await supabase.rpc(
     "debit_for_service",
     {
@@ -495,12 +611,11 @@ serve(async (req: Request) => {
         service: body.service,
         request: plan.providerPayload,
         provider: plan.provider,
-        provider_reference: stripRef(requestId),
+        provider_reference: requestId.replace(/[^a-zA-Z0-9]/g, ""),
       },
       p_idempotency_key: requestId,
     },
   );
-  const debitCompletedAt = performance.now();
 
   if (debitError) {
     const msg = debitError.message || "";
@@ -515,247 +630,9 @@ serve(async (req: Request) => {
     return json({ success: false, error: "Could not start transaction" }, 500);
   }
 
-  // 4a. VTUAfrica — orders can be async. Some services (betting confirmed,
-  // likely bill-type payments) return "Processing": accepted + our merchant
-  // wallet charged, but not settled. Those must be held 'pending' (NOT
-  // refunded) and finalized by the vtuafrica-reconcile sweep — same lifecycle
-  // as VTU.ng below. Refunding a "Processing" order is a money leak.
-  if (plan.provider === "vtuafrica") {
-    const measureThisRequest =
-      (body.service === "airtime" || body.service === "data") && shouldMeasure(requestId);
-    let providerStartedAt = 0;
-    let providerCompletedAt = 0;
-    // VTUAfrica's purchase endpoint is synchronous and slow (measured 2-13s in
-    // production — it holds the connection open while it reaches the telco).
-    // The settle logic below is UNCHANGED (same debit/complete/refund
-    // semantics); it's just wrapped in a function so airtime/data can stop
-    // blocking the user for the whole call. Every branch returns a Response.
-    const settle = async (): Promise<Response> => {
-      try {
-        providerStartedAt = performance.now();
-        const result = await callVTUAfrica(plan.endpoint, {
-          ...plan.providerPayload,
-          ref: requestId,
-          webhookURL: VTUAFRICA_WEBHOOK_URL,
-        });
-        providerCompletedAt = performance.now();
-        const outcome = vtuAfricaOutcome(result);
-
-        if (outcome === "success") {
-          const orderId: string | undefined = result?.description?.ReferenceID;
-          const { error: completeError } = await supabase.rpc(
-            "complete_service_transaction",
-            {
-              p_tx_id: txId,
-              p_order_id: orderId ?? null,
-            },
-          );
-          if (completeError) throw completeError;
-
-          // The prepaid meter token was previously only ever returned in this
-          // one-time response and never saved anywhere — closing the app
-          // without downloading/copying it meant it was gone for good, with
-          // no way to regenerate the receipt from Transaction History later.
-          // Persist it into the transaction's own metadata (a short string,
-          // not a file — this is not the same as storing a generated PDF,
-          // which is still never done) so the receipt can be rebuilt anytime.
-          const electricityToken: string | undefined = result?.description
-            ?.Token;
-
-          // Exam PINs come back as a single "<=>"-delimited string for
-          // multi-quantity purchases (VTUAfrica's own docs example:
-          // "WR23454<=>456786564") — split into a clean array for the client.
-          const pinsRaw: string | undefined = result?.description?.pins;
-          const pins = pinsRaw
-            ? pinsRaw.split("<=>").filter(Boolean)
-            : undefined;
-
-          // Persist the token, exam PIN(s) AND the provider reference — all
-          // one-time values in the provider response. Saving them means they're
-          // never lost: the meter receipt / exam PIN(s) can always be re-read
-          // from Transaction History, even if the app was closed on the result
-          // screen. The order_id matters more now that the result screen learns
-          // this outcome by POLLING the transaction row (the provider call runs
-          // in the background) rather than from this response directly — the
-          // poll rebuilds the receipt from metadata, so the reference must live
-          // there too, not only in the response body below.
-          if (electricityToken || pins || orderId) {
-            await supabase
-              .from("transactions")
-              .update({
-                metadata: {
-                  service: body.service,
-                  request: plan.providerPayload,
-                  provider: plan.provider,
-                  idempotency_key: requestId,
-                  provider_reference: stripRef(requestId),
-                  ...(electricityToken ? { token: electricityToken } : {}),
-                  ...(pins ? { pins } : {}),
-                  ...(orderId ? { order_id: orderId } : {}),
-                },
-              })
-              .eq("id", txId);
-          }
-
-          return json({
-            success: true,
-            transaction_id: txId,
-            order_id: orderId,
-            pins,
-            // Present only for electricity (prepaid meter token).
-            token: electricityToken,
-            amount: plan.amount,
-          });
-        }
-
-        if (outcome === "pending" || outcome === "unknown") {
-          // Accepted but not settled — leave 'pending' (its default state),
-          // don't refund. vtuafrica-reconcile requeries by ref and finalizes.
-          return json({
-            success: true,
-            pending: true,
-            transaction_id: txId,
-            message:
-              "Your order is still processing. You'll be notified once it completes.",
-          });
-        }
-
-        // outcome === "failed": explicit failure or hard reject — refund.
-        const verified = await queryVTUAfrica(requestId);
-        const verifiedOutcome = vtuAfricaOutcome(verified);
-
-        if (verifiedOutcome === "success") {
-          const normalized = normalizeVTUAfricaResult(verified);
-          const { error: completeError } = await supabase.rpc(
-            "complete_service_transaction",
-            {
-              p_tx_id: txId,
-              p_order_id: normalized.reference,
-            },
-          );
-          if (completeError) throw completeError;
-          return json({
-            success: true,
-            transaction_id: txId,
-            order_id: normalized.reference ?? undefined,
-            amount: plan.amount,
-          });
-        }
-
-        if (verifiedOutcome === "failed") {
-          const normalized = normalizeVTUAfricaResult(verified);
-          await supabase
-            .from("transactions")
-            .update({
-              metadata: {
-                service: body.service,
-                request: plan.providerPayload,
-                provider: plan.provider,
-                idempotency_key: requestId,
-                provider_reference: stripRef(requestId),
-                provider_failure_observation: {
-                  at: new Date().toISOString(),
-                  status: normalized.status,
-                  message: normalized.message,
-                },
-              },
-            })
-            .eq("id", txId)
-            .eq("status", "pending");
-        }
-
-        return json({
-          success: true,
-          pending: true,
-          transaction_id: txId,
-          message:
-            "Your order is still processing. You'll be notified once it completes.",
-        });
-      } catch (e) {
-        // A config/auth error means the request never reached VTUAfrica —
-        // nothing was charged, so refunding is safe. But a generic network
-        // error is ambiguous: the request may have reached VTUAfrica and
-        // charged our merchant wallet, with only the RESPONSE lost. Refunding
-        // in that case is a money leak, so we hold 'pending' and let
-        // vtuafrica-reconcile settle it by querying the ref.
-        if (e instanceof VTUAfricaError) {
-          await supabase.rpc("refund_service_transaction", {
-            p_tx_id: txId,
-            p_reason: `vtuafrica_config: ${e.message}`,
-          });
-          return json({
-            success: false,
-            error: "Provider not configured. Please try again later.",
-          });
-        }
-        return json({
-          success: true,
-          pending: true,
-          transaction_id: txId,
-          message:
-            "Your order is still processing. You'll be notified once it completes.",
-        });
-      }
-    };
-
-    // Await the provider call fully before responding. The worker MUST stay
-    // alive until the airtime/data order actually settles.
-    //
-    // Do NOT return early and finish the provider call in the background via
-    // EdgeRuntime.waitUntil: this runtime EarlyDrops the worker the instant the
-    // response is sent (confirmed 2026-07-30 via a Shutdown log, reason
-    // "EarlyDrop", cpu_time 49ms), which kills the in-flight VTUAfrica call —
-    // leaving the user DEBITED WITH NO AIRTIME and the transaction stuck
-    // 'pending' until reconcile. Keeping the request in-flight (awaiting settle)
-    // is what guarantees the provider call completes; the worker isn't dropped
-    // while a request is still open.
-    //
-    // The result screen shows "Processing" with a spinner while this resolves
-    // (~2-13s, the provider's own latency) and then flips to Successful/Failed.
-    // Genuinely async provider "Processing" replies are still held 'pending'
-    // inside settle() and finalized by vtuafrica-reconcile.
-    const response = await settle();
-
-    if (measureThisRequest) {
-      const finishedAt = performance.now();
-      let outcome = "error";
-      try {
-        const responseBody = await response.clone().json();
-        outcome = responseBody?.pending
-          ? "pending"
-          : responseBody?.success
-            ? "completed"
-            : "failed";
-      } catch {
-        // Keep the generic outcome; telemetry must never affect the purchase.
-      }
-
-      const providerEnd = providerCompletedAt || finishedAt;
-      const { error: metricError } = await supabase.from("vtu_performance_metrics").upsert({
-        transaction_id: txId,
-        service: body.service,
-        network: plan.network,
-        provider: plan.provider,
-        outcome,
-        pre_debit_ms: Math.round(debitStartedAt - requestStartedAt),
-        debit_ms: Math.round(debitCompletedAt - debitStartedAt),
-        provider_ms: Math.round(providerEnd - (providerStartedAt || debitCompletedAt)),
-        settlement_ms: providerCompletedAt ? Math.round(finishedAt - providerCompletedAt) : 0,
-        total_ms: Math.round(finishedAt - requestStartedAt),
-      }, { onConflict: "transaction_id" });
-      if (metricError) {
-        // Non-sensitive structured failure only. Telemetry is best-effort and
-        // must never alter or delay financial settlement beyond this one write.
-        console.warn("vtu_performance_metric_write_failed", metricError.code);
-      }
-    }
-
-    return response;
-  }
-
-  // 4c. VTUnaija — airtime, data, electricity, TV, and (WAEC/NECO/NABTEB)
+  // 4c. VTUnaija 鈥?airtime, data, electricity, TV, and (WAEC/NECO/NABTEB)
   // exam pins all route here now (JAMB and WAEC Verification/GCE stay on
-  // VTUAfrica — see the Provider-routing doc comment above). Same
+  // VTUAfrica 鈥?see the Provider-routing doc comment above). Same
   // inline-await, never-background pattern as VTUAfrica above: the
   // EdgeRuntime.waitUntil incident (worker EarlyDropped right after
   // responding, killing an in-flight provider call and leaving a user
@@ -778,26 +655,41 @@ serve(async (req: Request) => {
         if (completeError) throw completeError;
 
         // Electricity's success response carries a one-time prepaid meter
-        // token — never returned again after this response, so persist it
+        // token 鈥?never returned again after this response, so persist it
         // into the transaction's own metadata (same reasoning/shape as the
         // VTUAfrica electricity branch above) so receipts/History still work.
         const electricityToken: string | undefined = result?.token ?? result?.electricitytoken;
 
         // Exam pin success carries a one-time PIN + serial. VTUnaija's docs
-        // only show a single pin/serial pair for quantity=1 — the
+        // only show a single pin/serial pair for quantity=1 鈥?the
         // multi-quantity delimiter format is UNCONFIRMED (VTUAfrica used
         // "<=>"), so this splits defensively on known delimiters and falls
         // back to the single raw string rather than ever guessing/losing a
         // PIN. Verify the real multi-quantity shape with a live test before
         // trusting this at quantity > 1.
-        const pinRaw: string | undefined = result?.pin;
+        const pinRaw = normalized.pin ?? undefined;
         const pins = pinRaw
           ? (pinRaw.includes("<=>") ? pinRaw.split("<=>") : pinRaw.includes(",") ? pinRaw.split(",") : [pinRaw])
               .map((s: string) => s.trim())
               .filter(Boolean)
           : undefined;
+        const serialRaw = normalized.serial ?? undefined;
+        const serials = serialRaw
+          ? (serialRaw.includes("<=>") ? serialRaw.split("<=>") : serialRaw.includes(",") ? serialRaw.split(",") : [serialRaw])
+              .map((s: string) => s.trim())
+              .filter(Boolean)
+          : undefined;
 
-        if (electricityToken || pins) {
+        // Electricity: carry the meter's verified customer name/address
+        // (checked client-side before payment 鈥?see
+        // verify-electricity-meter) into the transaction's own metadata,
+        // same as the token, so History can rebuild the full receipt later
+        // without re-verifying. Purely opaque display strings 鈥?never used
+        // for any money decision.
+        const customerName = body.service === "electricity" ? safeDisplayString(body.customer_name) : undefined;
+        const customerAddress = body.service === "electricity" ? safeDisplayString(body.customer_address) : undefined;
+
+        if (electricityToken || pins || serials || body.service === "electricity" || body.service === "tv") {
           await supabase
             .from("transactions")
             .update({
@@ -806,9 +698,19 @@ serve(async (req: Request) => {
                 request: plan.providerPayload,
                 provider: plan.provider,
                 idempotency_key: requestId,
-                provider_reference: stripRef(requestId),
+                provider_reference: requestId.replace(/[^a-zA-Z0-9]/g, ""),
                 ...(electricityToken ? { token: electricityToken } : {}),
                 ...(pins ? { pins } : {}),
+                ...(serials ? { serials } : {}),
+                ...(body.service === "electricity" ? { provider_id: String(body.provider_id || "") } : {}),
+                ...(customerName ? { customer_name: customerName } : {}),
+                ...(customerAddress ? { customer_address: customerAddress } : {}),
+                ...(body.service === "tv" && verifiedTVCustomerName
+                  ? { customer_name: verifiedTVCustomerName }
+                  : {}),
+                ...(body.service === "tv" && verifiedTVCurrentBouquet
+                  ? { current_bouquet: verifiedTVCurrentBouquet }
+                  : {}),
               },
             })
             .eq("id", txId);
@@ -820,13 +722,35 @@ serve(async (req: Request) => {
           order_id: normalized.id ?? undefined,
           token: electricityToken,
           pins,
+          serials,
           amount: plan.amount,
         });
       }
 
       if (outcome === "unknown") {
+        // An unusual response can still contain VTUnaija's own transaction
+        // identifier. Preserve it before returning Processing so both the
+        // foreground verifier and scheduled reconciler can query the exact
+        // provider record instead of relying on our client idempotency key.
+        const providerTransactionId = normalized.id ?? normalized.ident;
+        if (providerTransactionId) {
+          await supabase
+            .from("transactions")
+            .update({
+              metadata: {
+                service: body.service,
+                request: plan.providerPayload,
+                provider: plan.provider,
+                idempotency_key: requestId,
+                provider_reference: requestId.replace(/[^a-zA-Z0-9]/g, ""),
+                provider_transaction_id: providerTransactionId,
+              },
+            })
+            .eq("id", txId)
+            .eq("status", "pending");
+        }
         // No documented pending state for VTUnaija airtime, but an
-        // unrecognized/malformed response is NOT proof of failure — hold
+        // unrecognized/malformed response is NOT proof of failure 鈥?hold
         // pending (its default state), never refund, never resubmit the
         // purchase call. vtunaija-reconcile settles it via queryTransaction.
         return json({
@@ -837,29 +761,60 @@ serve(async (req: Request) => {
         });
       }
 
-      // outcome === "failed": VTUnaija itself reports failure — no order was
+      // outcome === "failed": VTUnaija itself reports failure 鈥?no order was
       // created, safe to refund.
-      await supabase.rpc("refund_service_transaction", {
-        p_tx_id: txId,
-        p_reason: normalized.message || "provider_rejected",
-      });
+      await confirmServiceRefund(supabase, txId, normalized.message || "provider_rejected", "automatic");
+      const lowerFailure = normalized.message.toLowerCase();
+      const deterministicPlanFailure = lowerFailure.includes("does not exist") || lowerFailure.includes("refresh your plan");
+      if (
+        body.service === "data" && plan.availability &&
+        deterministicPlanFailure
+      ) {
+        const { data: disabled } = await supabase.rpc("auto_disable_vtu_plan", {
+          p_provider: "vtunaija",
+          p_network: plan.availability.network,
+          p_plan_id: plan.availability.planId,
+          p_reason: "Provider reported that this data plan does not exist",
+        });
+        if (disabled === true) {
+          await supabase.rpc("record_monitoring_alert", {
+            p_fingerprint: `vtunaija_plan_${plan.availability.planId.replace(/[^a-z0-9_-]/gi, "_").toLowerCase()}`,
+            p_type: "vtu_plan_auto_disabled",
+            p_severity: "warning",
+            p_details: {
+              provider: "vtunaija",
+              network: plan.availability.network,
+              family_key: plan.availability.familyKey,
+              plan_id: plan.availability.planId,
+            },
+          });
+        }
+      } else if (body.service === "data" && plan.availability) {
+        await supabase.rpc("record_monitoring_alert", {
+          p_fingerprint: `vtunaija_failure_${plan.availability.network}_${plan.availability.familyKey.replace(/[^a-z0-9_-]/gi, "_").toLowerCase()}`.slice(0, 100),
+          p_type: "vtu_plan_provider_failure",
+          p_severity: "warning",
+          p_details: {
+            provider: "vtunaija",
+            network: plan.availability.network,
+            family_key: plan.availability.familyKey,
+          },
+        });
+      }
       return json({
         success: false,
-        error: "Purchase failed. You were not charged.",
+        error: friendlyVtunaijaFailureMessage(normalized.message || ""),
       });
     } catch (e) {
       if (e instanceof VTUNaijaError) {
-        // Config error — request never reached VTUnaija, refund is safe.
-        await supabase.rpc("refund_service_transaction", {
-          p_tx_id: txId,
-          p_reason: `vtunaija_config: ${e.message}`,
-        });
+        // Config error 鈥?request never reached VTUnaija, refund is safe.
+        await confirmServiceRefund(supabase, txId, `vtunaija_config: ${e.message}`, "automatic");
         return json({
           success: false,
           error: "The provider is temporarily unavailable. You were not charged.",
         });
       }
-      // Network/timeout/parse error — genuinely ambiguous (the request may
+      // Network/timeout/parse error 鈥?genuinely ambiguous (the request may
       // have reached VTUnaija and been actioned, with only the response
       // lost). Hold pending; vtunaija-reconcile is the backstop.
       return json({
@@ -871,91 +826,5 @@ serve(async (req: Request) => {
     }
   }
 
-  // 4b. VTU.ng — call the provider with the SERVER-SIDE token.
-  try {
-    const result = await callVTUNG(supabase, plan.endpoint, {
-      request_id: requestId,
-      ...plan.providerPayload,
-    });
-
-    // A hard API-level error (not even an order was created) — code is the
-    // error code itself (e.g. "invalid_service_id"), not "success".
-    if (result?.code !== "success") {
-      await supabase.rpc("refund_service_transaction", {
-        p_tx_id: txId,
-        p_reason: result?.message || result?.code || "provider_rejected",
-      });
-      return json({
-        success: false,
-        error: result?.message || "Purchase failed. You were not charged.",
-      });
-    }
-
-    // v2 orders can be async: "code":"success" just means the request was
-    // accepted — the real outcome is in data.status. Some providers deliver
-    // via USSD/SMS on VTU.ng's side and can genuinely take minutes, which no
-    // amount of polling here speeds up — so don't make the user wait for it.
-    // Respond immediately with what we know; the scheduled vtu-reconcile
-    // sweep finishes anything still processing within a few minutes.
-    const order = result.data;
-
-    if (SUCCESS_STATUSES.includes(order?.status)) {
-      await supabase.rpc("complete_service_transaction", {
-        p_tx_id: txId,
-        p_order_id: order?.order_id ?? null,
-      });
-      return json({
-        success: true,
-        transaction_id: txId,
-        order_id: order?.order_id,
-        token: order?.token,
-        units: order?.units,
-        amount: plan.amount,
-      });
-    }
-
-    if (NON_TERMINAL_STATUSES.includes(order?.status)) {
-      // Still not resolved — leave the transaction 'pending' (its default
-      // state) rather than guess. VTU.ng's webhook does NOT fire for normal
-      // automated completions (only admin-forced completions and refunds),
-      // so this gets finalized by the scheduled vtu-reconcile sweep instead.
-      return json({
-        success: true,
-        pending: true,
-        transaction_id: txId,
-        message:
-          "Your order is still processing. You'll be notified once it completes.",
-      });
-    }
-
-    // Anything else (refunded, failed, cancelled) — refund our side too.
-    await supabase.rpc("refund_service_transaction", {
-      p_tx_id: txId,
-      p_reason: order?.status || "provider_rejected",
-    });
-    return json({
-      success: false,
-      error: "Purchase failed. You were not charged.",
-    });
-  } catch (e) {
-    if (e instanceof VTUAuthError) {
-      // Authentication fails before an order can be created, so refunding is
-      // safe. Generic timeouts are ambiguous and remain pending because the
-      // provider may have accepted the order before its response was lost.
-      await supabase.rpc("refund_service_transaction", {
-        p_tx_id: txId,
-        p_reason: `vtu_auth_failed: ${e.message}`,
-      });
-      return json({
-        success: false,
-        error: "The VTU provider is temporarily unavailable. You were not charged.",
-      });
-    }
-    return json({
-      success: true,
-      pending: true,
-      transaction_id: txId,
-      message: "Your order is still processing. You'll be notified once it completes.",
-    });
-  }
+  return json({ success: false, error: "Unsupported provider routing" }, 500);
 });

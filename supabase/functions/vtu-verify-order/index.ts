@@ -2,11 +2,11 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient } from "../_shared/auth.ts";
 import {
-  queryVTUAfrica,
-  isVtuAfricaConfigured,
-  normalizeVTUAfricaResult,
-  vtuAfricaOutcome,
-} from "../_shared/vtuafrica-client.ts";
+  isVtuNaijaConfigured,
+  normalizeVTUNaijaQueryResult,
+  queryVTUNaijaDataTransaction,
+  queryVTUNaijaTransaction,
+} from "../_shared/vtunaija-client.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -57,43 +57,39 @@ serve(async (req: Request) => {
   if (tx.status === "failed" || tx.status === "refunded") return json({ status: "failed" });
   if (tx.status !== "pending") return json({ status: tx.status });
 
-  // Only VTUAfrica-settled service types are verifiable this way.
+  // Only VTU service purchases are verifiable this way.
   if (!["airtime", "data", "bill", "exam_pin"].includes(tx.type)) return json({ status: "pending" });
-  if (!isVtuAfricaConfigured()) return json({ status: "pending" });
 
-  const ref = (tx.metadata as { idempotency_key?: string } | null)?.idempotency_key;
+  const metadata = tx.metadata as {
+    provider?: string;
+    idempotency_key?: string;
+    provider_transaction_id?: string;
+  } | null;
+  const provider = metadata?.provider;
+  const ref = metadata?.idempotency_key;
   if (!ref) return json({ status: "pending" });
 
-  try {
-    // Foreground verification must be bounded. The 30-second reconciler is
-    // the retry mechanism; making a phone wait through exponential retries
-    // only creates a second timeout without making the provider settle faster.
-    const result = await queryVTUAfrica(ref, 1, 7000);
-    const outcome = vtuAfricaOutcome(result);
-    const normalized = normalizeVTUAfricaResult(result);
+  if (provider !== "vtunaija" || !isVtuNaijaConfigured()) return json({ status: "pending" });
 
-    if (outcome === "success") {
+  const queryId = metadata?.provider_transaction_id ?? ref;
+  try {
+    const result = tx.type === "data"
+      ? await queryVTUNaijaDataTransaction(queryId)
+      : await queryVTUNaijaTransaction(queryId);
+    const normalized = normalizeVTUNaijaQueryResult(result);
+
+    if (normalized.outcome === "success") {
       const { error: completeError } = await supabase.rpc("complete_service_transaction", {
         p_tx_id: tx.id,
-        p_order_id: normalized.reference,
+        p_order_id: normalized.transactionId,
       });
-      if (completeError) return json({ status: "pending" });
-      return json({ status: "completed" });
+      return json({ status: completeError ? "pending" : "completed" });
     }
 
-    if (outcome === "failed") {
-      // Client polling is intentionally not allowed to refund. A provider can
-      // report failure briefly while telco delivery is still settling. The
-      // cron reconciler requires two separated failure confirmations before
-      // returning money, preventing rapid polls from creating free delivery.
-      return json({ status: "pending" });
-    }
-
-    // Still processing / "Does not Exist" / unknown — leave pending, let the
-    // client keep polling and the reconcile sweep remain the backstop.
+    // Foreground polling never returns money. The scheduled VTUnaija
+    // reconciler owns refunds after separated provider confirmations.
     return json({ status: "pending" });
   } catch {
-    // Verify endpoint hiccup — treat as not-yet-known, keep pending.
     return json({ status: "pending" });
   }
 });
