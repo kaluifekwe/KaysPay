@@ -268,23 +268,42 @@ export function normalizeVerifiedCustomerName(value: string): string {
  * account fields inside Full_Details, so accept either documented shape.
  */
 export function normalizeCableTVSmartcardVerification(result: any): CableTVSmartcardVerification {
-  const details = result?.Full_Details && typeof result.Full_Details === "object"
-    ? result.Full_Details
-    : {};
+  const parseDetails = (value: unknown): Record<string, unknown> => {
+    let current = value;
+    for (let depth = 0; depth < 2; depth += 1) {
+      if (Array.isArray(current)) current = current[0];
+      if (current && typeof current === "object") return current as Record<string, unknown>;
+      if (typeof current !== "string" || current.length > 10_000) return {};
+      try {
+        current = JSON.parse(current);
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  };
+  const details = parseDetails(result?.Full_Details ?? result?.full_details ?? result?.details);
+  const detail = (...keys: string[]): unknown => {
+    for (const key of keys) {
+      const match = Object.keys(details).find((candidate) => candidate.toLowerCase() === key.toLowerCase());
+      if (match) return details[match];
+    }
+    return undefined;
+  };
   const text = (value: unknown): string | null => {
     if (typeof value !== "string") return null;
     const trimmed = value.trim();
     return trimmed ? trimmed.slice(0, 200) : null;
   };
-  const rawCustomerName = text(result?.Customer_Name) ?? text(result?.name) ?? text(details?.Customer_Name);
+  const rawCustomerName = text(result?.Customer_Name) ?? text(result?.name) ?? text(detail("Customer_Name", "customerName", "name"));
   const customerName = rawCustomerName ? normalizeVerifiedCustomerName(rawCustomerName) : null;
-  const renewalRaw = Number(result?.Renewal_Amount ?? details?.Renewal_Amount);
+  const renewalRaw = Number(result?.Renewal_Amount ?? result?.renewal_amount ?? detail("Renewal_Amount", "renewalAmount"));
   return {
     ok: customerName !== null,
     customerName,
-    accountStatus: text(result?.Status_Name) ?? text(details?.Status),
-    dueDate: text(result?.Due_Date) ?? text(details?.Due_Date),
-    currentBouquet: text(result?.Current_Bouquet) ?? text(details?.Current_Bouquet),
+    accountStatus: text(result?.Status_Name) ?? text(result?.account_status) ?? text(detail("Status", "Status_Name", "accountStatus")),
+    dueDate: text(result?.Due_Date) ?? text(result?.due_date) ?? text(detail("Due_Date", "dueDate")),
+    currentBouquet: text(result?.Current_Bouquet) ?? text(result?.current_bouquet) ?? text(detail("Current_Bouquet", "currentBouquet")),
     renewalAmount: Number.isFinite(renewalRaw) && renewalRaw >= 0 ? renewalRaw : null,
   };
 }

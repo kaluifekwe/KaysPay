@@ -58,6 +58,14 @@ serve(async (req: Request) => {
   try {
     const result = await verifyCableTVSmartcard(String(VTUNAIJA_CABLE_IDS[provider]), smartcardNumber);
     const verified = normalizeCableTVSmartcardVerification(result);
+    console.info("TV verification response shape", {
+      provider,
+      full_details_type: Array.isArray(result?.Full_Details) ? "array" : typeof result?.Full_Details,
+      has_account_status: verified.accountStatus !== null,
+      has_due_date: verified.dueDate !== null,
+      has_current_bouquet: verified.currentBouquet !== null,
+      has_renewal_amount: verified.renewalAmount !== null,
+    });
     if (!verified.ok) {
       return json({
         success: false,
