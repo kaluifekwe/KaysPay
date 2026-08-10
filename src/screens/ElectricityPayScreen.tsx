@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   StyleSheet,
@@ -64,13 +65,14 @@ export default function ElectricityPayScreen(props: any) {
   const [savedAccounts, setSavedAccounts] = useState<SavedBillingAccount[]>([]);
   const [cachedPreviewName, setCachedPreviewName] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    vtuService.getSavedBillingAccounts('electricity', provider.id).then((accounts) => {
-      if (active) setSavedAccounts(accounts);
-    });
-    return () => { active = false; };
+  const loadSavedAccounts = useCallback(async () => {
+    const accounts = await vtuService.getSavedBillingAccounts('electricity', provider.id);
+    setSavedAccounts(accounts);
   }, [provider.id]);
+
+  useFocusEffect(useCallback(() => {
+    void loadSavedAccounts();
+  }, [loadSavedAccounts]));
 
   const numericAmount = useMemo(() => parseInt(amount, 10), [amount]);
   const isValidAmount = !isNaN(numericAmount) && numericAmount >= 500 && numericAmount <= 500000;
@@ -105,13 +107,14 @@ export default function ElectricityPayScreen(props: any) {
       if (res.ok) {
         setVerifiedName(res.customerName);
         setVerifiedAddress(res.customerAddress);
+        void loadSavedAccounts();
       } else {
         setVerifyError(res.error || 'Could not verify this meter number.');
       }
     }, 700);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meterNumber, isValidMeter, provider.id]);
+  }, [meterNumber, isValidMeter, provider.id, loadSavedAccounts]);
 
   const handleProceedAnyway = useCallback(() => {
     Alert.alert(
@@ -145,6 +148,25 @@ export default function ElectricityPayScreen(props: any) {
     handleMeterChange(account.account_number);
     setCachedPreviewName(account.customer_name);
   }, [handleMeterChange]);
+
+  const handleRemoveSavedAccount = useCallback((account: SavedBillingAccount) => {
+    Alert.alert(
+      'Remove saved meter?',
+      `Remove ${account.account_number} from your saved ${provider.name} meters?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            const removed = await vtuService.deleteSavedBillingAccount(account.id);
+            if (removed) setSavedAccounts((current) => current.filter((item) => item.id !== account.id));
+            else Alert.alert('Could not remove meter', 'Please try again.');
+          },
+        },
+      ],
+    );
+  }, [provider.name]);
 
   const handleQuickAmount = useCallback((quickAmount: number) => {
     setAmount(quickAmount.toString());
@@ -326,15 +348,15 @@ export default function ElectricityPayScreen(props: any) {
               <View style={styles.savedAccounts}>
                 <Text style={styles.savedLabel}>Previously used meters</Text>
                 {savedAccounts.map((account) => (
-                  <TouchableOpacity
-                    key={account.id}
-                    style={styles.savedAccount}
-                    onPress={() => handleSavedAccountSelect(account)}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={styles.savedNumber}>{account.account_number}</Text>
-                    <Text style={styles.savedName} numberOfLines={1}>{account.customer_name}</Text>
-                  </TouchableOpacity>
+                  <View key={account.id} style={styles.savedAccount}>
+                    <TouchableOpacity style={styles.savedAccountSelect} onPress={() => handleSavedAccountSelect(account)} activeOpacity={0.75}>
+                      <Text style={styles.savedNumber}>{account.account_number}</Text>
+                      <Text style={styles.savedName} numberOfLines={1}>{account.customer_name}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.removeSavedButton} onPress={() => handleRemoveSavedAccount(account)} activeOpacity={0.75}>
+                      <Text style={styles.removeSavedText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
                 ))}
               </View>
             ) : null}
@@ -544,7 +566,10 @@ const styles = StyleSheet.create({
   arrearsNoticeText: { ...Typography.CAPTION, color: Colors.DARK, lineHeight: 19 },
   savedAccounts: { marginBottom: Spacing.M },
   savedLabel: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.S },
-  savedAccount: { minHeight: 52, borderWidth: 1, borderColor: Colors.BORDER, borderRadius: Spacing.BUTTON_RADIUS, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S, marginBottom: Spacing.S, justifyContent: 'center' },
+  savedAccount: { minHeight: 60, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: Colors.BORDER, borderRadius: Spacing.BUTTON_RADIUS, marginBottom: Spacing.S },
+  savedAccountSelect: { flex: 1, minHeight: 58, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S, justifyContent: 'center' },
+  removeSavedButton: { minWidth: 72, minHeight: 58, justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing.S },
+  removeSavedText: { ...Typography.CAPTION, color: Colors.ERROR, fontWeight: '600' },
   savedNumber: { ...Typography.BODY, color: Colors.DARK, fontWeight: '600' },
   savedName: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: 2 },
   cachedPreview: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: Spacing.S },

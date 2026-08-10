@@ -615,14 +615,19 @@ export const vtuService = {
     providerId: string,
   ): Promise<SavedBillingAccount[]> {
     try {
-      const { data, error } = await withTimeout(
-        supabase.functions.invoke('billing-accounts', {
-          body: { action: 'list', service, provider_id: providerId },
-        }),
-        12_000,
-      );
-      if (error || !data?.success || !Array.isArray(data.accounts)) return [];
-      return data.accounts as SavedBillingAccount[];
+      const accounts: SavedBillingAccount[] = [];
+      for (let page = 0; page < 10; page += 1) {
+        const { data, error } = await withTimeout(
+          supabase.functions.invoke('billing-accounts', {
+            body: { action: 'list', service, provider_id: providerId, page },
+          }),
+          12_000,
+        );
+        if (error || !data?.success || !Array.isArray(data.accounts)) return accounts;
+        accounts.push(...data.accounts as SavedBillingAccount[]);
+        if (data.has_more !== true) break;
+      }
+      return accounts;
     } catch {
       return [];
     }

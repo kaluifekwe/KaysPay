@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -45,13 +46,14 @@ export default function TVPayScreen({ navigation, route }: any) {
   const [savedAccounts, setSavedAccounts] = useState<SavedBillingAccount[]>([]);
   const [cachedPreviewName, setCachedPreviewName] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    vtuService.getSavedBillingAccounts('tv', provider.id).then((accounts) => {
-      if (active) setSavedAccounts(accounts);
-    });
-    return () => { active = false; };
+  const loadSavedAccounts = useCallback(async () => {
+    const accounts = await vtuService.getSavedBillingAccounts('tv', provider.id);
+    setSavedAccounts(accounts);
   }, [provider.id]);
+
+  useFocusEffect(useCallback(() => {
+    void loadSavedAccounts();
+  }, [loadSavedAccounts]));
 
   useFocusEffect(useCallback(() => {
     let cancelled = false;
@@ -109,6 +111,7 @@ export default function TVPayScreen({ navigation, route }: any) {
       setVerifiedDueDate(result.dueDate);
       setVerifiedRenewalAmount(result.renewalAmount);
       setVerifyState('verified');
+      void loadSavedAccounts();
     } else {
       setVerifiedName(null);
       setVerifiedBouquet(null);
@@ -118,7 +121,26 @@ export default function TVPayScreen({ navigation, route }: any) {
       setVerifyError(result.error || 'Could not verify this smartcard number.');
       setVerifyState('failed');
     }
-  }, [provider.id, smartcardNumber]);
+  }, [provider.id, smartcardNumber, loadSavedAccounts]);
+
+  const handleRemoveSavedAccount = useCallback((account: SavedBillingAccount) => {
+    Alert.alert(
+      'Remove saved account?',
+      `Remove ${account.account_number} from your saved ${provider.name} accounts?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            const removed = await vtuService.deleteSavedBillingAccount(account.id);
+            if (removed) setSavedAccounts((current) => current.filter((item) => item.id !== account.id));
+            else Alert.alert('Could not remove account', 'Please try again.');
+          },
+        },
+      ],
+    );
+  }, [provider.name]);
 
   useEffect(() => {
     const digits = smartcardNumber.replace(/\D/g, '');
@@ -193,15 +215,15 @@ export default function TVPayScreen({ navigation, route }: any) {
               <View style={styles.savedAccounts}>
                 <Text style={styles.savedLabel}>Previously used smartcards</Text>
                 {savedAccounts.map((account) => (
-                  <TouchableOpacity
-                    key={account.id}
-                    style={styles.savedAccount}
-                    onPress={() => handleSavedAccountSelect(account)}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={styles.savedNumber}>{account.account_number}</Text>
-                    <Text style={styles.savedName} numberOfLines={1}>{account.customer_name}</Text>
-                  </TouchableOpacity>
+                  <View key={account.id} style={styles.savedAccount}>
+                    <TouchableOpacity style={styles.savedAccountSelect} onPress={() => handleSavedAccountSelect(account)} activeOpacity={0.75}>
+                      <Text style={styles.savedNumber}>{account.account_number}</Text>
+                      <Text style={styles.savedName} numberOfLines={1}>{account.customer_name}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.removeSavedButton} onPress={() => handleRemoveSavedAccount(account)} activeOpacity={0.75}>
+                      <Text style={styles.removeSavedText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
                 ))}
               </View>
             ) : null}
@@ -324,7 +346,10 @@ const styles = StyleSheet.create({
   label: { ...Typography.SECTION_HEADING, marginBottom: Spacing.M },
   savedAccounts: { marginBottom: Spacing.M },
   savedLabel: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.S },
-  savedAccount: { minHeight: 52, borderWidth: 1, borderColor: Colors.BORDER, borderRadius: Spacing.BUTTON_RADIUS, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S, marginBottom: Spacing.S, justifyContent: 'center' },
+  savedAccount: { minHeight: 60, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: Colors.BORDER, borderRadius: Spacing.BUTTON_RADIUS, marginBottom: Spacing.S },
+  savedAccountSelect: { flex: 1, minHeight: 58, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S, justifyContent: 'center' },
+  removeSavedButton: { minWidth: 72, minHeight: 58, justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing.S },
+  removeSavedText: { ...Typography.CAPTION, color: Colors.ERROR, fontWeight: '600' },
   savedNumber: { ...Typography.BODY, color: Colors.DARK, fontWeight: '600' },
   savedName: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: 2 },
   cachedPreview: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: Spacing.S },

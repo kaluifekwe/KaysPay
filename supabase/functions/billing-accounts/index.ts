@@ -37,6 +37,8 @@ serve(async (req: Request) => {
       return json({ success: false, error: "Invalid account filter" }, 400);
     }
 
+    const page = Math.max(0, Math.min(100, Number(body.page) || 0));
+    const pageSize = 50;
     const { data, error } = await db
       .from("saved_billing_accounts")
       .select("id, service, provider_id, account_number, customer_name, customer_address, last_verified_at, last_used_at")
@@ -44,9 +46,15 @@ serve(async (req: Request) => {
       .eq("service", service)
       .eq("provider_id", providerId)
       .order("last_used_at", { ascending: false })
-      .limit(30);
+      .range(page * pageSize, page * pageSize + pageSize);
     if (error) return json({ success: false, error: "Could not load saved accounts" }, 500);
-    return json({ success: true, accounts: data ?? [] });
+    const rows = data ?? [];
+    return json({
+      success: true,
+      accounts: rows.slice(0, pageSize),
+      has_more: rows.length > pageSize,
+      page,
+    });
   }
 
   if (action === "delete") {

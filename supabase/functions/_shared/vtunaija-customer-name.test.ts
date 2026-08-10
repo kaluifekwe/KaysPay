@@ -49,3 +49,14 @@ Deno.test("reads cable account details from a JSON string", () => {
   assertEquals(result.currentBouquet, "GOtv Jinja");
   assertEquals(result.renewalAmount, 3900);
 });
+
+Deno.test("reads cable account details from provider key-value text", () => {
+  const result = normalizeCableTVSmartcardVerification({
+    Customer_Name: "Humble Humble",
+    Full_Details: `'Status':'SUSPENDED','Due_Date':'November 24th, 2026','Current_Bouquet':'GOtv Jinja N3,900','Renewal_Amount':'3900'`,
+  });
+  assertEquals(result.accountStatus, "SUSPENDED");
+  assertEquals(result.dueDate, "November 24th, 2026");
+  assertEquals(result.currentBouquet, "GOtv Jinja N3,900");
+  assertEquals(result.renewalAmount, 3900);
+});

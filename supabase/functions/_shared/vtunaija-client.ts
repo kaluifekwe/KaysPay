@@ -277,7 +277,19 @@ export function normalizeCableTVSmartcardVerification(result: any): CableTVSmart
       try {
         current = JSON.parse(current);
       } catch {
-        return {};
+        const source = String(current).trim();
+        const extracted: Record<string, string> = {};
+        for (const key of ["Customer_Name", "Status", "Status_Name", "Due_Date", "Current_Bouquet", "Renewal_Amount"]) {
+          const safeKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const pattern = new RegExp(
+            `(?:^|[,{}])\\s*["']?${safeKey}["']?\\s*:\\s*(?:["']([^"']{1,200})["']|([^,}\\r\\n]{1,200}))`,
+            "i",
+          );
+          const match = source.match(pattern);
+          const found = (match?.[1] ?? match?.[2] ?? "").trim();
+          if (found) extracted[key] = found;
+        }
+        return extracted;
       }
     }
     return {};
