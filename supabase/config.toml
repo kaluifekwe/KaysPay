@@ -42,6 +42,9 @@ verify_jwt = true
 [functions.verify-tv-smartcard]
 verify_jwt = true
 
+[functions.billing-accounts]
+verify_jwt = true
+
 [functions.request-pin-reset]
 verify_jwt = true
 

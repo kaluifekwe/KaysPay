@@ -21,9 +21,20 @@ export interface NormalizedVTUNaijaResult {
   id: string | null;
   ident: string | null;
   planAmount: string | null;
+  pin: string | null;
+  serial: string | null;
 }
 
 export type VTUNaijaOutcome = "success" | "failed" | "unknown";
+
+export interface NormalizedVTUNaijaQueryResult {
+  outcome: VTUNaijaOutcome;
+  transactionId: string | null;
+  transactionType: string | null;
+  size: string | null;
+  network: string | null;
+  message: string;
+}
 
 /**
  * Calls a VTUnaija endpoint with the account's API token. Purchase/catalog
@@ -99,6 +110,8 @@ export function normalizeVTUNaijaResult(result: any): NormalizedVTUNaijaResult {
     id: result?.id != null ? String(result.id) : null,
     ident: result?.ident != null ? String(result.ident) : null,
     planAmount: result?.plan_amount != null ? String(result.plan_amount) : null,
+    pin: result?.pin != null ? String(result.pin).trim() || null : null,
+    serial: result?.serial != null ? String(result.serial).trim() || null : null,
   };
 }
 
@@ -114,6 +127,46 @@ export function vtunaijaOutcome(result: any): VTUNaijaOutcome {
   if (statusOk === true) return "success";
   if (statusOk === false) return "failed";
   return "unknown";
+}
+
+/**
+ * Query endpoints have two different status layers:
+ * - top-level status: whether VTUnaija successfully retrieved the record;
+ * - data.status: whether the underlying customer transaction succeeded.
+ *
+ * Never use the top-level retrieval status to settle money. A successful
+ * lookup can contain a failed transaction. Unexpected/missing nested data is
+ * deliberately "unknown" so reconciliation leaves the wallet untouched.
+ */
+export function normalizeVTUNaijaQueryResult(result: any): NormalizedVTUNaijaQueryResult {
+  const retrievalStatusCap = String(result?.Status ?? "").trim().toLowerCase();
+  const retrievalStatusLower = String(result?.status ?? "").trim().toLowerCase();
+  const retrievalSucceeded =
+    retrievalStatusCap === "successful" || retrievalStatusLower === "success";
+  const data = retrievalSucceeded && result?.data && typeof result.data === "object"
+    ? result.data
+    : null;
+
+  const transactionStatus = String(data?.status ?? "").trim().toLowerCase();
+  const outcome: VTUNaijaOutcome =
+    transactionStatus === "successful" || transactionStatus === "success" ? "success" :
+    transactionStatus === "failed" || transactionStatus === "fail" ? "failed" :
+    "unknown";
+
+  const value = (input: unknown): string | null => {
+    if (input === null || input === undefined) return null;
+    const text = String(input).trim();
+    return text || null;
+  };
+
+  return {
+    outcome,
+    transactionId: value(data?.transaction_id),
+    transactionType: value(data?.transaction_type),
+    size: value(data?.size),
+    network: value(data?.network),
+    message: value(data?.api_response) ?? value(data?.description) ?? value(result?.message) ?? "",
+  };
 }
 
 /**
@@ -138,4 +191,100 @@ export function queryVTUNaijaDataTransaction(datarequestId: string): Promise<any
     20000,
     "GET",
   );
+}
+
+/**
+ * Verifies a meter number against a DISCO BEFORE payment, returning the real
+ * customer name (and address) tied to that meter — lets the caller confirm
+ * they're paying the right account before any money moves. Read-only; safe
+ * to call as often as needed, never mutates anything on VTUnaija's side.
+ */
+export function verifyElectricityMeter(discoName: string, meterNumber: string): Promise<any> {
+  return callVTUNaija("/billpayment/verify/", {
+    disco_name: discoName,
+    meter_number: meterNumber,
+  });
+}
+
+export interface ElectricityMeterVerification {
+  ok: boolean;
+  customerName: string | null;
+  customerAddress: string | null;
+}
+
+/**
+ * The verify endpoint's failure vocabulary isn't confirmed the same way
+ * purchase responses are (no live failed example seen yet) — so a non-empty
+ * Customer_Name is treated as the only trustworthy success signal, same
+ * "never guess" discipline as normalizeVTUNaijaResult above. Anything else
+ * (empty name, malformed shape, provider error) is just "not verified."
+ */
+export function normalizeElectricityMeterVerification(result: any): ElectricityMeterVerification {
+  const rawName = typeof result?.Customer_Name === "string" ? result.Customer_Name.trim() : "";
+  const name = rawName ? normalizeVerifiedCustomerName(rawName) : "";
+  const address = typeof result?.Customer_Address === "string" ? result.Customer_Address.trim() : "";
+  return {
+    ok: name.length > 0,
+    customerName: name || null,
+    customerAddress: address || null,
+  };
+}
+
+/** Read-only verification of a GOtv/DStv/StarTimes smart-card or IUC number. */
+export function verifyCableTVSmartcard(cableName: string, smartcardNumber: string): Promise<any> {
+  return callVTUNaija("/cablesub/verify/", {
+    cablename: cableName,
+    smart_card_number: smartcardNumber,
+  });
+}
+
+export interface CableTVSmartcardVerification {
+  ok: boolean;
+  customerName: string | null;
+  accountStatus: string | null;
+  dueDate: string | null;
+  currentBouquet: string | null;
+  renewalAmount: number | null;
+}
+
+// Some provider verification responses repeat the complete customer name
+// (for example "Humble Humble" or "John Doe John Doe"). Keep the raw value
+// server-side for audit, but use this normalized form for display/receipts.
+export function normalizeVerifiedCustomerName(value: string): string {
+  const words = value.trim().replace(/\s+/g, " ").split(" ");
+  if (words.length < 2) return words.join(" ");
+  for (let half = 1; half <= Math.floor(words.length / 2); half += 1) {
+    if (half * 2 !== words.length) continue;
+    const first = words.slice(0, half).join(" ");
+    const second = words.slice(half).join(" ");
+    if (first.localeCompare(second, undefined, { sensitivity: "accent" }) === 0) return first;
+  }
+  return words.join(" ");
+}
+
+/**
+ * Treat a non-empty customer name as the trustworthy success signal. The
+ * provider documents both Customer_Name/name and sometimes nests the extra
+ * account fields inside Full_Details, so accept either documented shape.
+ */
+export function normalizeCableTVSmartcardVerification(result: any): CableTVSmartcardVerification {
+  const details = result?.Full_Details && typeof result.Full_Details === "object"
+    ? result.Full_Details
+    : {};
+  const text = (value: unknown): string | null => {
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    return trimmed ? trimmed.slice(0, 200) : null;
+  };
+  const rawCustomerName = text(result?.Customer_Name) ?? text(result?.name) ?? text(details?.Customer_Name);
+  const customerName = rawCustomerName ? normalizeVerifiedCustomerName(rawCustomerName) : null;
+  const renewalRaw = Number(result?.Renewal_Amount ?? details?.Renewal_Amount);
+  return {
+    ok: customerName !== null,
+    customerName,
+    accountStatus: text(result?.Status_Name) ?? text(details?.Status),
+    dueDate: text(result?.Due_Date) ?? text(details?.Due_Date),
+    currentBouquet: text(result?.Current_Bouquet) ?? text(details?.Current_Bouquet),
+    renewalAmount: Number.isFinite(renewalRaw) && renewalRaw >= 0 ? renewalRaw : null,
+  };
 }

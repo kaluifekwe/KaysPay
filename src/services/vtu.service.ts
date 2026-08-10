@@ -48,15 +48,17 @@ export interface VTUResult {
   error?: string;
   // Airtime (VTUnaija) is normally synchronous, but an ambiguous/unclear
   // provider response is held pending rather than guessed; data (still on
-  // VTU.ng pending VTUnaija's account_Id) and other services can be
+  // VTUnaija data catalog; other services can be
   // genuinely async. `pending` means "not failed, just not final yet"; it'll
   // complete or refund on its own shortly after.
   pending?: boolean;
   // The server transaction id — lets the result screen poll this purchase
   // until it settles (used by the Processing -> Successful status screen).
   transaction_id?: string;
-  code?: 'PRICE_CHANGED';
+  code?: 'PRICE_CHANGED' | 'PLAN_DISABLED' | 'AVAILABILITY_UNAVAILABLE';
   current_amount?: number;
+  pins?: string[];
+  serials?: string[];
 }
 
 export interface BatchAirtimeRecipient {
@@ -103,9 +105,9 @@ const fallbackDataBundles: DataBundle[] = [
   { id: 'vtunaija-9mobile-220', name: '9mobile 650MB - 200 Naira (GiftingPlan)', amount: 200.10, validity: '1 Days', network: '9mobile' },
 ];
 
-// Same 12 DISCO codes VTUAfrica's own pricing page confirms it supports
+// App-facing identifiers for the supported electricity distributors.
 // (cross-checked live, 2026-07-03) — electricity now routes through
-// VTUAfrica rather than VTU.ng.
+// Provider mapping is resolved server-side from VTUnaija's live catalog.
 const electricityProviders: ElectricityProvider[] = [
   { id: 'ikeja-electric', name: 'Ikeja Electric (IKEDC)', type: 'prepaid' },
   { id: 'eko-electric', name: 'Eko Electricity (EKEDC)', type: 'prepaid' },
@@ -120,6 +122,68 @@ const electricityProviders: ElectricityProvider[] = [
   { id: 'aba-electric', name: 'Aba Electricity (ABEDC)', type: 'prepaid' },
   { id: 'yola-electric', name: 'Yola Electricity (YEDC)', type: 'prepaid' },
 ];
+
+const electricityCatalogCacheKey = 'vtunaija_electricity_catalog';
+
+// Exact names returned by VTUnaija's live catalogue. Customer-facing labels
+// stay concise, while this lookup ensures only provider-backed options show.
+const electricityProviderIdsByVtunaijaName = new Map<string, string>([
+  ['Ikeja Electricity Distribution Company', 'ikeja-electric'],
+  ['Eko Electricity Distribution Company', 'eko-electric'],
+  ['Kano Electricity Distribution Company (KEDCO)', 'kano-electric'],
+  ['Port Harcourt Electricity Distribution Company (PHED)', 'portharcourt-electric'],
+  ['Jos Electricity Distribution Company', 'jos-electric'],
+  ['Ibadan Electricity Distribution Company (IBEDC)', 'ibadan-electric'],
+  ['Kaduna Electricity Distribution Company (KEDCO)', 'kaduna-electric'],
+  ['Abuja Electricity Distribution Company (AEDC)', 'abuja-electric'],
+  ['Enugu Electricity Distribution Company (EEDC)', 'enugu-electric'],
+  ['Benin Electricity Distribution Company (BEDC)', 'benin-electric'],
+  ['Yola Electricity Distribution Company', 'yola-electric'],
+  ['Aba Electricity Distribution Company', 'aba-electric'],
+]);
+
+function cachedElectricityProviders(): ElectricityProvider[] {
+  const cached = readCache<ElectricityProvider[]>(electricityCatalogCacheKey);
+  return cached?.data?.length ? cached.data : electricityProviders;
+}
+
+export interface SavedBillingAccount {
+  id: string;
+  service: 'tv' | 'electricity';
+  provider_id: string;
+  account_number: string;
+  customer_name: string;
+  customer_address: string | null;
+  last_verified_at: string;
+  last_used_at: string;
+}
+
+async function refreshElectricityProviders(force = false): Promise<ElectricityProvider[]> {
+  const cached = readCache<ElectricityProvider[]>(electricityCatalogCacheKey);
+  if (!force && cached?.data?.length && Date.now() - cached.savedAt < 60 * 1000) return cached.data;
+
+  try {
+    const { data, error } = await withTimeout(
+      supabase.functions.invoke('vtunaija-electricity-catalog', { body: { health: true } }),
+      12_000,
+    );
+    if (error || !data?.healthy || !Array.isArray(data.rows)) return cachedElectricityProviders();
+
+    const availableIds = new Set<string>();
+    for (const row of data.rows as { name?: unknown }[]) {
+      if (typeof row?.name !== 'string') continue;
+      const id = electricityProviderIdsByVtunaijaName.get(row.name);
+      if (id) availableIds.add(id);
+    }
+    const providers = electricityProviders.filter((provider) => availableIds.has(provider.id));
+    if (providers.length === 0) return cachedElectricityProviders();
+
+    writeCache(electricityCatalogCacheKey, providers);
+    return providers;
+  } catch {
+    return cachedElectricityProviders();
+  }
+}
 
 // Just the 3 supported provider cards — bouquets are fetched live from
 // vtunaija-cabletv-catalog (see refreshBouquets below), the same
@@ -149,23 +213,46 @@ const fallbackBouquets: Record<TVServiceProvider, TVBouquet[]> = {
   ],
 };
 
-// Routed to VTUAfrica's `/exam-pin` endpoint (VTU.ng never had a working
-// exam pin integration). Ids match `_shared/vtu-catalog.ts`'s EXAM_PIN_TYPES
-// exactly, confirmed live 2026-07-02. NECO GCE and NABTEB GCE are excluded —
-// their listed prices (₦2 and ₦33) are clearly data errors on VTUAfrica's
-// pricing page. JAMB PINs require a `profilecode` — the candidate's own
-// JAMB profile code obtained directly from JAMB, not something we
-// generate — and quantity is locked to 1 since one profile code can't cover
-// multiple registration PINs in a single purchase.
+// Exact six-product catalog documented by VTUnaija. Quantity is restricted
+// to one until the provider confirms how multiple PIN/serial pairs are
+// returned. Prices mirror the active premium tier used server-side.
 const examTypes: ExamType[] = [
-  { id: 'waec-result', name: 'WAEC Result Checking PIN', amount: 5000, quantity_options: [1, 2, 3, 4, 5] },
-  { id: 'waec-verification', name: 'WAEC Verification PIN', amount: 4000, quantity_options: [1, 2, 3, 4, 5] },
-  { id: 'waec-gce', name: 'WAEC GCE Registration PIN', amount: 24000, quantity_options: [1, 2, 3, 4, 5] },
-  { id: 'neco-result', name: 'NECO Result Checking Token', amount: 2100, quantity_options: [1, 2, 3, 4, 5] },
-  { id: 'nabteb-result', name: 'NABTEB Result Checking PIN', amount: 1200, quantity_options: [1, 2, 3, 4, 5] },
-  { id: 'jamb-utme', name: 'JAMB UTME Registration PIN', amount: 7150, quantity_options: [1], requiresProfileCode: true },
-  { id: 'jamb-direct-entry', name: 'JAMB Direct Entry Registration PIN', amount: 5650, quantity_options: [1], requiresProfileCode: true },
+  { id: 'waec', name: 'WAEC Exam PIN', amount: 5080, quantity_options: [1] },
+  { id: 'neco', name: 'NECO Exam PIN', amount: 2090, quantity_options: [1] },
+  { id: 'nabteb', name: 'NABTEB Exam PIN', amount: 880, quantity_options: [1] },
+  { id: 'jamb', name: 'JAMB Exam PIN', amount: 15000, quantity_options: [1] },
+  { id: 'waec-registration', name: 'WAEC Registration PIN', amount: 15000, quantity_options: [1] },
+  { id: 'nbais', name: 'NBAIS Exam PIN', amount: 1050, quantity_options: [1] },
 ];
+
+const examCatalogCacheKey = 'vtunaija_exam_catalog';
+
+function cachedExamTypes(): ExamType[] {
+  const cached = readCache<ExamType[]>(examCatalogCacheKey);
+  return cached?.data?.length ? cached.data : examTypes;
+}
+
+async function refreshExamTypes(force = false): Promise<ExamType[]> {
+  const cached = readCache<ExamType[]>(examCatalogCacheKey);
+  if (!force && cached?.data?.length && Date.now() - cached.savedAt < 60 * 1000) return cached.data;
+  try {
+    const { data, error } = await withTimeout(
+      supabase.functions.invoke('vtunaija-exam-catalog', { body: {} }),
+      12_000,
+    );
+    if (error || !data?.success || !Array.isArray(data.exams) || data.exams.length === 0) return cachedExamTypes();
+    const exams = data.exams.filter((exam: ExamType) =>
+      typeof exam.id === 'string' && typeof exam.name === 'string' &&
+      Number.isFinite(exam.amount) && exam.amount > 0 &&
+      Array.isArray(exam.quantity_options) && exam.quantity_options.length === 1 && exam.quantity_options[0] === 1
+    ) as ExamType[];
+    if (exams.length === 0) return cachedExamTypes();
+    writeCache(examCatalogCacheKey, exams);
+    return exams;
+  } catch {
+    return cachedExamTypes();
+  }
+}
 
 /**
  * Generate a client-side idempotency key so a double-tap / retry of the same
@@ -214,6 +301,7 @@ async function purchase(
       try {
         const errBody = await (error as any)?.context?.json?.();
         if (errBody?.error) msg = errBody.error;
+        if (errBody?.code) return { success: false, error: msg, code: errBody.code };
       } catch {}
       return { success: false, error: msg };
     }
@@ -234,6 +322,7 @@ async function purchase(
       transaction_id: data.transaction_id,
       token: data.token,
       pins: data.pins,
+      serials: data.serials,
       units: data.units,
     };
   } catch {
@@ -247,26 +336,35 @@ function dataCatalogCacheKey(network: NetworkProvider): string {
 
 function cachedDataBundles(network: NetworkProvider): DataBundle[] {
   const cached = readCache<DataBundle[]>(dataCatalogCacheKey(network));
-  if (cached?.data?.length) return cached.data;
+  if (cached && Array.isArray(cached.data)) return cached.data;
   return fallbackDataBundles.filter((bundle) => bundle.network === network);
 }
 
-async function refreshDataBundles(network: NetworkProvider): Promise<DataBundle[]> {
+// Whether a REAL synced catalog is cached for this network, as opposed to
+// only the small hardcoded fallback list. cachedDataBundles() always returns
+// a non-empty array (falling back when there's nothing real yet), so a
+// plain length check can't tell "first load, showing placeholders" apart
+// from "real data, already loaded" — this can.
+function hasCachedDataBundles(network: NetworkProvider): boolean {
   const cached = readCache<DataBundle[]>(dataCatalogCacheKey(network));
-  if (cached?.data?.length && Date.now() - cached.savedAt < 5 * 60 * 1000) return cached.data;
+  return !!cached && Array.isArray(cached.data);
+}
+
+async function refreshDataBundles(network: NetworkProvider, force = false): Promise<DataBundle[]> {
+  const cached = readCache<DataBundle[]>(dataCatalogCacheKey(network));
+  if (!force && cached && Array.isArray(cached.data) && Date.now() - cached.savedAt < 60 * 1000) return cached.data;
   try {
     const { data, error } = await withTimeout(
       supabase.functions.invoke('vtunaija-data-catalog', { body: { network } }),
       12_000,
     );
-    if (error || !data?.success || !Array.isArray(data.plans) || data.plans.length === 0) {
+    if (error || !data?.success || !Array.isArray(data.plans)) {
       return cachedDataBundles(network);
     }
     const plans = data.plans.filter((plan: DataBundle) =>
       plan?.network === network && typeof plan.id === 'string' && typeof plan.name === 'string' &&
       Number.isFinite(plan.amount) && plan.amount > 0
     ) as DataBundle[];
-    if (plans.length === 0) return cachedDataBundles(network);
     writeCache(dataCatalogCacheKey(network), plans);
     return plans;
   } catch {
@@ -309,7 +407,7 @@ async function refreshBouquets(provider: TVServiceProvider): Promise<TVBouquet[]
 
 export const vtuService = {
   /**
-   * Ask the server to verify a single pending order with VTUAfrica right now
+   * Ask the server to verify a single pending VTUnaija order now
    * and settle it if there's a final answer — so the result screen flips to
    * Successful/Failed the moment the provider confirms, instead of waiting for
    * the periodic reconcile sweep. Returns the order's status; falls back to
@@ -340,8 +438,31 @@ export const vtuService = {
     return cachedDataBundles(network);
   },
 
-  refreshDataBundles(network: NetworkProvider): Promise<DataBundle[]> {
-    return refreshDataBundles(network);
+  hasCachedDataBundles(network: NetworkProvider): boolean {
+    return hasCachedDataBundles(network);
+  },
+
+  refreshDataBundles(network: NetworkProvider, force = false): Promise<DataBundle[]> {
+    return refreshDataBundles(network, force);
+  },
+
+  subscribeToDataAvailability(network: NetworkProvider, callback: () => void) {
+    const channel = supabase
+      .channel(`vtu-availability:${network}`)
+      .on(
+        'broadcast',
+        { event: 'availability_changed' },
+        callback,
+      )
+      .subscribe((status) => {
+        // A toggle may happen while the WebSocket is still connecting. A
+        // forced refresh at SUBSCRIBED closes that gap without polling.
+        if (status === 'SUBSCRIBED') callback();
+      });
+
+    return {
+      unsubscribe: () => { void supabase.removeChannel(channel); },
+    };
   },
 
   applyDataPriceChange(network: NetworkProvider, bundleId: string, amount: number): void {
@@ -357,7 +478,11 @@ export const vtuService = {
   },
 
   getElectricityProviders(): ElectricityProvider[] {
-    return electricityProviders;
+    return cachedElectricityProviders();
+  },
+
+  refreshElectricityProviders(force = false): Promise<ElectricityProvider[]> {
+    return refreshElectricityProviders(force);
   },
 
   /** Maps a biller id (stored in a transaction's metadata) back to its display name. */
@@ -379,7 +504,11 @@ export const vtuService = {
   },
 
   getExamTypes(): ExamType[] {
-    return examTypes;
+    return cachedExamTypes();
+  },
+
+  refreshExamTypes(force = false): Promise<ExamType[]> {
+    return refreshExamTypes(force);
   },
 
   buyAirtime(phone: string, network: NetworkProvider, amount: number, authToken: string, idempotencyKey?: string): Promise<VTUResult> {
@@ -459,6 +588,8 @@ export const vtuService = {
     type: 'prepaid' | 'postpaid',
     authToken: string,
     idempotencyKey?: string,
+    customerName?: string,
+    customerAddress?: string,
   ): Promise<VTUResult & { token?: string; units?: string }> {
     return purchase({
       service: 'electricity',
@@ -466,7 +597,111 @@ export const vtuService = {
       meter_number: meterNumber,
       amount: nairaToKobo(amount),
       type,
+      ...(customerName ? { customer_name: customerName } : {}),
+      ...(customerAddress ? { customer_address: customerAddress } : {}),
     }, authToken, idempotencyKey);
+  },
+
+  /**
+   * Pre-payment check: confirms a meter number resolves to a real customer
+   * BEFORE any money moves, via VTUnaija's own /billpayment/verify/ lookup.
+   * Read-only — safe to call on every meter-number edit. `ok: false` covers
+   * both "this meter doesn't exist" and "couldn't reach the verify service
+   * right now" — the caller should treat both the same way (warn, let the
+   * user double-check and explicitly choose to proceed if they're sure).
+   */
+  async getSavedBillingAccounts(
+    service: 'tv' | 'electricity',
+    providerId: string,
+  ): Promise<SavedBillingAccount[]> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('billing-accounts', {
+          body: { action: 'list', service, provider_id: providerId },
+        }),
+        12_000,
+      );
+      if (error || !data?.success || !Array.isArray(data.accounts)) return [];
+      return data.accounts as SavedBillingAccount[];
+    } catch {
+      return [];
+    }
+  },
+
+  async deleteSavedBillingAccount(id: string): Promise<boolean> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('billing-accounts', { body: { action: 'delete', id } }),
+        12_000,
+      );
+      return !error && data?.success === true;
+    } catch {
+      return false;
+    }
+  },
+
+  async verifyElectricityMeter(
+    providerId: string,
+    meterNumber: string,
+  ): Promise<{ ok: boolean; customerName: string | null; customerAddress: string | null; error?: string }> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('verify-electricity-meter', {
+          body: { provider_id: providerId, meter_number: meterNumber },
+        }),
+        12_000,
+      );
+      if (error || !data?.success) {
+        return { ok: false, customerName: null, customerAddress: null, error: data?.error || 'Could not verify this meter number.' };
+      }
+      return { ok: true, customerName: data.customer_name ?? null, customerAddress: data.customer_address ?? null };
+    } catch {
+      return { ok: false, customerName: null, customerAddress: null, error: 'Could not verify this meter number.' };
+    }
+  },
+
+  async verifyTVSmartcard(
+    providerId: TVServiceProvider,
+    smartcardNumber: string,
+  ): Promise<{
+    ok: boolean;
+    customerName: string | null;
+    accountStatus: string | null;
+    dueDate: string | null;
+    currentBouquet: string | null;
+    renewalAmount: number | null;
+    error?: string;
+  }> {
+    const failed = (error: string) => ({
+      ok: false,
+      customerName: null,
+      accountStatus: null,
+      dueDate: null,
+      currentBouquet: null,
+      renewalAmount: null,
+      error,
+    });
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('verify-tv-smartcard', {
+          body: { provider_id: providerId, smartcard_number: smartcardNumber },
+        }),
+        12_000,
+      );
+      if (error || !data?.success) {
+        return failed(data?.error || 'Could not verify this smartcard number.');
+      }
+      return {
+        ok: true,
+        customerName: data.customer_name ?? null,
+        accountStatus: data.account_status ?? null,
+        dueDate: data.due_date ?? null,
+        currentBouquet: data.current_bouquet ?? null,
+        renewalAmount: Number.isFinite(Number(data.renewal_amount)) ? Number(data.renewal_amount) : null,
+      };
+    } catch {
+      return failed('Could not verify this smartcard number. Please try again.');
+    }
   },
 
   buyTVSubscription(
@@ -492,11 +727,12 @@ export const vtuService = {
     authToken: string,
     profileCode?: string,
     idempotencyKey?: string,
-  ): Promise<VTUResult & { pins?: string[] }> {
+  ): Promise<VTUResult & { pins?: string[]; serials?: string[] }> {
     return purchase({
       service: 'exam_pin',
       exam_id: examType.id,
       quantity,
+      quoted_amount_kobo: nairaToKobo(examType.amount * quantity),
       ...(profileCode ? { profile_code: profileCode } : {}),
     }, authToken, idempotencyKey);
   },

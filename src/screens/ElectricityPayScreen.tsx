@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -17,7 +17,7 @@ import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { formatNaira } from '../utils/formatCurrency';
-import { vtuService, type ElectricityProvider } from '../services/vtu.service';
+import { vtuService, type ElectricityProvider, type SavedBillingAccount } from '../services/vtu.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import ProviderLogo from '../components/ProviderLogo';
 import { ELECTRICITY_LOGOS } from '../utils/providerLogos';
@@ -25,6 +25,7 @@ import { downloadPdf, sharePdf } from '../utils/pdf';
 import { buildElectricityReceiptHtml } from '../utils/receipts';
 
 type BuyState = 'idle' | 'processing' | 'success' | 'error';
+type VerifyState = 'idle' | 'checking' | 'verified' | 'failed';
 
 const QUICK_AMOUNTS = [1000, 2000, 5000, 10000, 20000, 50000];
 
@@ -43,11 +44,85 @@ export default function ElectricityPayScreen(props: any) {
   const [resultPending, setResultPending] = useState(false);
   const [resultOrderId, setResultOrderId] = useState<string | null>(null);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  // The custom-amount field sits near the bottom of the form, right above
+  // the fixed Pay bar — ScrollView never auto-scrolls a focused input into
+  // view, so the keyboard can hide it entirely. Scroll to end on focus
+  // brings it above the keyboard, same fix applied to Exam PIN/TV/Airtime.
+  const scrollRef = useRef<ScrollView>(null);
+
+  // Pre-payment meter verification (see ElectricityPayScreen weakness raised
+  // by the owner: nothing today confirms a meter number is real before the
+  // PIN is charged). Debounced auto-check against VTUnaija's own verify
+  // endpoint; `proceedWithoutVerify` lets the user explicitly continue if
+  // verification fails or is unavailable, rather than hard-blocking a
+  // legitimate payment on a flaky check.
+  const [verifyState, setVerifyState] = useState<VerifyState>('idle');
+  const [verifiedName, setVerifiedName] = useState<string | null>(null);
+  const [verifiedAddress, setVerifiedAddress] = useState<string | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [proceedWithoutVerify, setProceedWithoutVerify] = useState(false);
+  const [savedAccounts, setSavedAccounts] = useState<SavedBillingAccount[]>([]);
+  const [cachedPreviewName, setCachedPreviewName] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    vtuService.getSavedBillingAccounts('electricity', provider.id).then((accounts) => {
+      if (active) setSavedAccounts(accounts);
+    });
+    return () => { active = false; };
+  }, [provider.id]);
 
   const numericAmount = useMemo(() => parseInt(amount, 10), [amount]);
   const isValidAmount = !isNaN(numericAmount) && numericAmount >= 500 && numericAmount <= 500000;
   const isValidMeter = meterNumber.trim().length >= 6;
-  const canProceed = isValidMeter && isValidAmount && buyState !== 'processing';
+  const canProceed =
+    isValidMeter &&
+    isValidAmount &&
+    buyState !== 'processing' &&
+    (verifyState === 'verified' || proceedWithoutVerify);
+
+  // Any edit to the meter number invalidates whatever was verified before —
+  // never let a stale "✓ verified" carry over to a different meter number.
+  useEffect(() => {
+    setVerifyState('idle');
+    setVerifiedName(null);
+    setVerifiedAddress(null);
+    setVerifyError(null);
+    setProceedWithoutVerify(false);
+  }, [meterNumber, provider.id]);
+
+  useEffect(() => {
+    if (!isValidMeter) return;
+    const handle = setTimeout(async () => {
+      setVerifyState('checking');
+      const res = await vtuService.verifyElectricityMeter(provider.id, meterNumber.trim());
+      setVerifyState((current) => {
+        // A newer keystroke may have already reset this back to 'idle' while
+        // the request was in flight — don't resurrect a stale result.
+        if (current !== 'checking') return current;
+        return res.ok ? 'verified' : 'failed';
+      });
+      if (res.ok) {
+        setVerifiedName(res.customerName);
+        setVerifiedAddress(res.customerAddress);
+      } else {
+        setVerifyError(res.error || 'Could not verify this meter number.');
+      }
+    }, 700);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meterNumber, isValidMeter, provider.id]);
+
+  const handleProceedAnyway = useCallback(() => {
+    Alert.alert(
+      'Continue without verification?',
+      "We couldn't confirm this meter number belongs to a real account. Only continue if you're sure the meter number is correct — a wrong meter number means the units go to someone else's meter, not yours.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: "I'm sure, continue", onPress: () => setProceedWithoutVerify(true) },
+      ],
+    );
+  }, []);
 
   // The single next thing the user must do before Pay can proceed — so the
   // greyed button is never a silent dead end. null once everything's ready.
@@ -56,12 +131,20 @@ export default function ElectricityPayScreen(props: any) {
     if (!isValidMeter) return 'Enter your meter number';
     if (numericAmount > 500000) return 'Maximum amount is ₦500,000';
     if (!isValidAmount) return 'Enter an amount of at least ₦500';
+    if (verifyState === 'checking') return 'Verifying meter number…';
+    if (verifyState === 'failed' && !proceedWithoutVerify) return 'Could not verify meter number';
     return null;
-  }, [buyState, isValidMeter, numericAmount, isValidAmount]);
+  }, [buyState, isValidMeter, numericAmount, isValidAmount, verifyState, proceedWithoutVerify]);
 
   const handleMeterChange = useCallback((text: string) => {
     setMeterNumber(text.replace(/[^0-9]/g, '').slice(0, 13));
+    setCachedPreviewName(null);
   }, []);
+
+  const handleSavedAccountSelect = useCallback((account: SavedBillingAccount) => {
+    handleMeterChange(account.account_number);
+    setCachedPreviewName(account.customer_name);
+  }, [handleMeterChange]);
 
   const handleQuickAmount = useCallback((quickAmount: number) => {
     setAmount(quickAmount.toString());
@@ -75,7 +158,13 @@ export default function ElectricityPayScreen(props: any) {
   const handlePay = useCallback(async () => {
     if (!canProceed) return;
 
-    const authResult = await authorize({ title: 'Confirm Electricity Payment', amount: numericAmount });
+    // Subtitle shows exactly what's being confirmed — disco, meter, and (if
+    // verified) the real customer name — so the PIN prompt is never a bare
+    // "enter your PIN" with no context to check against.
+    const subtitle = verifiedName
+      ? `${provider.name} · Meter ${meterNumber.trim()} · ${verifiedName}`
+      : `${provider.name} · Meter ${meterNumber.trim()}`;
+    const authResult = await authorize({ title: 'Confirm Electricity Payment', amount: numericAmount, subtitle });
     if (!authResult) return;
 
     setErrorMessage('');
@@ -87,7 +176,12 @@ export default function ElectricityPayScreen(props: any) {
       amount: numericAmount,
       recipient: meterNumber.trim(),
       paymentMethod: 'Balance',
-      electricity: { providerName: provider.name, meterType: provider.type },
+      electricity: {
+        providerName: provider.name,
+        meterType: provider.type,
+        customerName: verifiedName ?? undefined,
+        customerAddress: verifiedAddress ?? undefined,
+      },
       request: {
         kind: 'electricity',
         providerId: provider.id,
@@ -95,9 +189,11 @@ export default function ElectricityPayScreen(props: any) {
         amount: numericAmount,
         type: provider.type,
         authToken: authResult.token,
+        customerName: verifiedName ?? undefined,
+        customerAddress: verifiedAddress ?? undefined,
       },
     });
-  }, [canProceed, provider, meterNumber, numericAmount, navigation, authorize]);
+  }, [canProceed, provider, meterNumber, numericAmount, navigation, authorize, verifiedName, verifiedAddress]);
 
   const buildReceiptHtml = useCallback(
     () =>
@@ -197,6 +293,7 @@ export default function ElectricityPayScreen(props: any) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
+          ref={scrollRef}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
@@ -220,6 +317,22 @@ export default function ElectricityPayScreen(props: any) {
 
           <View style={styles.section}>
             <Text style={styles.label}>Meter Number</Text>
+            {savedAccounts.length > 0 ? (
+              <View style={styles.savedAccounts}>
+                <Text style={styles.savedLabel}>Previously used meters</Text>
+                {savedAccounts.map((account) => (
+                  <TouchableOpacity
+                    key={account.id}
+                    style={styles.savedAccount}
+                    onPress={() => handleSavedAccountSelect(account)}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.savedNumber}>{account.account_number}</Text>
+                    <Text style={styles.savedName} numberOfLines={1}>{account.customer_name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
             <TextInput
               style={styles.input}
               value={meterNumber}
@@ -229,6 +342,34 @@ export default function ElectricityPayScreen(props: any) {
               keyboardType="number-pad"
               maxLength={13}
             />
+            {verifyState === 'checking' && (
+              <View style={styles.verifyRow}>
+                <ActivityIndicator size="small" color={Colors.GRAY} />
+                <Text style={styles.verifyCheckingText}>Verifying meter number…</Text>
+              </View>
+            )}
+            {verifyState === 'checking' && cachedPreviewName ? (
+              <Text style={styles.cachedPreview}>Previously verified: {cachedPreviewName}</Text>
+            ) : null}
+            {verifyState === 'verified' && verifiedName && (
+              <View style={styles.verifyRow}>
+                <Text style={styles.verifySuccessText}>✓ {verifiedName}</Text>
+              </View>
+            )}
+            {verifyState === 'failed' && (
+              <View style={styles.verifyFailedBlock}>
+                <Text style={styles.verifyFailedText}>
+                  {proceedWithoutVerify
+                    ? "Proceeding without verification — double-check this meter number."
+                    : (verifyError || 'Could not verify this meter number.')}
+                </Text>
+                {!proceedWithoutVerify && (
+                  <TouchableOpacity onPress={handleProceedAnyway}>
+                    <Text style={styles.verifyProceedLink}>I'm sure this is correct, continue anyway</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
           </View>
 
           <View style={styles.section}>
@@ -266,6 +407,7 @@ export default function ElectricityPayScreen(props: any) {
                 placeholderTextColor={Colors.GRAY}
                 value={amount}
                 onChangeText={handleAmountChange}
+                onFocus={() => scrollRef.current?.scrollToEnd({ animated: true })}
                 keyboardType="numeric"
                 maxLength={6}
               />
@@ -329,7 +471,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: Spacing.SCREEN_PADDING,
     paddingTop: Spacing.M,
-    paddingBottom: 120,
+    // See ExamPinsScreen.tsx's identical comment — 120 only fit the Pay
+    // button alone; the hint line above it (e.g. meter-verify status) could
+    // push it taller than that, hiding content behind it with no way to
+    // scroll past.
+    paddingBottom: 180,
   },
   backButton: {
     width: 48,
@@ -388,6 +534,18 @@ const styles = StyleSheet.create({
   currencySymbol: { ...Typography.BODY, fontWeight: '600', color: Colors.DARK, marginRight: Spacing.S },
   amountInput: { flex: 1, ...Typography.BODY, color: Colors.DARK },
   amountError: { ...Typography.ERROR, marginTop: Spacing.S },
+  verifyRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.S },
+  savedAccounts: { marginBottom: Spacing.M },
+  savedLabel: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.S },
+  savedAccount: { minHeight: 52, borderWidth: 1, borderColor: Colors.BORDER, borderRadius: Spacing.BUTTON_RADIUS, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S, marginBottom: Spacing.S, justifyContent: 'center' },
+  savedNumber: { ...Typography.BODY, color: Colors.DARK, fontWeight: '600' },
+  savedName: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: 2 },
+  cachedPreview: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: Spacing.S },
+  verifyCheckingText: { ...Typography.CAPTION, color: Colors.GRAY, marginLeft: Spacing.S },
+  verifySuccessText: { ...Typography.CAPTION, color: Colors.GREEN, fontFamily: 'Helvetica-Bold' },
+  verifyFailedBlock: { marginTop: Spacing.S },
+  verifyFailedText: { ...Typography.CAPTION, color: Colors.ERROR },
+  verifyProceedLink: { ...Typography.CAPTION, color: Colors.PURPLE, marginTop: Spacing.S, textDecorationLine: 'underline' },
   errorContainer: { marginTop: Spacing.M },
   errorText: { ...Typography.ERROR },
   bottomBar: {
