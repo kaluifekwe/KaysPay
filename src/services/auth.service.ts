@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { storageHelpers, StorageKeys } from '../lib/mmkv';
 import { clearAllCache } from '../utils/cache';
 import { passwordValidationError } from '../utils/password';
+import { withTimeout } from '../utils/network';
 
 export interface AuthResult {
   success: boolean;
@@ -17,6 +18,7 @@ const PENDING_PIN_KEY = 'pending_signup_pin';
 export interface PINVerifyResult {
   valid: boolean;
   locked: boolean;
+  restricted?: boolean;
   lockedUntil?: string | null;
   attemptsRemaining?: number | null;
   error?: string;
@@ -26,6 +28,14 @@ export interface PINVerifyResult {
    * enough to move money. Present only when valid is true.
    */
   token?: string;
+}
+
+export interface PINLockStatus {
+  hasPin: boolean;
+  locked: boolean;
+  lockedUntil?: string | null;
+  retryAfterSeconds: number;
+  attemptsRemaining: number;
 }
 
 export const authService = {
@@ -99,12 +109,61 @@ export const authService = {
     }
   },
 
+  /**
+   * Step 1 of changing phone/email from Edit Profile: requires a fresh PIN/
+   * biometric step-up token (from useTransactionAuth().authorize()). Adding
+   * a phone when none is on file applies immediately (`applied: true`);
+   * changing an existing phone, or any email, instead emails an OTP to the
+   * account's current address and returns `applied: false` — the caller
+   * should then collect the code and call confirmProfileChange.
+   */
+  async requestProfileChange(
+    field: 'phone' | 'email',
+    newValue: string,
+    authToken: string,
+  ): Promise<AuthResult & { applied?: boolean; sentTo?: string }> {
+    try {
+      const { data, error } = await supabase.functions.invoke('request-profile-change', {
+        body: { field, new_value: newValue, auth_token: authToken },
+      });
+      if (error && !data) throw error;
+      if (data?.success === false) {
+        return { success: false, error: data.error || 'Could not start this change. Please try again.' };
+      }
+      return { success: true, applied: !!data?.applied, sentTo: data?.sent_to };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Network error. Please check your connection and try again.' };
+    }
+  },
+
+  /** Step 2: verifies the emailed code and, on success, applies the change. */
+  async confirmProfileChange(
+    field: 'phone' | 'email',
+    code: string,
+  ): Promise<AuthResult & { newValue?: string; attemptsRemaining?: number | null }> {
+    try {
+      const { data, error } = await supabase.functions.invoke('confirm-profile-change', {
+        body: { field, code: code.trim() },
+      });
+      if (error && !data) throw error;
+      if (data?.success === false) {
+        return {
+          success: false,
+          error: data.error || 'Could not verify code. Please try again.',
+          attemptsRemaining: data.attempts_remaining,
+        };
+      }
+      return { success: true, newValue: data?.new_value };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Network error. Please check your connection and try again.' };
+    }
+  },
+
   async signInWithEmail(email: string, password: string): Promise<AuthResult> {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { error } = await withTimeout(
+        (async () => supabase.auth.signInWithPassword({ email, password }))(),
+      );
       if (error) throw error;
       return { success: true };
     } catch (error: any) {
@@ -159,21 +218,61 @@ export const authService = {
         p_auth_token: authToken ?? null,
       });
       if (error) throw error;
+      await storageHelpers.delete(StorageKeys.PIN_LOCKED_UNTIL);
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
   },
 
-  /** Whether the caller already has a transaction PIN set. */
-  async hasPIN(): Promise<boolean> {
+  async requestPinReset(): Promise<{ success: boolean; sentTo?: string; error?: string }> {
     try {
-      const { data, error } = await supabase.rpc('has_user_pin');
-      if (error) return false;
-      return !!data;
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('request-pin-reset', { body: {} }),
+        20_000,
+      );
+      if (error || !data?.success) {
+        return { success: false, error: data?.error || 'Could not send the reset code.' };
+      }
+      return { success: true, sentTo: data.sent_to };
     } catch {
-      return false;
+      return { success: false, error: 'Network error. Please try again.' };
     }
+  },
+
+  async confirmPinReset(code: string, newPin: string): Promise<AuthResult> {
+    try {
+      if (!/^\d{6}$/.test(code)) return { success: false, error: 'Enter the 6-digit code.' };
+      if (!/^\d{4}$/.test(newPin)) return { success: false, error: 'PIN must be 4 digits.' };
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('confirm-pin-reset', {
+          body: { code, new_pin: newPin },
+        }),
+        20_000,
+      );
+      if (error || !data?.success) {
+        return { success: false, error: data?.error || 'Could not reset your PIN.' };
+      }
+      // The old PIN must never remain available through biometric storage.
+      await authService.saveBiometric(false);
+      return { success: true };
+    } catch {
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  },
+
+  /**
+   * Whether the caller already has a transaction PIN set. Throws (rather
+   * than swallowing to `false`) when the check itself couldn't complete —
+   * a network timeout is not the same fact as "no PIN exists", and every
+   * caller here needs to tell those apart: collapsing them used to mean a
+   * flaky connection could re-trigger the "Create your PIN" onboarding gate
+   * for someone who'd already set one, every single time their network blipped.
+   */
+  async hasPIN(): Promise<boolean> {
+    const { data, error } = await withTimeout((async () => supabase.rpc('has_user_pin'))());
+    if (error) throw error;
+    return !!data;
   },
 
   /**
@@ -245,12 +344,55 @@ export const authService = {
         locked: !!data?.locked,
         lockedUntil: data?.locked_until ?? null,
         attemptsRemaining: data?.attempts_remaining ?? null,
+        restricted: data?.restricted === true,
         error: data?.error,
         token: data?.token,
       };
     } catch (error: any) {
       return { valid: false, locked: false, error: error.message };
     }
+  },
+
+  async getPINLockStatus(): Promise<PINLockStatus> {
+    try {
+      const { data, error } = await withTimeout(
+        (async () => supabase.rpc('get_user_pin_lock_status'))(),
+        12_000,
+      );
+      if (error) throw error;
+      return {
+        hasPin: data?.has_pin !== false,
+        locked: !!data?.locked,
+        lockedUntil: data?.locked_until ?? null,
+        retryAfterSeconds: Math.max(0, Number(data?.retry_after_seconds) || 0),
+        attemptsRemaining: Math.max(0, Number(data?.attempts_remaining) || 0),
+      };
+    } catch {
+      // A status-check failure must not weaken or invent a lock. The PIN
+      // verification RPC remains authoritative and will return the lock on
+      // the next attempted verification.
+      return { hasPin: true, locked: false, retryAfterSeconds: 0, attemptsRemaining: 0 };
+    }
+  },
+
+  /**
+   * Strict variant for the app-access gate. Unlike the transaction UX helper
+   * above, a network failure is not converted into "unlocked" because doing
+   * so would expose the signed-in app before security status is known.
+   */
+  async getPINLockStatusStrict(): Promise<PINLockStatus> {
+    const { data, error } = await withTimeout(
+      (async () => supabase.rpc('get_user_pin_lock_status'))(),
+      12_000,
+    );
+    if (error) throw error;
+    return {
+      hasPin: data?.has_pin !== false,
+      locked: !!data?.locked,
+      lockedUntil: data?.locked_until ?? null,
+      retryAfterSeconds: Math.max(0, Number(data?.retry_after_seconds) || 0),
+      attemptsRemaining: Math.max(0, Number(data?.attempts_remaining) || 0),
+    };
   },
 
   async saveBiometric(enabled: boolean): Promise<void> {
@@ -329,7 +471,16 @@ export const authService = {
 
   async signOut() {
     try {
-      await supabase.auth.signOut();
+      // 'local' scope clears the session on this device immediately without
+      // first waiting on a network call to invalidate it server-side — the
+      // default ('global') scope does that server call FIRST, so on a bad
+      // or broken connection it can hang indefinitely and never get to
+      // actually signing the user out locally. Revoking a specific device
+      // remotely already has its own dedicated mechanism (Active Sessions'
+      // device-session revocation, checked server-side on every sensitive
+      // request) that doesn't depend on this call at all, so scoping this
+      // one to 'local' doesn't weaken that.
+      await supabase.auth.signOut({ scope: 'local' });
     } finally {
       await storageHelpers.clearAll();
       clearAllCache();

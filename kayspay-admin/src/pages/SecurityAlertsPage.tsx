@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AdminApiError, callAdmin } from '../lib/adminApi';
+import { useAuth } from '../AuthContext';
 
 type AlertStatus = 'open' | 'acknowledged' | 'resolved';
 interface SecurityAlert {
@@ -22,6 +23,25 @@ interface SecurityEvent {
   metadata: Record<string, unknown>;
   created_at: string;
 }
+interface SecurityCase {
+  id: string;
+  user_id: string;
+  severity: 'warning' | 'critical';
+  status: 'open' | 'resolved';
+  summary: string;
+  created_at: string;
+  resolved_at: string | null;
+}
+interface FinancialRestriction {
+  id: string;
+  case_id: string;
+  user_id: string;
+  status: 'active' | 'lifted';
+  reason: string;
+  imposed_at: string;
+  lifted_at: string | null;
+  reverification_method: string | null;
+}
 interface ResponsePayload {
   alerts: SecurityAlert[];
   total: number;
@@ -37,6 +57,8 @@ interface ResponsePayload {
     age_seconds: number | null;
   };
   recent_events: SecurityEvent[];
+  security_cases: SecurityCase[];
+  financial_restrictions: FinancialRestriction[];
 }
 
 const formatDate = (value: string | null) => value
@@ -44,6 +66,7 @@ const formatDate = (value: string | null) => value
   : 'Never';
 
 export default function SecurityAlertsPage() {
+  const { role } = useAuth();
   const [data, setData] = useState<ResponsePayload | null>(null);
   const [status, setStatus] = useState<'all' | AlertStatus>('open');
   const [severity, setSeverity] = useState('');
@@ -53,6 +76,11 @@ export default function SecurityAlertsPage() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<SecurityAlert | null>(null);
   const [notes, setNotes] = useState('');
+  const [responseTarget, setResponseTarget] = useState<{ userId: string; restrictionId?: string } | null>(null);
+  const [responseAction, setResponseAction] = useState<'restrict_financial' | 'lift_restriction' | 'revoke_sessions'>('revoke_sessions');
+  const [responseSummary, setResponseSummary] = useState('');
+  const [responseNotes, setResponseNotes] = useState('');
+  const [override, setOverride] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,6 +116,48 @@ export default function SecurityAlertsPage() {
     } finally {
       setBusy(null);
     }
+  };
+
+  const applyResponse = async () => {
+    if (!responseTarget) return;
+    setBusy(responseTarget.restrictionId || responseTarget.userId);
+    setError(null);
+    try {
+      await callAdmin('admin-security-alerts', {
+        method: 'POST',
+        body: {
+          action: responseAction,
+          user_id: responseTarget.userId,
+          restriction_id: responseTarget.restrictionId,
+          summary: responseSummary,
+          notes: responseNotes,
+          override,
+        },
+      });
+      setResponseTarget(null);
+      setResponseSummary('');
+      setResponseNotes('');
+      setOverride(false);
+      await load();
+    } catch (e) {
+      setError(e instanceof AdminApiError ? e.message : 'Could not apply security response');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openResponse = (
+    userId: string,
+    action: 'restrict_financial' | 'lift_restriction' | 'revoke_sessions',
+    restrictionId?: string,
+  ) => {
+    setResponseTarget({ userId, restrictionId });
+    setResponseAction(action);
+    setResponseSummary(action === 'restrict_financial'
+      ? 'Suspicious account activity investigation'
+      : action === 'revoke_sessions' ? 'Security session reset' : 'Security verification completed');
+    setResponseNotes('');
+    setOverride(false);
   };
 
   return (
@@ -139,11 +209,38 @@ export default function SecurityAlertsPage() {
       <h2 style={{ marginTop: 32 }}>Recent Security Activity</h2>
       <div className="card table-scroll">
         {!data?.recent_events.length ? <p className="muted">No recent security events.</p> : <table>
-          <thead><tr><th>Time</th><th>Event</th><th>Source</th><th>User reference</th><th>Details</th></tr></thead>
+          <thead><tr><th>Time</th><th>Event</th><th>Source</th><th>User reference</th><th>Details</th>{role === 'super_admin' && <th />}</tr></thead>
           <tbody>{data.recent_events.map((event) => <tr key={event.id}>
             <td>{formatDate(event.created_at)}</td><td>{event.event_type.replace(/_/g, ' ')}</td><td>{event.source}</td>
             <td className="mono">{event.user_id ? event.user_id.slice(0, 8) : '—'}</td>
             <td className="muted">{Object.entries(event.metadata).map(([key, value]) => `${key}: ${String(value)}`).join(' · ') || '—'}</td>
+            {role === 'super_admin' && <td>{event.user_id && <button className="secondary" onClick={() => openResponse(event.user_id!, 'revoke_sessions')}>Respond</button>}</td>}
+          </tr>)}</tbody>
+        </table>}
+      </div>
+
+      <h2 style={{ marginTop: 32 }}>Financial Restrictions</h2>
+      <div className="card table-scroll">
+        {!data?.financial_restrictions.length ? <p className="muted">No financial restrictions recorded.</p> : <table>
+          <thead><tr><th>Customer reference</th><th>Status</th><th>Applied</th><th>Reason</th><th>Verification</th>{role === 'super_admin' && <th />}</tr></thead>
+          <tbody>{data.financial_restrictions.map((restriction) => <tr key={restriction.id}>
+            <td className="mono">{restriction.user_id.slice(0, 8)}</td>
+            <td><span className={`badge ${restriction.status === 'active' ? 'open' : 'resolved'}`}>{restriction.status}</span></td>
+            <td>{formatDate(restriction.imposed_at)}</td><td>{restriction.reason}</td>
+            <td className="muted">{restriction.reverification_method?.replace(/_/g, ' ') || 'Pending'}</td>
+            {role === 'super_admin' && <td>{restriction.status === 'active' && <button className="primary" onClick={() => openResponse(restriction.user_id, 'lift_restriction', restriction.id)}>Review removal</button>}</td>}
+          </tr>)}</tbody>
+        </table>}
+      </div>
+
+      <h2 style={{ marginTop: 32 }}>Security Cases</h2>
+      <div className="card table-scroll">
+        {!data?.security_cases.length ? <p className="muted">No security cases recorded.</p> : <table>
+          <thead><tr><th>Created</th><th>Customer reference</th><th>Summary</th><th>Severity</th><th>Status</th></tr></thead>
+          <tbody>{data.security_cases.map((securityCase) => <tr key={securityCase.id}>
+            <td>{formatDate(securityCase.created_at)}</td><td className="mono">{securityCase.user_id.slice(0, 8)}</td><td>{securityCase.summary}</td>
+            <td><span className={`badge ${securityCase.severity}`}>{securityCase.severity}</span></td>
+            <td><span className={`badge ${securityCase.status === 'open' ? 'open' : 'resolved'}`}>{securityCase.status}</span></td>
           </tr>)}</tbody>
         </table>}
       </div>
@@ -160,6 +257,36 @@ export default function SecurityAlertsPage() {
             {selected.status !== 'resolved' && <button className="primary" disabled={busy === selected.fingerprint || notes.trim().length < 3} onClick={() => void updateAlert(selected, 'resolve')}>Resolve</button>}
             {selected.status === 'resolved' && <button className="secondary" disabled={busy === selected.fingerprint} onClick={() => void updateAlert(selected, 'reopen')}>Reopen</button>}
             <button className="secondary" onClick={() => { setSelected(null); setNotes(''); }}>Close</button>
+          </div>
+        </div>
+      </div>}
+
+      {responseTarget && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Apply security response">
+        <div className="modal-card">
+          <h2>Security Response</h2>
+          <p className="muted">Customer reference: <span className="mono">{responseTarget.userId.slice(0, 8)}</span></p>
+          {!responseTarget.restrictionId && <div className="field"><label htmlFor="response-action">Action</label>
+            <select id="response-action" value={responseAction} onChange={(e) => setResponseAction(e.target.value as typeof responseAction)}>
+              <option value="revoke_sessions">Sign out all sessions</option>
+              <option value="restrict_financial">Restrict financial transactions</option>
+            </select>
+          </div>}
+          <div className="field"><label htmlFor="response-summary">Case summary</label>
+            <input id="response-summary" maxLength={200} value={responseSummary} onChange={(e) => setResponseSummary(e.target.value)} />
+          </div>
+          <div className="field"><label htmlFor="response-notes">Reason and investigation notes</label>
+            <textarea id="response-notes" maxLength={500} value={responseNotes} onChange={(e) => setResponseNotes(e.target.value)} placeholder="State the evidence checked and why this action is necessary." />
+          </div>
+          {responseAction === 'restrict_financial' && <p className="muted">This signs out active sessions and blocks outgoing financial authorization. It does not change the wallet balance.</p>}
+          {responseAction === 'lift_restriction' && <>
+            <p className="muted">Normally the customer must reset their transaction PIN using verified email before removal.</p>
+            <label className="checkbox-row"><input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} /> Super-admin emergency override</label>
+          </>}
+          <div className="row" style={{ marginTop: 16 }}>
+            <button className={responseAction === 'restrict_financial' ? 'danger' : 'primary'} disabled={busy !== null || responseSummary.trim().length < 5 || responseNotes.trim().length < 5} onClick={() => void applyResponse()}>
+              {responseAction === 'restrict_financial' ? 'Apply restriction' : responseAction === 'lift_restriction' ? 'Remove restriction' : 'Sign out sessions'}
+            </button>
+            <button className="secondary" onClick={() => setResponseTarget(null)}>Cancel</button>
           </div>
         </div>
       </div>}

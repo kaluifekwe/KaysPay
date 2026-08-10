@@ -13,8 +13,10 @@ import {
   Modal,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   ActivityIndicator,
   Alert,
+  AppState,
 } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { Colors } from '../constants/colors';
@@ -25,6 +27,7 @@ import { walletService } from '../services/wallet.service';
 import { withTimeout } from '../utils/network';
 import { navigationRef } from '../navigation/navigationRef';
 import { formatNaira } from '../utils/formatCurrency';
+import { storageHelpers, StorageKeys } from '../lib/mmkv';
 
 interface AuthorizeOptions {
   title?: string;
@@ -46,6 +49,8 @@ interface AuthorizeOptions {
    * nonsensical.
    */
   skipBalanceCheck?: boolean;
+  /** Distinguishes recovery from an ordinary cancelled authorization. */
+  onForgotPin?: () => void;
 }
 
 export interface AuthorizeResult {
@@ -66,10 +71,13 @@ interface TransactionAuthContextValue {
    * biometric or enter the correct PIN, or null if they cancel/fail.
    */
   authorize: (options?: AuthorizeOptions) => Promise<AuthorizeResult | null>;
+  /** True while the transaction PIN/biometric authorization sheet is open. */
+  isAuthorizing: boolean;
 }
 
 const TransactionAuthContext = createContext<TransactionAuthContextValue>({
   authorize: async () => null,
+  isAuthorizing: false,
 });
 
 export function useTransactionAuth() {
@@ -85,6 +93,7 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
+  const [lockRemainingSeconds, setLockRemainingSeconds] = useState(0);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -93,6 +102,19 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
   // Re-entry guard for the manual-PIN-verification effect below — a ref,
   // not state, so flipping it doesn't itself re-trigger that effect.
   const checkingRef = useRef(false);
+  const lockExpiresAtRef = useRef(0);
+  const refreshingLockRef = useRef(false);
+
+  const applyLockStatus = useCallback((status: { locked: boolean; retryAfterSeconds: number }) => {
+    const seconds = status.locked ? Math.max(1, Math.ceil(status.retryAfterSeconds)) : 0;
+    lockExpiresAtRef.current = seconds > 0 ? Date.now() + seconds * 1000 : 0;
+    if (lockExpiresAtRef.current > 0) {
+      void storageHelpers.setNumber(StorageKeys.PIN_LOCKED_UNTIL, lockExpiresAtRef.current);
+    }
+    setLockRemainingSeconds(seconds);
+    setLocked(seconds > 0);
+    if (seconds > 0) setError(null);
+  }, []);
 
   const finish = useCallback((result: AuthorizeResult | null) => {
     setVisible(false);
@@ -102,8 +124,11 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
     setPin('');
     setError(null);
     setLocked(false);
+    setLockRemainingSeconds(0);
+    lockExpiresAtRef.current = 0;
     setChecking(false);
     checkingRef.current = false;
+    if (result) void storageHelpers.delete(StorageKeys.PIN_LOCKED_UNTIL);
     resolve?.(result);
   }, []);
 
@@ -140,6 +165,13 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
 
       if (res.valid && res.token) {
         finish({ token: res.token, pin: pinFromKeychain });
+      } else if (res.restricted || res.error === 'FINANCIAL_ACTIONS_RESTRICTED') {
+        setError('Financial transactions are temporarily restricted for your protection. Reset your transaction PIN using your verified email or contact support.');
+      } else if (res.locked) {
+        const fallbackSeconds = res.lockedUntil
+          ? Math.max(1, Math.ceil((new Date(res.lockedUntil).getTime() - Date.now()) / 1000))
+          : 15 * 60;
+        applyLockStatus({ locked: true, retryAfterSeconds: fallbackSeconds });
       }
       // If it somehow fails (PIN changed since last biometric enrollment,
       // etc.), silently fall back to manual PIN entry instead of showing an
@@ -148,7 +180,7 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
       setChecking(false);
       // fall back to PIN silently
     }
-  }, [finish]);
+  }, [applyLockStatus, finish]);
 
   const showPinModal = useCallback(
     (opts: AuthorizeOptions, resolve: (value: AuthorizeResult | null) => void) => {
@@ -159,17 +191,81 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
       setPin('');
       setError(null);
       setLocked(false);
+      setLockRemainingSeconds(0);
+      lockExpiresAtRef.current = 0;
       setChecking(false);
       setVisible(true);
 
       // Offer biometric immediately if it is set up on this device.
-      biometricUsable().then((usable) => {
-        setBiometricAvailable(usable);
-        if (usable) tryBiometric();
-      });
+      void (async () => {
+        const localLockedUntil = await storageHelpers.getNumber(StorageKeys.PIN_LOCKED_UNTIL);
+        if (resolverRef.current !== resolve) return;
+        if (localLockedUntil && localLockedUntil > Date.now()) {
+          applyLockStatus({
+            locked: true,
+            retryAfterSeconds: Math.ceil((localLockedUntil - Date.now()) / 1000),
+          });
+        }
+
+        try {
+          const status = await authService.getPINLockStatusStrict();
+          if (resolverRef.current !== resolve) return;
+          applyLockStatus(status);
+          if (status.locked) return;
+          await storageHelpers.delete(StorageKeys.PIN_LOCKED_UNTIL);
+          const usable = await biometricUsable();
+          if (resolverRef.current !== resolve) return;
+          setBiometricAvailable(usable);
+          if (usable) void tryBiometric();
+        } catch {
+          // Keep any known local lock. A typed PIN still goes through the
+          // authoritative server RPC, so a status-check outage cannot bypass
+          // the actual lockout.
+        }
+      })();
     },
-    [biometricUsable, tryBiometric],
+    [applyLockStatus, biometricUsable, tryBiometric],
   );
+
+  const refreshLockStatus = useCallback(async () => {
+    if (!visible || refreshingLockRef.current) return;
+    refreshingLockRef.current = true;
+    try {
+      const status = await authService.getPINLockStatusStrict();
+      applyLockStatus(status);
+      if (!status.locked) await storageHelpers.delete(StorageKeys.PIN_LOCKED_UNTIL);
+    } catch {
+      // Keep the modal locked and retry shortly. A status outage must never
+      // turn an existing lock into an unlocked keypad.
+      const retrySeconds = 5;
+      lockExpiresAtRef.current = Date.now() + retrySeconds * 1000;
+      setLockRemainingSeconds(retrySeconds);
+      setLocked(true);
+    } finally {
+      refreshingLockRef.current = false;
+    }
+  }, [applyLockStatus, visible]);
+
+  useEffect(() => {
+    if (!visible || !locked) return;
+    const update = () => {
+      const seconds = Math.max(0, Math.ceil((lockExpiresAtRef.current - Date.now()) / 1000));
+      setLockRemainingSeconds(seconds);
+      if (seconds === 0) {
+        void refreshLockStatus();
+      }
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [visible, locked, refreshLockStatus]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && visible) void refreshLockStatus();
+    });
+    return () => subscription.remove();
+  }, [refreshLockStatus, visible]);
 
   const authorize = useCallback(
     (opts?: AuthorizeOptions) => {
@@ -250,9 +346,14 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
         return;
       }
 
-      if (res.locked) {
-        setLocked(true);
-        setError('Too many attempts. Try again later.');
+      if (res.restricted || res.error === 'FINANCIAL_ACTIONS_RESTRICTED') {
+        setError('Financial transactions are temporarily restricted for your protection. Reset your transaction PIN using your verified email or contact support.');
+      } else if (res.locked) {
+        const fallbackSeconds = res.lockedUntil
+          ? Math.max(1, Math.ceil((new Date(res.lockedUntil).getTime() - Date.now()) / 1000))
+          : 15 * 60;
+        applyLockStatus({ locked: true, retryAfterSeconds: fallbackSeconds });
+        void refreshLockStatus();
       } else if (res.error === 'NO_PIN_SET') {
         setError('No PIN set. Please set up your PIN first.');
       } else if (typeof res.attemptsRemaining === 'number') {
@@ -274,7 +375,7 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
       cancelled = true;
       checkingRef.current = false;
     };
-  }, [pin, visible, finish]);
+  }, [pin, visible, finish, applyLockStatus, refreshLockStatus]);
 
   const handleKey = useCallback(
     (key: string) => {
@@ -292,7 +393,7 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
   const keypad = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'bio', '0', 'del'];
 
   return (
-    <TransactionAuthContext.Provider value={{ authorize }}>
+    <TransactionAuthContext.Provider value={{ authorize, isAuthorizing: visible }}>
       {children}
 
       <Modal visible={visible} transparent animationType="fade" onRequestClose={() => finish(null)}>
@@ -315,6 +416,10 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
             <View style={styles.statusRow}>
               {checking ? (
                 <ActivityIndicator color={Colors.GREEN} />
+              ) : locked ? (
+                <Text style={styles.error}>
+                  Too many incorrect attempts. Try again in {Math.floor(lockRemainingSeconds / 60)}:{String(lockRemainingSeconds % 60).padStart(2, '0')}.
+                </Text>
               ) : error ? (
                 <Text style={styles.error}>{error}</Text>
               ) : (
@@ -352,18 +457,38 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
                   );
                 }
                 return (
-                  <TouchableOpacity
+                  <Pressable
                     key={key}
-                    style={styles.key}
+                    style={({ pressed }) => [styles.key, pressed && !locked && styles.keyPressed]}
                     onPress={() => handleKey(key)}
-                    activeOpacity={0.7}
                     disabled={locked}
                   >
-                    <Text style={styles.keyText}>{key}</Text>
-                  </TouchableOpacity>
+                    {({ pressed }) => (
+                      <Text style={[styles.keyText, pressed && !locked && styles.keyTextPressed]}>
+                        {key}
+                      </Text>
+                    )}
+                  </Pressable>
                 );
               })}
             </View>
+
+            <TouchableOpacity
+              style={styles.forgotPin}
+              onPress={() => {
+                const onForgotPin = options.onForgotPin;
+                finish(null);
+                if (onForgotPin) {
+                  onForgotPin();
+                } else if (navigationRef.isReady()) {
+                  navigationRef.navigate('Main', { screen: 'ForgotPin' });
+                }
+              }}
+              disabled={checking}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.forgotPinText}>Forgot transaction PIN?</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity style={styles.cancel} onPress={() => finish(null)} activeOpacity={0.7}>
               <Text style={styles.cancelText}>Cancel</Text>
@@ -451,19 +576,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginVertical: Spacing.S,
   },
+  keyPressed: {
+    backgroundColor: Colors.GREEN,
+  },
   keyText: {
     fontSize: 26,
     color: Colors.DARK,
     fontWeight: '500',
   },
+  keyTextPressed: {
+    color: Colors.WHITE,
+  },
   keyDisabled: {
     color: Colors.BORDER,
   },
   cancel: {
-    marginTop: Spacing.L,
+    marginTop: Spacing.S,
     height: Spacing.TOUCH_TARGET_MIN,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  forgotPin: {
+    minHeight: Spacing.TOUCH_TARGET_MIN,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: Spacing.M,
+  },
+  forgotPinText: {
+    ...Typography.BODY,
+    color: Colors.GREEN,
+    fontWeight: '700',
   },
   cancelText: {
     ...Typography.BUTTON_TEXT,

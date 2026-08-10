@@ -12,6 +12,8 @@ function json(body: unknown, status = 200) {
 
 const VALID_STATUSES = ["open", "acknowledged", "resolved"] as const;
 const VALID_ACTIONS = ["acknowledge", "resolve", "reopen"] as const;
+const VALID_RESPONSE_ACTIONS = ["restrict_financial", "lift_restriction", "revoke_sessions"] as const;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 serve(async (req) => {
   const cors = handleCors(req);
@@ -47,15 +49,17 @@ serve(async (req) => {
     if (status !== "all") query = query.eq("status", status);
     if (severity) query = query.eq("severity", severity);
 
-    const [alertsResult, runResult, eventsResult, statusResult, healthResult] = await Promise.all([
+    const [alertsResult, runResult, eventsResult, statusResult, healthResult, casesResult, restrictionsResult] = await Promise.all([
       query,
       db.from("monitoring_runs").select("id,created_at,metrics").order("created_at", { ascending: false }).limit(1).maybeSingle(),
       db.from("security_events").select("id,user_id,event_type,severity,source,metadata,created_at").order("created_at", { ascending: false }).limit(50),
       db.from("monitoring_alerts").select("status"),
       db.from("monitoring_health").select("last_success_at,last_failure_at,last_email_at,consecutive_failures,last_error_code").eq("singleton", true).maybeSingle(),
+      db.from("security_cases").select("id,user_id,severity,status,summary,created_by,assigned_to,created_at,resolved_at,resolved_by,resolution_notes").order("created_at", { ascending: false }).limit(100),
+      db.from("financial_restrictions").select("id,case_id,user_id,status,reason,imposed_by,imposed_at,lifted_by,lifted_at,lift_reason,reverification_method").order("imposed_at", { ascending: false }).limit(100),
     ]);
 
-    if (alertsResult.error || runResult.error || eventsResult.error || statusResult.error || healthResult.error) {
+    if (alertsResult.error || runResult.error || eventsResult.error || statusResult.error || healthResult.error || casesResult.error || restrictionsResult.error) {
       return json({ error: "Could not load security operations" }, 500);
     }
     const latestRun = runResult.data;
@@ -92,6 +96,8 @@ serve(async (req) => {
         metrics: latestRun?.metrics ?? {},
       },
       recent_events: events,
+      security_cases: casesResult.data || [],
+      financial_restrictions: restrictionsResult.data || [],
     });
   }
 
@@ -108,6 +114,53 @@ serve(async (req) => {
   const fingerprint = String(body.fingerprint || "");
   const action = String(body.action || "");
   const notes = String(body.notes || "").trim();
+  if (VALID_RESPONSE_ACTIONS.includes(action as typeof VALID_RESPONSE_ACTIONS[number])) {
+    if (admin.role !== "super_admin") return json({ error: "Super admin approval is required" }, 403);
+    const userId = String(body.user_id || "");
+    const summary = String(body.summary || "").trim();
+    if (!UUID_PATTERN.test(userId)) return json({ error: "A valid user reference is required" }, 400);
+    if (summary.length < 5 || summary.length > 200) return json({ error: "Summary must be 5 to 200 characters" }, 400);
+    if (notes.length < 5 || notes.length > 500) return json({ error: "Reason must be 5 to 500 characters" }, 400);
+
+    let result;
+    if (action === "restrict_financial") {
+      const { data, error } = await db.rpc("admin_apply_financial_restriction", {
+        p_admin_user_id: admin.userId,
+        p_user_id: userId,
+        p_summary: summary,
+        p_reason: notes,
+        p_severity: body.severity === "warning" ? "warning" : "critical",
+      });
+      if (error) return json({ error: error.message.includes("ACCOUNT_ALREADY_RESTRICTED") ? "This account is already restricted" : "Could not apply restriction" }, 400);
+      result = data;
+    } else if (action === "revoke_sessions") {
+      const { data, error } = await db.rpc("admin_revoke_user_sessions", {
+        p_admin_user_id: admin.userId,
+        p_user_id: userId,
+        p_summary: summary,
+        p_reason: notes,
+      });
+      if (error) return json({ error: "Could not revoke sessions" }, 400);
+      result = data;
+    } else {
+      const restrictionId = String(body.restriction_id || "");
+      if (!UUID_PATTERN.test(restrictionId)) return json({ error: "A valid restriction is required" }, 400);
+      const { data, error } = await db.rpc("admin_lift_financial_restriction", {
+        p_admin_user_id: admin.userId,
+        p_restriction_id: restrictionId,
+        p_reason: notes,
+        p_override: body.override === true,
+      });
+      if (error) return json({ error: "Could not remove restriction" }, 400);
+      if (data?.success === false && data?.error === "REVERIFICATION_REQUIRED") {
+        return json({ error: "The customer must reset their transaction PIN using verified email before this restriction can be removed." }, 409);
+      }
+      result = data;
+    }
+
+    return json({ success: true, result });
+  }
+
   if (!/^[a-z0-9_-]{3,100}$/.test(fingerprint)) return json({ error: "Invalid alert" }, 400);
   if (!VALID_ACTIONS.includes(action as typeof VALID_ACTIONS[number])) return json({ error: "Invalid action" }, 400);
   if (notes.length > 500) return json({ error: "Notes must be 500 characters or fewer" }, 400);
