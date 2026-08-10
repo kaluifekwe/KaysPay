@@ -11,6 +11,14 @@ export interface TxRow {
   completed_at: string | null;
   users: { full_name: string | null; phone: string | null } | null;
   service_refunds?: { reason: string; origin: string; created_at: string }[];
+  refund_verification?: {
+    provider: string;
+    outcome: 'success' | 'failed' | 'unknown';
+    query_reference: string;
+    provider_transaction_id: string | null;
+    message: string;
+    verified_at: string;
+  } | null;
 }
 
 // User-facing service groupings, not raw provider/type granularity — e.g.

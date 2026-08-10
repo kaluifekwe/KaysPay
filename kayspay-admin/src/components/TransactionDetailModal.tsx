@@ -87,6 +87,15 @@ export default function TransactionDetailModal({
                   <tr><td className="muted">Refunded</td><td>{new Date(transaction.service_refunds[0].created_at).toLocaleString('en-GB')}</td></tr>
                 </>
               )}
+              {transaction.refund_verification && (
+                <>
+                  <tr><td className="muted">Provider verification</td><td><strong>{transaction.refund_verification.outcome}</strong></td></tr>
+                  <tr><td className="muted">Verified provider</td><td>{transaction.refund_verification.provider}</td></tr>
+                  <tr><td className="muted">Provider reference</td><td>{transaction.refund_verification.provider_transaction_id || transaction.refund_verification.query_reference || '—'}</td></tr>
+                  <tr><td className="muted">Provider response</td><td>{transaction.refund_verification.message || 'No message returned'}</td></tr>
+                  <tr><td className="muted">Verified</td><td>{new Date(transaction.refund_verification.verified_at).toLocaleString('en-GB')}</td></tr>
+                </>
+              )}
             </tbody>
           </table>
         </div>
