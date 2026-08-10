@@ -212,6 +212,8 @@ th {
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .checkbox-row input { width: auto; }
+.test-checklist { margin: 12px 0 0; padding-left: 22px; }
+.test-checklist li { margin: 8px 0; font-size: 13px; line-height: 1.45; }
 
 button.primary {
   background: var(--green);

@@ -42,6 +42,19 @@ interface FinancialRestriction {
   lifted_at: string | null;
   reverification_method: string | null;
 }
+interface OverrideApproval {
+  id: string;
+  restriction_id: string;
+  case_id: string;
+  user_id: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  request_reason: string;
+  requested_by: string;
+  requested_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_notes: string | null;
+}
 interface ResponsePayload {
   alerts: SecurityAlert[];
   total: number;
@@ -59,6 +72,7 @@ interface ResponsePayload {
   recent_events: SecurityEvent[];
   security_cases: SecurityCase[];
   financial_restrictions: FinancialRestriction[];
+  override_approvals: OverrideApproval[];
 }
 
 const formatDate = (value: string | null) => value
@@ -66,7 +80,7 @@ const formatDate = (value: string | null) => value
   : 'Never';
 
 export default function SecurityAlertsPage() {
-  const { role } = useAuth();
+  const { role, session } = useAuth();
   const [data, setData] = useState<ResponsePayload | null>(null);
   const [status, setStatus] = useState<'all' | AlertStatus>('open');
   const [severity, setSeverity] = useState('');
@@ -81,6 +95,8 @@ export default function SecurityAlertsPage() {
   const [responseSummary, setResponseSummary] = useState('');
   const [responseNotes, setResponseNotes] = useState('');
   const [override, setOverride] = useState(false);
+  const [approvalDecision, setApprovalDecision] = useState<{ approval: OverrideApproval; approve: boolean } | null>(null);
+  const [decisionNotes, setDecisionNotes] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -160,6 +176,29 @@ export default function SecurityAlertsPage() {
     setOverride(false);
   };
 
+  const decideOverride = async () => {
+    if (!approvalDecision) return;
+    setBusy(approvalDecision.approval.id);
+    setError(null);
+    try {
+      await callAdmin('admin-security-alerts', {
+        method: 'POST',
+        body: {
+          action: approvalDecision.approve ? 'approve_override' : 'reject_override',
+          approval_id: approvalDecision.approval.id,
+          notes: decisionNotes,
+        },
+      });
+      setApprovalDecision(null);
+      setDecisionNotes('');
+      await load();
+    } catch (e) {
+      setError(e instanceof AdminApiError ? e.message : 'Could not record approval decision');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div>
       <div className="row between">
@@ -219,6 +258,25 @@ export default function SecurityAlertsPage() {
         </table>}
       </div>
 
+      <h2 style={{ marginTop: 32 }}>Emergency Override Approvals</h2>
+      <div className="card table-scroll">
+        {!data?.override_approvals.length ? <p className="muted">No emergency override requests recorded.</p> : <table>
+          <thead><tr><th>Requested</th><th>Customer reference</th><th>Requested by</th><th>Reason</th><th>Status</th>{role === 'super_admin' && <th />}</tr></thead>
+          <tbody>{data.override_approvals.map((approval) => {
+            const isOwnRequest = approval.requested_by === session?.user.id;
+            return <tr key={approval.id}>
+              <td>{formatDate(approval.requested_at)}</td><td className="mono">{approval.user_id.slice(0, 8)}</td>
+              <td className="mono">{approval.requested_by.slice(0, 8)}{isOwnRequest ? ' (you)' : ''}</td><td>{approval.request_reason}</td>
+              <td><span className={`badge ${approval.status === 'pending' ? 'acknowledged' : approval.status === 'approved' ? 'resolved' : 'failed'}`}>{approval.status}</span></td>
+              {role === 'super_admin' && <td>{approval.status === 'pending' && !isOwnRequest && <div className="row">
+                <button className="primary" onClick={() => { setApprovalDecision({ approval, approve: true }); setDecisionNotes(''); }}>Approve</button>
+                <button className="danger" onClick={() => { setApprovalDecision({ approval, approve: false }); setDecisionNotes(''); }}>Reject</button>
+              </div>}</td>}
+            </tr>;
+          })}</tbody>
+        </table>}
+      </div>
+
       <h2 style={{ marginTop: 32 }}>Financial Restrictions</h2>
       <div className="card table-scroll">
         {!data?.financial_restrictions.length ? <p className="muted">No financial restrictions recorded.</p> : <table>
@@ -243,6 +301,21 @@ export default function SecurityAlertsPage() {
             <td><span className={`badge ${securityCase.status === 'open' ? 'open' : 'resolved'}`}>{securityCase.status}</span></td>
           </tr>)}</tbody>
         </table>}
+      </div>
+
+      <h2 style={{ marginTop: 32 }}>Controlled Test Checklist</h2>
+      <div className="card">
+        <p className="muted">Use only a designated internal test account. Record evidence for every item before testing with real operations.</p>
+        <ol className="test-checklist">
+          <li>Record the wallet balance before applying any response.</li>
+          <li>Sign out all sessions and confirm the test device must sign in again.</li>
+          <li>Apply a financial restriction and confirm purchases are blocked.</li>
+          <li>Confirm wallet viewing and inbound funding remain available and the balance is unchanged.</li>
+          <li>Confirm the customer receives the security notification.</li>
+          <li>Reset the transaction PIN using verified email.</li>
+          <li>Remove the restriction and confirm a purchase can be authorized again.</li>
+          <li>Verify the case, security event, and admin audit records are complete.</li>
+        </ol>
       </div>
 
       {selected && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Review security alert">
@@ -280,13 +353,29 @@ export default function SecurityAlertsPage() {
           {responseAction === 'restrict_financial' && <p className="muted">This signs out active sessions and blocks outgoing financial authorization. It does not change the wallet balance.</p>}
           {responseAction === 'lift_restriction' && <>
             <p className="muted">Normally the customer must reset their transaction PIN using verified email before removal.</p>
-            <label className="checkbox-row"><input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} /> Super-admin emergency override</label>
+            <label className="checkbox-row"><input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} /> Request emergency override from a second super admin</label>
           </>}
           <div className="row" style={{ marginTop: 16 }}>
-            <button className={responseAction === 'restrict_financial' ? 'danger' : 'primary'} disabled={busy !== null || responseSummary.trim().length < 5 || responseNotes.trim().length < 5} onClick={() => void applyResponse()}>
-              {responseAction === 'restrict_financial' ? 'Apply restriction' : responseAction === 'lift_restriction' ? 'Remove restriction' : 'Sign out sessions'}
+            <button className={responseAction === 'restrict_financial' ? 'danger' : 'primary'} disabled={busy !== null || responseSummary.trim().length < 5 || responseNotes.trim().length < ((responseAction === 'restrict_financial' || override) ? 10 : 5)} onClick={() => void applyResponse()}>
+              {responseAction === 'restrict_financial' ? 'Apply restriction' : responseAction === 'lift_restriction' ? (override ? 'Request dual approval' : 'Remove restriction') : 'Sign out sessions'}
             </button>
             <button className="secondary" onClick={() => setResponseTarget(null)}>Cancel</button>
+          </div>
+        </div>
+      </div>}
+
+      {approvalDecision && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Decide emergency override">
+        <div className="modal-card">
+          <h2>{approvalDecision.approve ? 'Approve' : 'Reject'} Emergency Override</h2>
+          <p className="muted">You must independently review the case evidence. You cannot approve your own request.</p>
+          <div className="field"><label htmlFor="decision-notes">Independent review notes</label>
+            <textarea id="decision-notes" maxLength={500} value={decisionNotes} onChange={(e) => setDecisionNotes(e.target.value)} placeholder="State what you checked and why you approve or reject this override." />
+          </div>
+          <div className="row">
+            <button className={approvalDecision.approve ? 'primary' : 'danger'} disabled={busy !== null || decisionNotes.trim().length < 5} onClick={() => void decideOverride()}>
+              Confirm {approvalDecision.approve ? 'approval' : 'rejection'}
+            </button>
+            <button className="secondary" onClick={() => { setApprovalDecision(null); setDecisionNotes(''); }}>Cancel</button>
           </div>
         </div>
       </div>}
