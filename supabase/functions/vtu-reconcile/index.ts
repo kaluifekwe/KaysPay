@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient, verifyCronSecret, withJobLock } from "../_shared/auth.ts";
-import { callVTUNG, isVtuConfigured, NON_TERMINAL_STATUSES, SUCCESS_STATUSES } from "../_shared/vtu-client.ts";
+import { confirmServiceRefund } from "../_shared/service-refund.ts";
+import { hasSeparatedFailureConfirmation } from "../_shared/provider-failure-confirmation.ts";
+import { callVTUNG, isVtuConfigured, vtuNgOutcome } from "../_shared/vtu-client.ts";
 
 // Scheduled sweep (via pg_cron, see migration 016) that resolves VTU.ng
 // orders left 'pending' after vtu-purchase's short synchronous check gave
@@ -53,22 +55,34 @@ serve(async (req: Request) => {
         const requery = await callVTUNG(supabase, "/requery", { request_id: requestId });
         if (requery?.code !== "success") continue; // couldn't get a real answer this round
 
-        const status = requery.data?.status;
+        const status = String(requery.data?.status ?? "").trim().toLowerCase();
+        const outcome = vtuNgOutcome(status);
 
-        if (SUCCESS_STATUSES.includes(status)) {
+        if (outcome === "success") {
           await supabase.rpc("complete_service_transaction", {
             p_tx_id: tx.id,
             p_order_id: requery.data?.order_id ?? null,
           });
           completed++;
-        } else if (!NON_TERMINAL_STATUSES.includes(status)) {
-          // refunded / failed / cancelled / anything else terminal-but-not-success
-          await supabase.rpc("refund_service_transaction", {
-            p_tx_id: tx.id,
-            p_reason: status || "reconcile_refund",
-          });
-          refunded++;
+        } else if (outcome === "failed") {
+          if (hasSeparatedFailureConfirmation(tx.metadata?.provider_failure_confirmation, status)) {
+            await confirmServiceRefund(supabase, tx.id, status, "reconcile");
+            refunded++;
+          } else {
+            const checkedAt = new Date().toISOString();
+            await supabase.from("transactions").update({ metadata: {
+              ...tx.metadata,
+              provider_failure_confirmation: { at: checkedAt, status },
+              last_reconcile_check: { at: checkedAt, outcome: "failed_unconfirmed" },
+            } }).eq("id", tx.id).eq("status", "pending");
+            stillPending++;
+          }
         } else {
+          await supabase.from("transactions").update({ metadata: {
+            ...tx.metadata,
+            provider_failure_confirmation: null,
+            last_reconcile_check: { at: new Date().toISOString(), outcome },
+          } }).eq("id", tx.id).eq("status", "pending");
           stillPending++;
         }
       } catch {

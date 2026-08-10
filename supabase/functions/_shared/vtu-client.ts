@@ -130,4 +130,18 @@ export async function callVTUNG(
 // Order states that mean "we don't have a final answer yet".
 export const NON_TERMINAL_STATUSES = ["processing-api", "queued-api", "initiated-api", "pending", "on-hold"];
 export const SUCCESS_STATUSES = ["completed-api"];
-// Anything else (refunded, failed, cancelled) is treated as a refund.
+export const FAILURE_STATUSES = [
+  "failed-api", "refunded-api", "cancelled-api", "canceled-api", "declined-api", "reversed-api",
+  "failed", "refunded", "cancelled", "canceled", "declined", "reversed",
+];
+
+export type VtuNgOutcome = "success" | "pending" | "failed" | "unknown";
+
+/** Never infer failure from an unfamiliar provider status. */
+export function vtuNgOutcome(status: unknown): VtuNgOutcome {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  if (SUCCESS_STATUSES.includes(normalized)) return "success";
+  if (NON_TERMINAL_STATUSES.includes(normalized)) return "pending";
+  if (FAILURE_STATUSES.includes(normalized)) return "failed";
+  return "unknown";
+}

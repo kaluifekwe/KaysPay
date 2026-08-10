@@ -1,11 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient, verifyCronSecret, withJobLock } from "../_shared/auth.ts";
+import { confirmServiceRefund } from "../_shared/service-refund.ts";
+import { hasSeparatedFailureConfirmation } from "../_shared/provider-failure-confirmation.ts";
 import {
-  normalizeVTUNaijaResult,
+  normalizeVTUNaijaQueryResult,
   queryVTUNaijaTransaction,
   queryVTUNaijaDataTransaction,
   isVtuNaijaConfigured,
-  vtunaijaOutcome,
 } from "../_shared/vtunaija-client.ts";
 
 // Scheduled sweep (see the VTUnaija migration cron) that resolves VTUnaija
@@ -64,28 +65,44 @@ serve(async (req: Request) => {
 
     for (const tx of pending || []) {
       const requestId = tx.metadata?.idempotency_key;
-      if (!requestId) continue;
+      const queryId = tx.metadata?.provider_transaction_id ?? requestId;
+      if (!queryId) continue;
 
       try {
         const queried = tx.type === "data"
-          ? await queryVTUNaijaDataTransaction(requestId)
-          : await queryVTUNaijaTransaction(requestId);
-        const outcome = vtunaijaOutcome(queried);
-        const normalized = normalizeVTUNaijaResult(queried);
+          ? await queryVTUNaijaDataTransaction(queryId)
+          : await queryVTUNaijaTransaction(queryId);
+        const normalized = normalizeVTUNaijaQueryResult(queried);
 
-        if (outcome === "success") {
+        if (normalized.outcome === "success") {
           await supabase.rpc("complete_service_transaction", {
             p_tx_id: tx.id,
-            p_order_id: normalized.id ?? normalized.ident ?? null,
+            p_order_id: normalized.transactionId,
           });
           completed++;
-        } else if (outcome === "failed") {
-          await supabase.rpc("refund_service_transaction", {
-            p_tx_id: tx.id,
-            p_reason: normalized.message || "reconcile_refund",
-          });
-          refunded++;
+        } else if (normalized.outcome === "failed") {
+          if (hasSeparatedFailureConfirmation(tx.metadata?.provider_failure_confirmation, "failed")) {
+            await confirmServiceRefund(supabase, tx.id, normalized.message || "reconcile_refund", "reconcile");
+            refunded++;
+          } else {
+            const checkedAt = new Date().toISOString();
+            await supabase.from("transactions").update({ metadata: {
+              ...tx.metadata,
+              provider_failure_confirmation: {
+                at: checkedAt,
+                status: "failed",
+                message: normalized.message.slice(0, 200),
+              },
+              last_reconcile_check: { at: checkedAt, outcome: "failed_unconfirmed" },
+            } }).eq("id", tx.id).eq("status", "pending");
+            stillPending++;
+          }
         } else {
+          await supabase.from("transactions").update({ metadata: {
+            ...tx.metadata,
+            provider_failure_confirmation: null,
+            last_reconcile_check: { at: new Date().toISOString(), outcome: "unknown" },
+          } }).eq("id", tx.id).eq("status", "pending");
           stillPending++; // unknown/malformed query response — leave it, never guess
         }
       } catch {
