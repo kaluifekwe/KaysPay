@@ -37,6 +37,9 @@ export default function TVPayScreen({ navigation, route }: any) {
   const [verifyState, setVerifyState] = useState<VerifyState>('idle');
   const [verifiedName, setVerifiedName] = useState<string | null>(null);
   const [verifiedBouquet, setVerifiedBouquet] = useState<string | null>(null);
+  const [verifiedStatus, setVerifiedStatus] = useState<string | null>(null);
+  const [verifiedDueDate, setVerifiedDueDate] = useState<string | null>(null);
+  const [verifiedRenewalAmount, setVerifiedRenewalAmount] = useState<number | null>(null);
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [savedAccounts, setSavedAccounts] = useState<SavedBillingAccount[]>([]);
@@ -75,6 +78,9 @@ export default function TVPayScreen({ navigation, route }: any) {
     setVerifyState('idle');
     setVerifiedName(null);
     setVerifiedBouquet(null);
+    setVerifiedStatus(null);
+    setVerifiedDueDate(null);
+    setVerifiedRenewalAmount(null);
     setVerifyError(null);
     setSelectedBouquet(null);
     setErrorMessage('');
@@ -99,10 +105,16 @@ export default function TVPayScreen({ navigation, route }: any) {
     if (result.ok && result.customerName) {
       setVerifiedName(result.customerName);
       setVerifiedBouquet(result.currentBouquet);
+      setVerifiedStatus(result.accountStatus);
+      setVerifiedDueDate(result.dueDate);
+      setVerifiedRenewalAmount(result.renewalAmount);
       setVerifyState('verified');
     } else {
       setVerifiedName(null);
       setVerifiedBouquet(null);
+      setVerifiedStatus(null);
+      setVerifiedDueDate(null);
+      setVerifiedRenewalAmount(null);
       setVerifyError(result.error || 'Could not verify this smartcard number.');
       setVerifyState('failed');
     }
@@ -215,7 +227,17 @@ export default function TVPayScreen({ navigation, route }: any) {
             {verifyState === 'verified' && verifiedName && (
               <View style={styles.verifiedCard}>
                 <Text style={styles.verifiedTitle}>✓ Verified — {verifiedName}</Text>
+                {verifiedStatus ? <Text style={styles.verifiedDetail}>Account status: {verifiedStatus}</Text> : null}
                 {verifiedBouquet ? <Text style={styles.verifiedDetail}>Current bouquet: {verifiedBouquet}</Text> : null}
+                {verifiedRenewalAmount !== null ? (
+                  <Text style={styles.verifiedDetail}>Renewal amount: {formatNaira(verifiedRenewalAmount)}</Text>
+                ) : null}
+                {verifiedDueDate ? <Text style={styles.verifiedDetail}>Due date: {verifiedDueDate}</Text> : null}
+                {verifiedStatus?.toLowerCase() === 'suspended' ? (
+                  <Text style={styles.statusExplanation}>
+                    This subscription is currently inactive. Renewing the correct package may reactivate it.
+                  </Text>
+                ) : null}
               </View>
             )}
             {verifyState === 'failed' && verifyError ? (
@@ -320,6 +342,7 @@ const styles = StyleSheet.create({
   verifiedCard: { marginTop: Spacing.M, padding: Spacing.M, borderRadius: Spacing.CARD_RADIUS, backgroundColor: Colors.GREEN_LIGHT },
   verifiedTitle: { ...Typography.BODY, color: Colors.GREEN_DARK, fontWeight: '700' },
   verifiedDetail: { ...Typography.CAPTION, color: Colors.GREEN_DARK, marginTop: 4 },
+  statusExplanation: { ...Typography.CAPTION, color: Colors.DARK, marginTop: Spacing.S },
   verifyError: { ...Typography.ERROR, marginTop: Spacing.S },
   tryAgainButton: {
     minHeight: Spacing.TOUCH_TARGET_MIN,

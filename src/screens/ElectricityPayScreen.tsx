@@ -317,6 +317,11 @@ export default function ElectricityPayScreen(props: any) {
 
           <View style={styles.section}>
             <Text style={styles.label}>Meter Number</Text>
+            <View style={styles.arrearsNotice}>
+              <Text style={styles.arrearsNoticeText}>
+                Your electricity provider may apply outstanding debt or a minimum payment requirement. The final amount and units are determined by your DISCO.
+              </Text>
+            </View>
             {savedAccounts.length > 0 ? (
               <View style={styles.savedAccounts}>
                 <Text style={styles.savedLabel}>Previously used meters</Text>
@@ -535,6 +540,8 @@ const styles = StyleSheet.create({
   amountInput: { flex: 1, ...Typography.BODY, color: Colors.DARK },
   amountError: { ...Typography.ERROR, marginTop: Spacing.S },
   verifyRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.S },
+  arrearsNotice: { backgroundColor: Colors.GREEN_LIGHT, borderRadius: Spacing.BUTTON_RADIUS, padding: Spacing.M, marginBottom: Spacing.M },
+  arrearsNoticeText: { ...Typography.CAPTION, color: Colors.DARK, lineHeight: 19 },
   savedAccounts: { marginBottom: Spacing.M },
   savedLabel: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.S },
   savedAccount: { minHeight: 52, borderWidth: 1, borderColor: Colors.BORDER, borderRadius: Spacing.BUTTON_RADIUS, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S, marginBottom: Spacing.S, justifyContent: 'center' },
