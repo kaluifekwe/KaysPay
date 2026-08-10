@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
   Keyboard,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -69,6 +70,11 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isManualNetwork, setIsManualNetwork] = useState(false);
   const [pickerMode, setPickerMode] = useState<'closed' | 'single' | 'multi'>('closed');
+  // The custom-amount field sits near the bottom of the form, right above
+  // the fixed Pay bar — ScrollView never auto-scrolls a focused input into
+  // view, so the keyboard can hide it entirely. Scroll to end on focus
+  // brings it above the keyboard, same fix applied to Exam PIN/TV/Electricity.
+  const scrollRef = useRef<ScrollView>(null);
 
   const formattedPhone = useMemo(() => formatNigerianPhone(phoneNumber), [phoneNumber]);
   const isValidPhone = useMemo(() => validateNigerianPhone(phoneNumber), [phoneNumber]);
@@ -132,10 +138,22 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
     (contacts: PickedContact[]) => {
       setPickerMode('closed');
       const supported = contacts.filter((contact) => contact.network !== '9mobile');
+      if (supported.length === 0) {
+        // Every picked contact was 9mobile — don't just close the picker on
+        // a dead end; let the user try a different selection right away.
+        Alert.alert(
+          '9mobile unavailable',
+          'All the contacts you picked are on 9mobile, which is currently unsupported. Choose different contacts to continue.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Choose Again', onPress: () => setPickerMode('multi') },
+          ],
+        );
+        return;
+      }
       if (supported.length !== contacts.length) {
         Alert.alert('9mobile removed', '9mobile contacts were excluded from this purchase.');
       }
-      if (supported.length === 0) return;
       if (supported.length === 1) {
         // Only one picked — fall back to the normal single-recipient form.
         handleContactSelect(supported[0]);
@@ -191,6 +209,7 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
+          ref={scrollRef}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
@@ -217,25 +236,39 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
           )}
 
           <View style={styles.section}>
-            <View style={styles.labelRow}>
-              <Text style={styles.label}>Phone Number</Text>
-              <View style={styles.labelRowButtons}>
-                <TouchableOpacity
-                  style={styles.contactsBtn}
-                  onPress={() => setPickerMode('single')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.contactsBtnText}>📇 Contacts</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.contactsBtn}
-                  onPress={() => setPickerMode('multi')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.contactsBtnText}>👥 Bulk Send</Text>
-                </TouchableOpacity>
-              </View>
+            <View style={styles.contactActions}>
+              <TouchableOpacity
+                style={styles.contactActionCard}
+                onPress={() => setPickerMode('single')}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Choose one phone number from your contacts"
+              >
+                <Ionicons name="person-circle-outline" size={27} color={Colors.GREEN} />
+                <View style={styles.contactActionCopy}>
+                  <Text style={styles.contactActionTitle}>Choose from phone contacts</Text>
+                  <Text style={styles.contactActionDescription}>Select one saved phone number</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={Colors.GREEN} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.contactActionCard}
+                onPress={() => setPickerMode('multi')}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Select multiple phone numbers from your contacts"
+              >
+                <Ionicons name="people-outline" size={27} color={Colors.GREEN} />
+                <View style={styles.contactActionCopy}>
+                  <Text style={styles.contactActionTitle}>Send to multiple people</Text>
+                  <Text style={styles.contactActionDescription}>Select multiple numbers from your contacts</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={Colors.GREEN} />
+              </TouchableOpacity>
             </View>
+
+            <Text style={styles.label}>Phone Number</Text>
             <TextInput
               style={styles.phoneInput}
               value={phoneNumber}
@@ -334,6 +367,7 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
                 placeholderTextColor={Colors.GRAY}
                 value={amount}
                 onChangeText={handleAmountChange}
+                onFocus={() => scrollRef.current?.scrollToEnd({ animated: true })}
                 keyboardType="numeric"
                 maxLength={6}
                 editable={!isProcessing}
@@ -411,7 +445,10 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: Spacing.SCREEN_PADDING,
     paddingTop: Spacing.M,
-    paddingBottom: 120,
+    // See ExamPinsScreen.tsx's identical comment — 120 only fit the Pay
+    // button alone; the hint line above it could push it taller than that,
+    // hiding content behind it with no way to scroll past.
+    paddingBottom: 180,
   },
   backButton: {
     width: 48,
@@ -436,28 +473,39 @@ const styles = StyleSheet.create({
     ...Typography.SECTION_HEADING,
     marginBottom: Spacing.M,
   },
-  labelRow: {
+  contactActions: {
+    flexDirection: 'row',
+    gap: Spacing.M,
+    marginBottom: Spacing.L,
+  },
+  contactActionCard: {
+    flex: 1,
+    minHeight: 88,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.S,
-  },
-  labelRowButtons: {
-    flexDirection: 'row',
-    gap: Spacing.S,
-  },
-  contactsBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.S,
+    gap: Spacing.M,
+    paddingVertical: Spacing.M,
     paddingHorizontal: Spacing.M,
     borderRadius: Spacing.BUTTON_RADIUS,
-    backgroundColor: Colors.GREEN_LIGHT,
+    borderWidth: 1,
+    borderColor: Colors.GREEN_MID,
+    backgroundColor: Colors.WHITE,
   },
-  contactsBtnText: {
+  contactActionCopy: {
+    flex: 1,
+    gap: Spacing.XS,
+  },
+  contactActionTitle: {
+    ...Typography.CARD_TITLE,
+    fontSize: 12,
+    lineHeight: 16,
+    color: Colors.DARK,
+  },
+  contactActionDescription: {
     ...Typography.CAPTION,
-    color: Colors.GREEN,
-    fontWeight: '600',
+    fontSize: 10,
+    lineHeight: 14,
+    color: Colors.GRAY,
   },
   phoneInput: {
     height: Spacing.INPUT_HEIGHT,
