@@ -154,6 +154,15 @@ export interface SavedBillingAccount {
   account_number: string;
   customer_name: string;
   customer_address: string | null;
+  /**
+   * Last verification snapshot, cached server-side so a saved card can show
+   * its full details immediately. Null until that card has been verified
+   * since this was introduced. Display only — the purchase endpoint ignores
+   * anything older than 5 minutes and re-verifies.
+   */
+  due_date: string | null;
+  /** KOBO. Divide by 100 before showing; formatNaira expects naira. */
+  renewal_amount_kobo: number | null;
   last_verified_at: string;
   last_used_at: string;
 }

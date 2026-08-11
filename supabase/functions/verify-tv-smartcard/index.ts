@@ -75,6 +75,16 @@ serve(async (req: Request) => {
     const rawCustomerName = typeof result?.Customer_Name === "string"
       ? result.Customer_Name.trim().slice(0, 200)
       : verified.customerName;
+    // Cache the two figures the customer reads before paying, so reopening a
+    // saved card shows them at once instead of waiting on the provider again.
+    // The provider reports naira as a string ("5800"); the column is kobo like
+    // every other money column here, hence the ×100.
+    const renewalAmountKobo = verified.renewalAmount !== null && Number.isFinite(verified.renewalAmount)
+      ? Math.round(verified.renewalAmount * 100)
+      : null;
+    const dueDateIso = verified.dueDate && !Number.isNaN(Date.parse(verified.dueDate))
+      ? new Date(verified.dueDate).toISOString()
+      : null;
     const { error: saveError } = await supabase.from("saved_billing_accounts").upsert({
       user_id: user.id,
       service: "tv",
@@ -82,6 +92,8 @@ serve(async (req: Request) => {
       account_number: smartcardNumber,
       customer_name: verified.customerName,
       provider_customer_name: rawCustomerName,
+      due_date: dueDateIso,
+      renewal_amount_kobo: renewalAmountKobo,
       last_verified_at: new Date().toISOString(),
       last_used_at: new Date().toISOString(),
     }, { onConflict: "user_id,service,provider_id,account_number" });

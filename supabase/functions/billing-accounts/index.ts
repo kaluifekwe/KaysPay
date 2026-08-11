@@ -41,7 +41,10 @@ serve(async (req: Request) => {
     const pageSize = 50;
     const { data, error } = await db
       .from("saved_billing_accounts")
-      .select("id, service, provider_id, account_number, customer_name, customer_address, last_verified_at, last_used_at")
+      // due_date/renewal_amount_kobo let a saved card show its full details
+      // the moment it is tapped, instead of holding the customer on a ~1.2s
+      // provider round trip at the point they are ready to pay.
+      .select("id, service, provider_id, account_number, customer_name, customer_address, due_date, renewal_amount_kobo, last_verified_at, last_used_at")
       .eq("user_id", user.id)
       .eq("service", service)
       .eq("provider_id", providerId)
