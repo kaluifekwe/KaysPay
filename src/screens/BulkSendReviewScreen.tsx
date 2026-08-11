@@ -108,6 +108,15 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
   // work grew linearly with the number of people, which is the opposite of
   // what the feature is for.
   const [bulkAmount, setBulkAmount] = useState('');
+  // Measured height of the pinned footer, used to pad the scroll area so the
+  // last recipient can always be scrolled clear of it. This was a hardcoded
+  // guess, which silently went stale the moment the footer grew (the network
+  // summary and balance line pushed it past the reserved space and buried the
+  // final row). It also never accounted for gesture-navigation insets, so the
+  // same code looked correct on a device with hardware buttons. Measuring
+  // removes both failure modes. The initial value only has to survive the
+  // first frame before onLayout replaces it.
+  const [footerHeight, setFooterHeight] = useState(200);
   const [dataRows, setDataRows] = useState<DataRow[]>(
     recipients.map((contact) => ({ contact, network: contact.network, bundle: null })),
   );
@@ -526,7 +535,10 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
       >
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: footerHeight + Spacing.L },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -702,21 +714,20 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
                             {hasName ? row.contact.name : prettyPhone}
                           </Text>
                           <View style={styles.recipientMetaRow}>
-                            <View
-                              style={[
-                                styles.networkPill,
-                                { backgroundColor: NETWORK_COLOR[row.network] },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.networkPillText,
-                                  row.network === 'mtn' && styles.networkPillTextDark,
-                                ]}
-                              >
-                                {NETWORK_LABEL[row.network]}
-                              </Text>
-                            </View>
+                            {/* The carrier's own logo rather than a coloured
+                                label: it is recognised instantly, and
+                                ProviderLogo degrades to an initials badge if
+                                an image ever fails to load. The name stays
+                                beside it so the carrier is never ambiguous. */}
+                            <ProviderLogo
+                              source={NETWORK_LOGOS[row.network]}
+                              fallbackLabel={NETWORK_LABEL[row.network]}
+                              fallbackColor={NETWORK_COLOR[row.network]}
+                              size={20}
+                            />
+                            <Text style={styles.networkName}>
+                              {NETWORK_LABEL[row.network]}
+                            </Text>
                             <Text style={styles.recipientNumber} numberOfLines={1}>
                               {hasName ? prettyPhone : 'Not in contacts'}
                             </Text>
@@ -841,7 +852,10 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
               })}
         </ScrollView>
 
-        <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + Spacing.SCREEN_PADDING }]}>
+        <View
+          style={[styles.bottomContainer, { paddingBottom: insets.bottom + Spacing.SCREEN_PADDING }]}
+          onLayout={(e) => setFooterHeight(e.nativeEvent.layout.height)}
+        >
           {insufficientBalance && phase === 'review' && (
             <Text style={styles.insufficientText}>
               Insufficient balance for this total
@@ -850,16 +864,14 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
           {phase === 'review' && networkSummary.length > 0 && (
             <View style={styles.footerNetworkRow}>
               {networkSummary.map(([network, count]) => (
-                <View
-                  key={network}
-                  style={[styles.networkPill, { backgroundColor: NETWORK_COLOR[network] }]}
-                >
-                  <Text
-                    style={[
-                      styles.networkPillText,
-                      network === 'mtn' && styles.networkPillTextDark,
-                    ]}
-                  >
+                <View key={network} style={styles.footerNetworkChip}>
+                  <ProviderLogo
+                    source={NETWORK_LOGOS[network]}
+                    fallbackLabel={NETWORK_LABEL[network]}
+                    fallbackColor={NETWORK_COLOR[network]}
+                    size={16}
+                  />
+                  <Text style={styles.footerNetworkChipText}>
                     {NETWORK_LABEL[network]} × {count}
                   </Text>
                 </View>
@@ -983,7 +995,9 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: Spacing.SCREEN_PADDING,
     paddingTop: Spacing.M,
-    paddingBottom: 160,
+    // paddingBottom is applied inline from the measured footer height — see
+    // footerHeight. Deliberately not set here: a hardcoded value looks
+    // authoritative while silently going stale whenever the footer changes.
   },
   backButton: {
     width: 48,
@@ -1295,12 +1309,11 @@ const styles = StyleSheet.create({
   recipientWho: { flex: 1, minWidth: 0 },
   recipientName: { fontSize: 14, fontWeight: '700', color: Colors.DARK },
   recipientMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
-  // The network is named, not just colour-coded: sending airtime to the
-  // wrong carrier fails at the provider after the customer has paid, and
-  // Nigerian number portability makes prefix detection unreliable.
-  networkPill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 11 },
-  networkPillText: { fontSize: 10, fontWeight: '800', color: Colors.WHITE },
-  networkPillTextDark: { color: Colors.DARK },
+  // The carrier is shown as its own logo AND named: sending airtime to the
+  // wrong network fails at the provider after the customer has paid, and
+  // Nigerian number portability makes prefix detection unreliable, so this
+  // is worth stating twice over.
+  networkName: { fontSize: 11, fontWeight: '800', color: '#374151' },
   recipientNumber: { fontSize: 12, color: Colors.GRAY, flexShrink: 1 },
   recipientAmountCol: { alignItems: 'flex-end' },
   recipientAmountInput: {
@@ -1330,6 +1343,17 @@ const styles = StyleSheet.create({
   recipientRemove: { fontSize: 15, color: '#C9CFCC' },
 
   footerNetworkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: Spacing.S },
+  footerNetworkChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.LIGHT_GRAY,
+    borderRadius: 12,
+    paddingLeft: 3,
+    paddingRight: 8,
+    paddingVertical: 2,
+  },
+  footerNetworkChipText: { fontSize: 10.5, fontWeight: '800', color: Colors.DARK },
   balanceAfterText: {
     fontSize: 11,
     color: Colors.GRAY,
