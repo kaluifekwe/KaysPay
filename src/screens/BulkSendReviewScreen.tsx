@@ -14,6 +14,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -213,15 +214,22 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
     }
   }, [contactPickerFor, type, airtimeRows, dataRows]);
 
+  // Removing the LAST recipient used to be blocked, both here and by hiding
+  // the button once one row remained. That stopped an empty batch, but it did
+  // so by trapping the user: the control silently vanished with no
+  // explanation and the only escape was the back button. Deleting the final
+  // recipient is now allowed, and since a review screen with nobody on it has
+  // nothing to review, it returns to where recipients are picked.
   const handleRemoveRecipient = useCallback((phone: string) => {
+    const remaining = (type === 'airtime' ? airtimeRows : dataRows)
+      .filter((r) => r.contact.phone !== phone).length;
     if (type === 'airtime') {
-      if (airtimeRows.length <= 1) return;
       setAirtimeRows((prev) => prev.filter((r) => r.contact.phone !== phone));
     } else {
-      if (dataRows.length <= 1) return;
       setDataRows((prev) => prev.filter((r) => r.contact.phone !== phone));
     }
-  }, [type, airtimeRows.length, dataRows.length]);
+    if (remaining === 0) navigation.goBack();
+  }, [type, airtimeRows, dataRows, navigation]);
 
   // Appends newly-picked contacts onto the existing batch instead of
   // forcing the user to cancel and rebuild the whole selection to add a
@@ -763,13 +771,16 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
 
                       <View style={styles.recipientEnd}>
                         {renderStatusIcon(row.contact.phone)}
-                        {!locked && recipientCount > 1 && (
+                        {!locked && (
                           <TouchableOpacity
+                            style={styles.removeAction}
                             onPress={() => handleRemoveRecipient(row.contact.phone)}
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                             activeOpacity={0.7}
+                            accessibilityLabel={`Remove ${row.contact.name || row.contact.phone}`}
                           >
-                            <Text style={styles.recipientRemove}>✕</Text>
+                            <Ionicons name="trash-outline" size={16} color={Colors.RED} />
+                            <Text style={styles.removeActionText}>Remove</Text>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -818,13 +829,16 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
                       </TouchableOpacity>
                       <View style={styles.recipientEnd}>
                         {renderStatusIcon(row.contact.phone)}
-                        {!locked && recipientCount > 1 && (
+                        {!locked && (
                           <TouchableOpacity
+                            style={styles.removeAction}
                             onPress={() => handleRemoveRecipient(row.contact.phone)}
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                             activeOpacity={0.7}
+                            accessibilityLabel={`Remove ${row.contact.name || row.contact.phone}`}
                           >
-                            <Text style={styles.recipientRemove}>✕</Text>
+                            <Ionicons name="trash-outline" size={16} color={Colors.RED} />
+                            <Text style={styles.removeActionText}>Remove</Text>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -1327,8 +1341,12 @@ const styles = StyleSheet.create({
     color: Colors.GREEN,
     marginTop: 3,
   },
-  recipientEnd: { alignItems: 'center', justifyContent: 'center', minWidth: 18 },
-  recipientRemove: { fontSize: 15, color: '#C9CFCC' },
+  recipientEnd: { alignItems: 'center', justifyContent: 'center' },
+  // A bare ✕ read as "cancel" — and sitting beside the amount box, it could
+  // be taken for "clear this amount" rather than "remove this person". A
+  // trash icon with the word, in the error colour, can only mean one thing.
+  removeAction: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2 },
+  removeActionText: { fontSize: 9.5, fontWeight: '700', color: Colors.RED, marginTop: 1 },
 
   // ---- Data recipient (name/network row + its own plan control) ----
   recipientBlock: {
