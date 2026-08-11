@@ -29,6 +29,7 @@ import { supabase } from '../lib/supabase';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import { PickedContact } from '../services/contacts.service';
 import { NETWORK_LABEL, NETWORK_COLOR, NgNetwork } from '../utils/phone';
+import { formatNigerianPhone } from '../utils/detectNetwork';
 import { NETWORK_LOGOS } from '../utils/providerLogos';
 import ProviderLogo from '../components/ProviderLogo';
 import { isRestrictedPlanName } from '../utils/planWarnings';
@@ -54,6 +55,11 @@ interface AirtimeRow {
   contact: PickedContact;
   network: NgNetwork;
   amount: string;
+  // True once this recipient's amount has been typed by hand. The
+  // "amount for everyone" control deliberately skips these rows, so setting
+  // a batch-wide amount never silently wipes a deliberate per-person figure.
+  // "Reset all" is the explicit way to clear the overrides.
+  custom: boolean;
 }
 
 interface DataRow {
@@ -64,14 +70,44 @@ interface DataRow {
 
 const QUICK_AMOUNTS = [100, 200, 500, 1000];
 
+// Server-enforced floor (AIRTIME_MIN in _shared/vtu-catalog.ts) — the
+// provider rejects anything below it. Shown up front so the amount is
+// corrected before paying rather than after a failed purchase.
+const AIRTIME_MIN = 100;
+
+// Distinct-but-muted fills so a long recipient list stays scannable. Chosen
+// per recipient from their phone number, so the same person keeps the same
+// colour every time the screen is opened.
+const AVATAR_COLORS = ['#7C3AED', '#1E40AF', '#B45309', Colors.GREEN_MID, '#BE185D', '#0F766E'];
+
+function avatarColor(phone: string): string {
+  let hash = 0;
+  for (let i = 0; i < phone.length; i++) hash = (hash * 31 + phone.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+
+// Array.from rather than slice/charAt: a contact saved as a single emoji
+// (which real phonebooks are full of) is a multi-code-unit character, and
+// slicing it by code unit renders a broken glyph.
+function initialsFor(name: string, phone: string): string {
+  const words = (name || '').trim().split(/\s+/).filter(Boolean);
+  const initials = words.slice(0, 2).map((word) => Array.from(word)[0] ?? '').join('');
+  return initials || phone.slice(-2);
+}
+
 export default function BulkSendReviewScreen({ navigation, route }: BulkSendReviewScreenProps) {
   const { type, recipients }: { type: SendType; recipients: PickedContact[] } = route.params;
   const { authorize } = useTransactionAuth();
   const insets = useSafeAreaInsets();
 
   const [airtimeRows, setAirtimeRows] = useState<AirtimeRow[]>(
-    recipients.map((contact) => ({ contact, network: contact.network, amount: '' })),
+    recipients.map((contact) => ({ contact, network: contact.network, amount: '', custom: false })),
   );
+  // The batch-wide amount. Bulk send previously had no such control at all,
+  // so "bulk" airtime meant typing the same figure once per recipient — the
+  // work grew linearly with the number of people, which is the opposite of
+  // what the feature is for.
+  const [bulkAmount, setBulkAmount] = useState('');
   const [dataRows, setDataRows] = useState<DataRow[]>(
     recipients.map((contact) => ({ contact, network: contact.network, bundle: null })),
   );
@@ -220,7 +256,15 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
     if (type === 'airtime') {
       setAirtimeRows((prev) => [
         ...prev,
-        ...toAdd.map((contact) => ({ contact, network: contact.network, amount: '' })),
+        // Inherit the batch-wide amount so someone added late is immediately
+        // ready to send, rather than silently reintroducing a blank row that
+        // blocks the whole batch.
+        ...toAdd.map((contact) => ({
+          contact,
+          network: contact.network,
+          amount: bulkAmount,
+          custom: false,
+        })),
       ]);
     } else {
       setDataRows((prev) => [
@@ -302,13 +346,31 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
 
   const canSend = useMemo(() => {
     if (type === 'airtime') {
+      // Enforce the provider's real floor here too. Previously any amount
+      // above zero passed this check and only failed at the provider, after
+      // the batch had been authorised.
       return airtimeRows.every((r) => {
         const n = parseInt(r.amount, 10);
-        return !isNaN(n) && n > 0;
+        return !isNaN(n) && n >= AIRTIME_MIN;
       });
     }
     return bundlesReady && dataRows.every((r) => r.bundle !== null);
   }, [type, airtimeRows, dataRows, bundlesReady]);
+
+  const customCount = useMemo(
+    () => (type === 'airtime' ? airtimeRows.filter((r) => r.custom && r.amount).length : 0),
+    [type, airtimeRows],
+  );
+
+  // Lets the batch's network split be confirmed before paying. On a long
+  // list an unexpected carrier is otherwise easy to miss, and airtime sent
+  // to the wrong network fails at the provider after the debit.
+  const networkSummary = useMemo(() => {
+    const counts = new Map<NgNetwork, number>();
+    const rows: { network: NgNetwork }[] = type === 'airtime' ? airtimeRows : dataRows;
+    rows.forEach((r) => counts.set(r.network, (counts.get(r.network) ?? 0) + 1));
+    return Array.from(counts.entries());
+  }, [type, airtimeRows, dataRows]);
 
   const insufficientBalance = walletBalance !== null && total > walletBalance;
 
@@ -321,18 +383,29 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
     [activePlanRow],
   );
 
+  // Editing one recipient's amount marks that row custom, which exempts it
+  // from any later batch-wide change.
   const handleAirtimeAmountChange = useCallback((phone: string, text: string) => {
     const cleaned = text.replace(/[^0-9]/g, '').slice(0, 6);
     setAirtimeRows((prev) =>
-      prev.map((r) => (r.contact.phone === phone ? { ...r, amount: cleaned } : r)),
+      prev.map((r) => (r.contact.phone === phone ? { ...r, amount: cleaned, custom: true } : r)),
     );
   }, []);
 
-  const handleQuickAmount = useCallback((phone: string, amount: number) => {
-    setAirtimeRows((prev) =>
-      prev.map((r) => (r.contact.phone === phone ? { ...r, amount: String(amount) } : r)),
-    );
+  // Typing in, or tapping a chip on, the "amount for everyone" control. Both
+  // paths land here so the field always reflects what will actually be sent,
+  // and both skip rows the user has already set by hand.
+  const applyBulkAmount = useCallback((text: string) => {
+    const cleaned = text.replace(/[^0-9]/g, '').slice(0, 6);
+    setBulkAmount(cleaned);
+    setAirtimeRows((prev) => prev.map((r) => (r.custom ? r : { ...r, amount: cleaned })));
   }, []);
+
+  // Drops every per-person override and puts the whole batch back on the
+  // shared amount — the explicit undo for custom rows.
+  const handleResetAmounts = useCallback(() => {
+    setAirtimeRows((prev) => prev.map((r) => ({ ...r, amount: bulkAmount, custom: false })));
+  }, [bulkAmount]);
 
   const applyBundleSelection = useCallback((phone: string, bundle: DataBundle) => {
     setDataRows((prev) =>
@@ -528,85 +601,164 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
               )}
             </View>
           ) : type === 'airtime'
-            ? airtimeRows.map((row) => (
-                <View key={row.contact.phone} style={styles.card}>
-                  <View style={styles.cardHeader}>
-                    <View style={styles.cardHeaderMid}>
+            ? (
+              <>
+                {!locked && (
+                  <View style={styles.bulkAmountCard}>
+                    <Text style={styles.bulkAmountLabel}>Amount for everyone</Text>
+                    {/* A real input, not a display value: the previous screen
+                        showed the figure as plain text, which gave no hint it
+                        could be typed into. */}
+                    <View style={styles.bulkAmountField}>
+                      <Text style={styles.bulkAmountCurrency}>₦</Text>
+                      <TextInput
+                        style={styles.bulkAmountInput}
+                        placeholder="Type amount"
+                        placeholderTextColor="#AFB6B3"
+                        value={bulkAmount}
+                        onChangeText={applyBulkAmount}
+                        keyboardType="numeric"
+                      />
+                      {bulkAmount.length > 0 && (
+                        <TouchableOpacity
+                          style={styles.bulkAmountClear}
+                          onPress={() => applyBulkAmount('')}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.bulkAmountClearText}>✕</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    <View style={styles.bulkChipsRow}>
+                      {QUICK_AMOUNTS.map((qa) => (
+                        <TouchableOpacity
+                          key={qa}
+                          style={[
+                            styles.bulkChip,
+                            bulkAmount === String(qa) && styles.bulkChipSelected,
+                          ]}
+                          onPress={() => applyBulkAmount(String(qa))}
+                          activeOpacity={0.7}
+                        >
+                          <Text
+                            style={[
+                              styles.bulkChipText,
+                              bulkAmount === String(qa) && styles.bulkChipTextSelected,
+                            ]}
+                          >
+                            {formatNaira(qa)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <View style={styles.bulkHintRow}>
+                      <Text style={styles.bulkHintText}>
+                        {customCount > 0
+                          ? `Applied to ${recipientCount - customCount} of ${recipientCount}`
+                          : 'Tap an amount or type your own'}
+                      </Text>
+                      <Text style={styles.bulkHintText}>Min {formatNaira(AIRTIME_MIN)}</Text>
+                    </View>
+                  </View>
+                )}
+
+                <View style={styles.listHeaderRow}>
+                  <Text style={styles.listHeaderTitle}>Recipients</Text>
+                  {!locked && customCount > 0 && (
+                    <TouchableOpacity onPress={handleResetAmounts} activeOpacity={0.7}>
+                      <Text style={styles.listHeaderAction}>Reset all</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {airtimeRows.map((row) => {
+                  const hasName = !!row.contact.name && row.contact.name !== row.contact.phone;
+                  const prettyPhone = formatNigerianPhone(row.contact.phone);
+                  return (
+                    <View key={row.contact.phone} style={styles.recipientRow}>
                       <TouchableOpacity
+                        style={styles.recipientMain}
                         onPress={() => setContactPickerFor(row.contact.phone)}
                         disabled={locked}
                         activeOpacity={0.7}
                       >
-                        <Text style={styles.name} numberOfLines={1}>
-                          {row.contact.name}
-                        </Text>
-                        <View style={styles.numberRow}>
-                          <Text style={styles.number}>{row.contact.phone}</Text>
-                          {!locked && <Text style={styles.numberChangeHint}>Change contact</Text>}
-                        </View>
-                      </TouchableOpacity>
-                      <View style={styles.networkBadge}>
-                        <ProviderLogo
-                          source={NETWORK_LOGOS[row.network]}
-                          fallbackLabel={NETWORK_LABEL[row.network]}
-                          fallbackColor={NETWORK_COLOR[row.network]}
-                          size={22}
-                        />
-                        <Text style={styles.networkLabel}>
-                          {NETWORK_LABEL[row.network]}
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.cardHeaderEnd}>
-                      {renderStatusIcon(row.contact.phone)}
-                      {!locked && recipientCount > 1 && (
-                        <TouchableOpacity
-                          style={styles.removeButton}
-                          onPress={() => handleRemoveRecipient(row.contact.phone)}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={styles.removeButtonText}>✕</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-
-                  <View style={styles.quickAmountsRow}>
-                    {QUICK_AMOUNTS.map((qa) => (
-                      <TouchableOpacity
-                        key={qa}
-                        style={[
-                          styles.quickChip,
-                          row.amount === String(qa) && styles.quickChipSelected,
-                        ]}
-                        onPress={() => handleQuickAmount(row.contact.phone, qa)}
-                        disabled={locked}
-                        activeOpacity={0.7}
-                      >
-                        <Text
+                        <View
                           style={[
-                            styles.quickChipText,
-                            row.amount === String(qa) && styles.quickChipTextSelected,
+                            styles.avatar,
+                            { backgroundColor: avatarColor(row.contact.phone) },
                           ]}
                         >
-                          {formatNaira(qa)}
-                        </Text>
+                          <Text style={styles.avatarText}>
+                            {initialsFor(row.contact.name, row.contact.phone)}
+                          </Text>
+                        </View>
+                        <View style={styles.recipientWho}>
+                          {/* The number is always visible on its own line, so
+                              identity never depends on what the contact was
+                              saved as — a phonebook entry of a single emoji
+                              used to leave the row unidentifiable. */}
+                          <Text style={styles.recipientName} numberOfLines={1}>
+                            {hasName ? row.contact.name : prettyPhone}
+                          </Text>
+                          <View style={styles.recipientMetaRow}>
+                            <View
+                              style={[
+                                styles.networkPill,
+                                { backgroundColor: NETWORK_COLOR[row.network] },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.networkPillText,
+                                  row.network === 'mtn' && styles.networkPillTextDark,
+                                ]}
+                              >
+                                {NETWORK_LABEL[row.network]}
+                              </Text>
+                            </View>
+                            <Text style={styles.recipientNumber} numberOfLines={1}>
+                              {hasName ? prettyPhone : 'Not in contacts'}
+                            </Text>
+                          </View>
+                        </View>
                       </TouchableOpacity>
-                    ))}
-                  </View>
 
-                  <TextInput
-                    style={styles.amountInput}
-                    placeholder="Enter amount"
-                    placeholderTextColor={Colors.GRAY}
-                    value={row.amount}
-                    onChangeText={(text) => handleAirtimeAmountChange(row.contact.phone, text)}
-                    keyboardType="numeric"
-                    editable={!locked}
-                  />
-                </View>
-              ))
+                      <View style={styles.recipientAmountCol}>
+                        <TextInput
+                          style={[
+                            styles.recipientAmountInput,
+                            row.custom && !!row.amount && styles.recipientAmountInputCustom,
+                          ]}
+                          value={row.amount ? `₦${row.amount}` : ''}
+                          placeholder="₦0"
+                          placeholderTextColor="#B6BDBA"
+                          onChangeText={(text) => handleAirtimeAmountChange(row.contact.phone, text)}
+                          keyboardType="numeric"
+                          editable={!locked}
+                        />
+                        {row.custom && !!row.amount && (
+                          <Text style={styles.recipientCustomTag}>CUSTOM</Text>
+                        )}
+                      </View>
+
+                      <View style={styles.recipientEnd}>
+                        {renderStatusIcon(row.contact.phone)}
+                        {!locked && recipientCount > 1 && (
+                          <TouchableOpacity
+                            onPress={() => handleRemoveRecipient(row.contact.phone)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.recipientRemove}>✕</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </>
+            )
             : dataRows.map((row) => {
                 const bundles = vtuService.getDataBundles(row.network);
                 return (
@@ -695,6 +847,25 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
               Insufficient balance for this total
             </Text>
           )}
+          {phase === 'review' && networkSummary.length > 0 && (
+            <View style={styles.footerNetworkRow}>
+              {networkSummary.map(([network, count]) => (
+                <View
+                  key={network}
+                  style={[styles.networkPill, { backgroundColor: NETWORK_COLOR[network] }]}
+                >
+                  <Text
+                    style={[
+                      styles.networkPillText,
+                      network === 'mtn' && styles.networkPillTextDark,
+                    ]}
+                  >
+                    {NETWORK_LABEL[network]} × {count}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total</Text>
             <Text style={styles.totalValue}>{formatNaira(total)}</Text>
@@ -718,10 +889,19 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
               disabled={!canSend || insufficientBalance}
               activeOpacity={0.8}
             >
+              {/* States the actual commitment. A money button should say what
+                  is about to happen, not just who it happens to. */}
               <Text style={styles.actionButtonText}>
-                Send to {recipientCount} recipient{recipientCount === 1 ? '' : 's'}
+                {canSend && total > 0
+                  ? `Send ${formatNaira(total)} to ${recipientCount} ${recipientCount === 1 ? 'person' : 'people'}`
+                  : `Send to ${recipientCount} recipient${recipientCount === 1 ? '' : 's'}`}
               </Text>
             </TouchableOpacity>
+          )}
+          {phase === 'review' && walletBalance !== null && canSend && !insufficientBalance && (
+            <Text style={styles.balanceAfterText}>
+              Wallet balance {formatNaira(walletBalance)} · {formatNaira(walletBalance - total)} left after
+            </Text>
           )}
         </View>
       </KeyboardAvoidingView>
@@ -903,36 +1083,6 @@ const styles = StyleSheet.create({
   },
   statusSuccess: { color: Colors.GREEN, fontSize: 20, fontWeight: '700' },
   statusFailed: { color: Colors.RED, fontSize: 20, fontWeight: '700' },
-  quickAmountsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.S,
-    marginBottom: Spacing.S,
-  },
-  quickChip: {
-    paddingHorizontal: Spacing.M,
-    height: Spacing.CHIP_HEIGHT,
-    borderRadius: Spacing.CHIP_HEIGHT / 2,
-    borderWidth: 1,
-    borderColor: Colors.BORDER,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  quickChipSelected: {
-    borderColor: Colors.GREEN,
-    backgroundColor: Colors.GREEN,
-  },
-  quickChipText: { ...Typography.CAPTION, color: Colors.DARK },
-  quickChipTextSelected: { color: Colors.WHITE, fontWeight: '700' },
-  amountInput: {
-    height: Spacing.INPUT_HEIGHT,
-    borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
-    borderRadius: Spacing.BUTTON_RADIUS,
-    paddingHorizontal: Spacing.L,
-    ...Typography.BODY,
-    color: Colors.DARK,
-  },
   planSelectRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1057,6 +1207,136 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.BORDER,
   },
+  // ---- Batch-wide amount control ----
+  bulkAmountCard: {
+    backgroundColor: Colors.GREEN,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: Spacing.M,
+  },
+  bulkAmountLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.WHITE_80,
+    marginBottom: 8,
+  },
+  bulkAmountField: {
+    backgroundColor: Colors.WHITE,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 50,
+  },
+  bulkAmountCurrency: { fontSize: 19, fontWeight: '800', color: Colors.GREEN },
+  bulkAmountInput: {
+    flex: 1,
+    fontSize: 22,
+    fontWeight: '800',
+    color: Colors.DARK,
+    paddingVertical: 10,
+  },
+  bulkAmountClear: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.LIGHT_GRAY,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bulkAmountClearText: { fontSize: 11, color: Colors.GRAY, lineHeight: 14 },
+  bulkChipsRow: { flexDirection: 'row', gap: 6, marginTop: 10 },
+  bulkChip: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 9,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
+  },
+  bulkChipSelected: { backgroundColor: Colors.WHITE, borderColor: Colors.WHITE },
+  bulkChipText: { fontSize: 12, fontWeight: '800', color: Colors.WHITE },
+  bulkChipTextSelected: { color: Colors.GREEN },
+  bulkHintRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 9,
+  },
+  bulkHintText: { fontSize: 11, color: Colors.WHITE_80 },
+
+  // ---- Recipient list ----
+  listHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.XS,
+  },
+  listHeaderTitle: { ...Typography.BODY, fontWeight: '700' },
+  listHeaderAction: { fontSize: 12, fontWeight: '700', color: Colors.GREEN },
+  recipientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.BORDER,
+  },
+  recipientMain: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { fontSize: 14, fontWeight: '800', color: Colors.WHITE },
+  recipientWho: { flex: 1, minWidth: 0 },
+  recipientName: { fontSize: 14, fontWeight: '700', color: Colors.DARK },
+  recipientMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
+  // The network is named, not just colour-coded: sending airtime to the
+  // wrong carrier fails at the provider after the customer has paid, and
+  // Nigerian number portability makes prefix detection unreliable.
+  networkPill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 11 },
+  networkPillText: { fontSize: 10, fontWeight: '800', color: Colors.WHITE },
+  networkPillTextDark: { color: Colors.DARK },
+  recipientNumber: { fontSize: 12, color: Colors.GRAY, flexShrink: 1 },
+  recipientAmountCol: { alignItems: 'flex-end' },
+  recipientAmountInput: {
+    minWidth: 78,
+    borderWidth: 1.5,
+    borderColor: Colors.BORDER,
+    borderRadius: 10,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    fontSize: 13,
+    fontWeight: '800',
+    color: Colors.DARK,
+    textAlign: 'right',
+  },
+  recipientAmountInputCustom: {
+    borderColor: Colors.GREEN,
+    color: Colors.GREEN,
+    backgroundColor: Colors.GREEN_LIGHT,
+  },
+  recipientCustomTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: Colors.GREEN,
+    marginTop: 3,
+  },
+  recipientEnd: { alignItems: 'center', justifyContent: 'center', minWidth: 18 },
+  recipientRemove: { fontSize: 15, color: '#C9CFCC' },
+
+  footerNetworkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: Spacing.S },
+  balanceAfterText: {
+    fontSize: 11,
+    color: Colors.GRAY,
+    textAlign: 'center',
+    marginTop: Spacing.XS,
+  },
+
   insufficientText: {
     ...Typography.ERROR,
     marginBottom: Spacing.S,
