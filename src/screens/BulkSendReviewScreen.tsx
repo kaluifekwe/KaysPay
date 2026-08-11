@@ -371,6 +371,14 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
     [type, airtimeRows],
   );
 
+  // First recipient still without a plan, so the disabled button can name who
+  // is holding the batch up. On a mixed list a grey "Send to 6 recipients"
+  // gives no clue which row is unfinished.
+  const firstMissingPlan = useMemo(
+    () => (type === 'data' ? dataRows.find((r) => r.bundle === null) ?? null : null),
+    [type, dataRows],
+  );
+
   // Lets the batch's network split be confirmed before paying. On a long
   // list an unexpected carrier is otherwise easy to miss, and airtime sent
   // to the wrong network fails at the provider after the debit.
@@ -772,45 +780,51 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
             )
             : dataRows.map((row) => {
                 const bundles = vtuService.getDataBundles(row.network);
+                const hasName = !!row.contact.name && row.contact.name !== row.contact.phone;
+                const prettyPhone = formatNigerianPhone(row.contact.phone);
                 return (
-                  <View key={row.contact.phone} style={styles.card}>
-                    <View style={styles.cardHeader}>
-                      <View style={styles.cardHeaderMid}>
-                        <TouchableOpacity
-                          onPress={() => setContactPickerFor(row.contact.phone)}
-                          disabled={locked}
-                          activeOpacity={0.7}
+                  <View key={row.contact.phone} style={styles.recipientBlock}>
+                    <View style={styles.recipientBlockTop}>
+                      <TouchableOpacity
+                        style={styles.recipientMain}
+                        onPress={() => setContactPickerFor(row.contact.phone)}
+                        disabled={locked}
+                        activeOpacity={0.7}
+                      >
+                        <View
+                          style={[styles.avatar, { backgroundColor: avatarColor(row.contact.phone) }]}
                         >
-                          <Text style={styles.name} numberOfLines={1}>
-                            {row.contact.name}
-                          </Text>
-                          <View style={styles.numberRow}>
-                            <Text style={styles.number}>{row.contact.phone}</Text>
-                            {!locked && <Text style={styles.numberChangeHint}>Change contact</Text>}
-                          </View>
-                        </TouchableOpacity>
-                        <View style={styles.networkBadge}>
-                          <ProviderLogo
-                            source={NETWORK_LOGOS[row.network]}
-                            fallbackLabel={NETWORK_LABEL[row.network]}
-                            fallbackColor={NETWORK_COLOR[row.network]}
-                            size={22}
-                          />
-                          <Text style={styles.networkLabel}>
-                            {NETWORK_LABEL[row.network]}
+                          <Text style={styles.avatarText}>
+                            {initialsFor(row.contact.name, row.contact.phone)}
                           </Text>
                         </View>
-                      </View>
-                      <View style={styles.cardHeaderEnd}>
+                        <View style={styles.recipientWho}>
+                          <Text style={styles.recipientName} numberOfLines={1}>
+                            {hasName ? row.contact.name : prettyPhone}
+                          </Text>
+                          <View style={styles.recipientMetaRow}>
+                            <ProviderLogo
+                              source={NETWORK_LOGOS[row.network]}
+                              fallbackLabel={NETWORK_LABEL[row.network]}
+                              fallbackColor={NETWORK_COLOR[row.network]}
+                              size={20}
+                            />
+                            <Text style={styles.networkName}>{NETWORK_LABEL[row.network]}</Text>
+                            <Text style={styles.recipientNumber} numberOfLines={1}>
+                              {hasName ? prettyPhone : 'Not in contacts'}
+                            </Text>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                      <View style={styles.recipientEnd}>
                         {renderStatusIcon(row.contact.phone)}
                         {!locked && recipientCount > 1 && (
                           <TouchableOpacity
-                            style={styles.removeButton}
                             onPress={() => handleRemoveRecipient(row.contact.phone)}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                             activeOpacity={0.7}
                           >
-                            <Text style={styles.removeButtonText}>✕</Text>
+                            <Text style={styles.recipientRemove}>✕</Text>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -826,25 +840,37 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
                         No {NETWORK_LABEL[row.network]} data plans available right now.
                       </Text>
                     ) : (
+                      // Full row width on purpose: some provider plan names are
+                      // long enough to embed a whole warning sentence, and a
+                      // narrow control on the right would truncate them.
                       <TouchableOpacity
-                        style={[styles.planSelectRow, row.bundle && styles.planSelectRowChosen]}
+                        style={[styles.planSelect, row.bundle && styles.planSelectChosen]}
                         onPress={() => setPlanModalFor(row.contact.phone)}
                         disabled={locked}
                         activeOpacity={0.7}
                       >
                         {row.bundle ? (
-                          <View style={styles.planSelectChosenText}>
-                            <Text style={styles.planSelectChosenName} numberOfLines={1}>
-                              {row.bundle.name}
-                            </Text>
-                            <Text style={styles.planSelectChosenPrice}>
+                          <>
+                            <View style={styles.planSelectMain}>
+                              <Text style={styles.planSelectName} numberOfLines={1}>
+                                {row.bundle.name}
+                              </Text>
+                              {!!row.bundle.validity && (
+                                <Text style={styles.planSelectMeta} numberOfLines={1}>
+                                  {row.bundle.validity}
+                                </Text>
+                              )}
+                            </View>
+                            <Text style={styles.planSelectPrice}>
                               {formatNaira(row.bundle.amount)}
                             </Text>
-                          </View>
+                          </>
                         ) : (
-                          <Text style={styles.planSelectPlaceholder}>Select a plan</Text>
+                          <View style={styles.planSelectMain}>
+                            <Text style={styles.planSelectPlaceholder}>Select a plan</Text>
+                          </View>
                         )}
-                        <Text style={styles.planSelectChevron}>{row.bundle ? 'Change' : '›'}</Text>
+                        <Text style={styles.planSelectChevron}>▾</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -903,10 +929,17 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
             >
               {/* States the actual commitment. A money button should say what
                   is about to happen, not just who it happens to. */}
-              <Text style={styles.actionButtonText}>
+              <Text style={styles.actionButtonText} numberOfLines={1}>
                 {canSend && total > 0
                   ? `Send ${formatNaira(total)} to ${recipientCount} ${recipientCount === 1 ? 'person' : 'people'}`
-                  : `Send to ${recipientCount} recipient${recipientCount === 1 ? '' : 's'}`}
+                  : firstMissingPlan && bundlesReady
+                    ? `Choose a plan for ${
+                        firstMissingPlan.contact.name &&
+                        firstMissingPlan.contact.name !== firstMissingPlan.contact.phone
+                          ? firstMissingPlan.contact.name
+                          : formatNigerianPhone(firstMissingPlan.contact.phone)
+                      }`
+                    : `Send to ${recipientCount} recipient${recipientCount === 1 ? '' : 's'}`}
               </Text>
             </TouchableOpacity>
           )}
@@ -928,9 +961,25 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
             <View style={styles.flex}>
               <Text style={styles.planModalTitle}>Select a Plan</Text>
               {activePlanRow && (
-                <Text style={styles.planModalSubtitle} numberOfLines={1}>
-                  {activePlanRow.contact.name} · {NETWORK_LABEL[activePlanRow.network]}
-                </Text>
+                // Whose plan this is, spelled out with the carrier's logo. On a
+                // batch of six the picker is opened repeatedly, and there was
+                // otherwise nothing tying the open list back to a specific
+                // number — only the contact name, which can be an emoji.
+                <View style={styles.planModalSubtitleRow}>
+                  <ProviderLogo
+                    source={NETWORK_LOGOS[activePlanRow.network]}
+                    fallbackLabel={NETWORK_LABEL[activePlanRow.network]}
+                    fallbackColor={NETWORK_COLOR[activePlanRow.network]}
+                    size={18}
+                  />
+                  <Text style={styles.planModalSubtitle} numberOfLines={1}>
+                    {NETWORK_LABEL[activePlanRow.network]} ·{' '}
+                    {activePlanRow.contact.name && activePlanRow.contact.name !== activePlanRow.contact.phone
+                      ? `${activePlanRow.contact.name} · `
+                      : ''}
+                    {formatNigerianPhone(activePlanRow.contact.phone)}
+                  </Text>
+                </View>
               )}
             </View>
             <TouchableOpacity
@@ -956,11 +1005,15 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
                 >
                   <View style={styles.flex}>
                     <Text style={styles.planModalItemName}>{item.name}</Text>
+                    {!!item.validity && (
+                      <Text style={styles.planModalItemMeta}>{item.validity}</Text>
+                    )}
                     {restricted && (
                       <Text style={styles.planModalItemWarning}>⚠ Can fail if owing airtime</Text>
                     )}
                   </View>
                   <Text style={styles.planModalItemPrice}>{formatNaira(item.amount)}</Text>
+                  {isSelected && <Text style={styles.planModalItemTick}>✓</Text>}
                 </TouchableOpacity>
               );
             }}
@@ -1032,55 +1085,6 @@ const styles = StyleSheet.create({
     color: Colors.GREEN,
     fontWeight: '700',
   },
-  card: {
-    borderWidth: 1,
-    borderColor: Colors.BORDER,
-    borderRadius: Spacing.CARD_RADIUS,
-    padding: Spacing.CARD_PADDING,
-    marginBottom: Spacing.M,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: Spacing.M,
-  },
-  cardHeaderMid: { flex: 1, marginRight: Spacing.M },
-  cardHeaderEnd: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.S,
-  },
-  removeButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.LIGHT_GRAY,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  removeButtonText: { color: Colors.GRAY, fontSize: 14, fontWeight: '700' },
-  name: { ...Typography.CARD_TITLE },
-  numberRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  number: { ...Typography.CAPTION, color: Colors.GRAY, marginRight: Spacing.S },
-  numberChangeHint: {
-    ...Typography.CAPTION,
-    color: Colors.GREEN,
-    fontWeight: '600',
-  },
-  networkLabel: {
-    ...Typography.CAPTION,
-    color: Colors.GRAY,
-    marginLeft: Spacing.S,
-  },
-  networkBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
   bundleLoadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1097,24 +1101,8 @@ const styles = StyleSheet.create({
   },
   statusSuccess: { color: Colors.GREEN, fontSize: 20, fontWeight: '700' },
   statusFailed: { color: Colors.RED, fontSize: 20, fontWeight: '700' },
-  planSelectRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    height: Spacing.INPUT_HEIGHT,
-    paddingHorizontal: Spacing.L,
-    borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
-    borderRadius: Spacing.BUTTON_RADIUS,
-  },
-  planSelectRowChosen: {
-    borderColor: Colors.GREEN,
-  },
-  planSelectPlaceholder: { ...Typography.BODY, color: Colors.GRAY },
-  planSelectChosenText: { flex: 1, marginRight: Spacing.M },
-  planSelectChosenName: { ...Typography.BODY, color: Colors.DARK, fontWeight: '600' },
-  planSelectChosenPrice: { ...Typography.CAPTION, color: Colors.GREEN, marginTop: 2 },
-  planSelectChevron: { ...Typography.CAPTION, color: Colors.GREEN, fontWeight: '700' },
+  planSelectPlaceholder: { fontSize: 14, fontWeight: '600', color: '#9AA3A0' },
+  planSelectChevron: { fontSize: 13, color: Colors.GRAY },
   planModalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1341,6 +1329,34 @@ const styles = StyleSheet.create({
   },
   recipientEnd: { alignItems: 'center', justifyContent: 'center', minWidth: 18 },
   recipientRemove: { fontSize: 15, color: '#C9CFCC' },
+
+  // ---- Data recipient (name/network row + its own plan control) ----
+  recipientBlock: {
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.BORDER,
+  },
+  recipientBlockTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  planSelect: {
+    marginTop: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: Colors.BORDER,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  planSelectChosen: { borderColor: Colors.GREEN, backgroundColor: Colors.GREEN_LIGHT },
+  planSelectMain: { flex: 1, minWidth: 0 },
+  planSelectName: { fontSize: 14, fontWeight: '800', color: Colors.DARK },
+  planSelectMeta: { fontSize: 11, color: Colors.GRAY, marginTop: 2 },
+  planSelectPrice: { fontSize: 15, fontWeight: '800', color: Colors.GREEN },
+
+  planModalSubtitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  planModalItemMeta: { fontSize: 11.5, color: Colors.GRAY, marginTop: 2 },
+  planModalItemTick: { fontSize: 15, fontWeight: '800', color: Colors.GREEN, marginLeft: 8 },
 
   footerNetworkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: Spacing.S },
   footerNetworkChip: {
