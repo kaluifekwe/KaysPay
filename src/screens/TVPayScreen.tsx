@@ -55,6 +55,12 @@ export default function TVPayScreen({ navigation, route }: any) {
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [savedAccounts, setSavedAccounts] = useState<SavedBillingAccount[]>([]);
+  // True until the first saved-accounts fetch settles. Without this, the
+  // screen has no way to tell "still checking" apart from "genuinely none
+  // saved" — savedAccounts starts as [], so the blank manual-entry box
+  // rendered first on every visit, then got replaced by the saved smartcard
+  // once the network call returned, even for one saved the day before.
+  const [savedAccountsLoading, setSavedAccountsLoading] = useState(true);
   const [cachedPreviewName, setCachedPreviewName] = useState<string | null>(null);
   const [showManualInput, setShowManualInput] = useState(false);
 
@@ -64,8 +70,12 @@ export default function TVPayScreen({ navigation, route }: any) {
   );
 
   const loadSavedAccounts = useCallback(async () => {
-    const accounts = await vtuService.getSavedBillingAccounts('tv', provider.id);
-    setSavedAccounts(accounts);
+    try {
+      const accounts = await vtuService.getSavedBillingAccounts('tv', provider.id);
+      setSavedAccounts(accounts);
+    } finally {
+      setSavedAccountsLoading(false);
+    }
   }, [provider.id]);
 
   useFocusEffect(useCallback(() => {
@@ -275,7 +285,15 @@ export default function TVPayScreen({ navigation, route }: any) {
 
           <View style={styles.section}>
             <Text style={styles.label}>Smartcard Number</Text>
-            {savedAccounts.length > 0 ? (
+            {savedAccountsLoading ? (
+              // Distinguishes "still checking" from "genuinely none saved" so
+              // the blank manual-entry box below never flashes on screen
+              // before a saved smartcard that is about to appear anyway.
+              <View style={styles.savedAccountsLoadingRow}>
+                <ActivityIndicator size="small" color={Colors.GRAY} />
+                <Text style={styles.savedAccountsLoadingText}>Checking for saved smartcards…</Text>
+              </View>
+            ) : savedAccounts.length > 0 ? (
               <View style={styles.savedAccounts}>
                 <Text style={styles.savedLabel}>Saved smartcards</Text>
                 {savedAccounts.map((account) => (
@@ -326,7 +344,7 @@ export default function TVPayScreen({ navigation, route }: any) {
                 ) : null}
               </View>
             ) : null}
-            {(savedAccounts.length === 0 || showManualInput) ? (
+            {!savedAccountsLoading && (savedAccounts.length === 0 || showManualInput) ? (
               <TextInput
                 style={styles.input}
                 value={smartcardNumber}
@@ -466,6 +484,14 @@ const styles = StyleSheet.create({
   label: { ...Typography.SECTION_HEADING, marginBottom: Spacing.M },
   savedAccounts: { marginBottom: Spacing.M, gap: Spacing.M },
   savedLabel: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.S },
+  savedAccountsLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.S,
+    paddingVertical: Spacing.M,
+    marginBottom: Spacing.M,
+  },
+  savedAccountsLoadingText: { ...Typography.CAPTION, color: Colors.GRAY },
   savedAccount: { minHeight: 72, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: Colors.BORDER, borderRadius: Spacing.BUTTON_RADIUS, backgroundColor: Colors.WHITE },
   savedAccountSelected: { borderColor: Colors.GREEN, backgroundColor: Colors.GREEN_10 },
   savedAccountSelect: { flex: 1, minHeight: 70, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S, flexDirection: 'row', alignItems: 'center', gap: Spacing.M },

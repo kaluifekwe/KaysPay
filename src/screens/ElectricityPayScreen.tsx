@@ -62,6 +62,12 @@ export default function ElectricityPayScreen(props: any) {
   const [verifiedAddress, setVerifiedAddress] = useState<string | null>(null);
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [savedAccounts, setSavedAccounts] = useState<SavedBillingAccount[]>([]);
+  // True until the first saved-accounts fetch settles. Without this, the
+  // screen has no way to tell "still checking" apart from "genuinely none
+  // saved" — savedAccounts starts as [], so the blank manual-entry box
+  // rendered first on every visit, then got replaced by the saved meter once
+  // the network call returned, even for an account saved the day before.
+  const [savedAccountsLoading, setSavedAccountsLoading] = useState(true);
   const [cachedPreviewName, setCachedPreviewName] = useState<string | null>(null);
   const [showManualInput, setShowManualInput] = useState(false);
 
@@ -71,8 +77,12 @@ export default function ElectricityPayScreen(props: any) {
   );
 
   const loadSavedAccounts = useCallback(async () => {
-    const accounts = await vtuService.getSavedBillingAccounts('electricity', provider.id);
-    setSavedAccounts(accounts);
+    try {
+      const accounts = await vtuService.getSavedBillingAccounts('electricity', provider.id);
+      setSavedAccounts(accounts);
+    } finally {
+      setSavedAccountsLoading(false);
+    }
   }, [provider.id]);
 
   useFocusEffect(useCallback(() => {
@@ -90,6 +100,10 @@ export default function ElectricityPayScreen(props: any) {
 
   // Any edit to the meter number invalidates whatever was verified before —
   // never let a stale "✓ verified" carry over to a different meter number.
+  // Also true across a DISCO switch on this same mounted screen: without
+  // clearing savedAccounts/savedAccountsLoading here, a meter saved under
+  // the PREVIOUS provider could flash on screen before the new provider's
+  // list (or lack of one) has loaded.
   useEffect(() => {
     setMeterNumber('');
     setVerifyState('idle');
@@ -97,6 +111,8 @@ export default function ElectricityPayScreen(props: any) {
     setVerifiedAddress(null);
     setVerifyError(null);
     setCachedPreviewName(null);
+    setSavedAccounts([]);
+    setSavedAccountsLoading(true);
   }, [provider.id]);
 
   useEffect(() => {
@@ -363,7 +379,15 @@ export default function ElectricityPayScreen(props: any) {
                 Your electricity provider may apply outstanding debt or a minimum payment requirement. The final amount and units are determined by your DISCO.
               </Text>
             </View>
-            {savedAccounts.length > 0 ? (
+            {savedAccountsLoading ? (
+              // Distinguishes "still checking" from "genuinely none saved" so
+              // the blank manual-entry box below never flashes on screen
+              // before a saved meter that is about to appear anyway.
+              <View style={styles.savedAccountsLoadingRow}>
+                <ActivityIndicator size="small" color={Colors.GRAY} />
+                <Text style={styles.savedAccountsLoadingText}>Checking for saved meters…</Text>
+              </View>
+            ) : savedAccounts.length > 0 ? (
               <View style={styles.savedAccounts}>
                 <Text style={styles.savedLabel}>Saved meters</Text>
                 {savedAccounts.map((account) => (
@@ -414,7 +438,7 @@ export default function ElectricityPayScreen(props: any) {
                 ) : null}
               </View>
             ) : null}
-            {(savedAccounts.length === 0 || showManualInput) ? (
+            {!savedAccountsLoading && (savedAccounts.length === 0 || showManualInput) ? (
               <TextInput
                 style={styles.input}
                 value={meterNumber}
@@ -627,6 +651,14 @@ const styles = StyleSheet.create({
   arrearsNoticeText: { ...Typography.CAPTION, flex: 1, color: Colors.DARK, lineHeight: 19 },
   savedAccounts: { marginBottom: Spacing.M, gap: Spacing.M },
   savedLabel: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.S },
+  savedAccountsLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.S,
+    paddingVertical: Spacing.M,
+    marginBottom: Spacing.M,
+  },
+  savedAccountsLoadingText: { ...Typography.CAPTION, color: Colors.GRAY },
   savedAccount: { minHeight: 72, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: Colors.BORDER, borderRadius: Spacing.BUTTON_RADIUS, backgroundColor: Colors.WHITE },
   savedAccountSelected: { borderColor: Colors.GREEN, backgroundColor: Colors.GREEN_10 },
   savedAccountSelect: { flex: 1, minHeight: 70, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S, flexDirection: 'row', alignItems: 'center', gap: Spacing.M },
