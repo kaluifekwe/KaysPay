@@ -38,6 +38,27 @@ export interface PINLockStatus {
   attemptsRemaining: number;
 }
 
+/**
+ * Session restore/refresh is on the app's launch path, so it gets a tighter
+ * bound than a transaction call: better to surface a retryable error quickly
+ * than to hold the user on a blank security screen.
+ */
+const SESSION_RESTORE_TIMEOUT_MS = 8_000;
+
+/**
+ * Default bound for the PIN lock-status RPC, used by the transaction flow
+ * where the user has already committed to an action and waiting is expected.
+ * The app-access gate passes a shorter one — see APP_GATE_STATUS_TIMEOUT_MS.
+ */
+const PIN_STATUS_TIMEOUT_MS = 12_000;
+
+/**
+ * Bound for the same RPC when it runs on app open. The gate can fall back to
+ * its local lock decision, so a slow network should cost a few seconds at
+ * most rather than the full transaction-grade wait.
+ */
+export const APP_GATE_STATUS_TIMEOUT_MS = 4_000;
+
 export const authService = {
   async sendOTP(phone: string): Promise<AuthResult> {
     try {
@@ -357,7 +378,7 @@ export const authService = {
     try {
       const { data, error } = await withTimeout(
         (async () => supabase.rpc('get_user_pin_lock_status'))(),
-        12_000,
+        PIN_STATUS_TIMEOUT_MS,
       );
       if (error) throw error;
       return {
@@ -380,10 +401,10 @@ export const authService = {
    * above, a network failure is not converted into "unlocked" because doing
    * so would expose the signed-in app before security status is known.
    */
-  async getPINLockStatusStrict(): Promise<PINLockStatus> {
+  async getPINLockStatusStrict(timeoutMs: number = PIN_STATUS_TIMEOUT_MS): Promise<PINLockStatus> {
     const { data, error } = await withTimeout(
       (async () => supabase.rpc('get_user_pin_lock_status'))(),
-      12_000,
+      timeoutMs,
     );
     if (error) throw error;
     return {
@@ -464,8 +485,19 @@ export const authService = {
     await storageHelpers.setBoolean(StorageKeys.BIOMETRIC_PIN_SET, false);
   },
 
+  /**
+   * NOTE: getSession() is not purely local. When the stored access token has
+   * expired — the normal case for a returning user, since RN suspends the
+   * auto-refresh timer while backgrounded — supabase-js performs a network
+   * token refresh inside this call. Unwrapped, that can hang indefinitely on
+   * a stalled connection, which is exactly what left the app-access gate
+   * stuck on "Checking security status…" with no error and no way out.
+   */
   async getCurrentSession() {
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { session } } = await withTimeout(
+      (async () => supabase.auth.getSession())(),
+      SESSION_RESTORE_TIMEOUT_MS,
+    );
     return session;
   },
 

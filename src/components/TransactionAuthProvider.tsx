@@ -22,7 +22,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { Colors } from '../constants/colors';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
-import { authService } from '../services/auth.service';
+import { authService, PINLockStatus } from '../services/auth.service';
 import { walletService } from '../services/wallet.service';
 import { withTimeout } from '../utils/network';
 import { navigationRef } from '../navigation/navigationRef';
@@ -49,6 +49,16 @@ interface AuthorizeOptions {
    * nonsensical.
    */
   skipBalanceCheck?: boolean;
+  /**
+   * A PIN lock status the caller has *just* fetched, passed in so this
+   * provider doesn't immediately re-fetch the same thing. Only the app-access
+   * gate uses it: it already calls getPINLockStatusStrict() to decide whether
+   * to lock at all, and without this the unlock path would spend a second
+   * round trip re-asking the identical question before it could even offer
+   * biometric. Purely a latency saving — a typed PIN still goes through the
+   * authoritative server verify, so a stale hint here cannot grant access.
+   */
+  knownLockStatus?: PINLockStatus;
   /** Distinguishes recovery from an ordinary cancelled authorization. */
   onForgotPin?: () => void;
 }
@@ -208,7 +218,7 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
         }
 
         try {
-          const status = await authService.getPINLockStatusStrict();
+          const status = opts?.knownLockStatus ?? (await authService.getPINLockStatusStrict());
           if (resolverRef.current !== resolve) return;
           applyLockStatus(status);
           if (status.locked) return;
