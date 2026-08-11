@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser, adminClient } from "../_shared/auth.ts";
+import { getAuthUser, adminClient, enforceRateLimit } from "../_shared/auth.ts";
 import { ELECTRICITY_PROVIDERS, resolveVtunaijaDiscoId } from "../_shared/vtu-catalog.ts";
 import {
   isVtuNaijaConfigured,
@@ -31,6 +31,21 @@ serve(async (req: Request) => {
   const user = await getAuthUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
 
+  const supabase = adminClient();
+  // Every call reaches VTUnaija's live paid endpoint, and this route had no
+  // cap at all — a signed-in user (or a scripted client) could call it in an
+  // unbounded loop. verify-tv-smartcard guards the identical pattern at 10
+  // per 5 minutes; ElectricityPayScreen verifies on the same 900ms debounce
+  // TV already uses at this limit, so normal typing stays well under it.
+  const rate = await enforceRateLimit(supabase, "verify_electricity_meter", user.id, 10, 300, user.id);
+  if (!rate.allowed) {
+    return json({
+      success: false,
+      error: "Too many verification attempts. Please try again shortly.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
+  }
+
   if (!isVtuNaijaConfigured()) {
     return json({ success: false, error: "Meter verification isn't available right now." }, 503);
   }
@@ -51,7 +66,6 @@ serve(async (req: Request) => {
     return json({ success: false, error: "Enter a valid meter number" }, 400);
   }
 
-  const supabase = adminClient();
   const discoId = await resolveVtunaijaDiscoId(supabase, providerId);
   if (!discoId) {
     return json({ success: false, error: "This provider isn't available for verification right now." }, 400);
