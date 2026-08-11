@@ -8,11 +8,26 @@ function timestamp(value: unknown): string | null {
 export function normalizePaystackFunding(record: any): FundingCandidate | null {
   const authorization = record?.authorization;
   const channel = String(authorization?.channel ?? record?.channel ?? "").toLowerCase();
-  const accountNumber = authorization?.receiver_bank_account_number;
+  // Only the WEBHOOK payload carries receiver_bank_account_number. Paystack's
+  // list-transactions response (the only thing the reconciliation sweep can
+  // read) returns a card-shaped authorization object without it, so requiring
+  // it here silently discarded every real transfer and left the sweep
+  // reporting success while crediting nothing. Verified against the live API:
+  // authorization contains [authorization_code, bin, last4, exp_month,
+  // exp_year, channel, card_type, bank, country_code, brand, reusable,
+  // signature, account_name] — no receiver account. customer_code IS present
+  // and maps to virtual_accounts, so it is the reliable owner identifier here.
+  const accountNumber = authorization?.receiver_bank_account_number ?? null;
+  const customerCode = record?.customer?.customer_code ?? null;
   const amountKobo = Number(record?.amount);
   if (
     String(record?.status || "").toLowerCase() !== "success" ||
-    channel !== "dedicated_nuban" || !accountNumber || !record?.reference ||
+    // Kept: this is what stops a card payment being credited as a transfer,
+    // and the list response does include the channel.
+    channel !== "dedicated_nuban" ||
+    // At least one identifier must be present to attribute the money.
+    (!accountNumber && !customerCode) ||
+    !record?.reference ||
     !Number.isSafeInteger(amountKobo) || amountKobo <= 0 ||
     String(record?.currency || "NGN").toUpperCase() !== "NGN"
   ) return null;
@@ -22,8 +37,8 @@ export function normalizePaystackFunding(record: any): FundingCandidate | null {
     transactionId: record?.id != null ? String(record.id) : null,
     amountKobo,
     currency: "NGN",
-    accountNumber: String(accountNumber),
-    customerCode: record?.customer?.customer_code ? String(record.customer.customer_code) : null,
+    accountNumber: accountNumber ? String(accountNumber) : null,
+    customerCode: customerCode ? String(customerCode) : null,
     providerCreatedAt: timestamp(record?.paid_at ?? record?.created_at),
     source: "reconcile",
   };

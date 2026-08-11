@@ -63,8 +63,21 @@ async function ensureEvent(db: SupabaseClient, candidate: FundingCandidate) {
     .maybeSingle();
   if (readError || !existing) throw readError || new Error("FUNDING_EVENT_NOT_RECORDED");
 
+  // Compare identifiers only where BOTH sides actually carry one. The same
+  // reference legitimately arrives with different fields depending on source:
+  // a Paystack webhook has the receiving account but no reason to repeat the
+  // customer code, while the reconciliation sweep has only the customer code.
+  // Demanding an exact account match would flag an already-credited event as
+  // a payload mismatch the first time the sweep re-examined it. Amount and
+  // currency stay strictly compared, and a genuine conflict — two different
+  // accounts claiming one reference — is still rejected.
   const identifierMatches = candidate.provider === "paystack"
-    ? String(existing.receiving_account || "") === String(candidate.accountNumber || "")
+    ? (
+      (!candidate.accountNumber || !existing.receiving_account ||
+        String(existing.receiving_account) === String(candidate.accountNumber)) &&
+      (!candidate.customerCode || !existing.provider_customer_code ||
+        String(existing.provider_customer_code) === String(candidate.customerCode))
+    )
     : (
       (!candidate.virtualAccountId || !existing.provider_virtual_account_id ||
         String(existing.provider_virtual_account_id) === String(candidate.virtualAccountId)) &&
@@ -97,12 +110,26 @@ async function ensureEvent(db: SupabaseClient, candidate: FundingCandidate) {
 
 async function resolveUserId(db: SupabaseClient, candidate: FundingCandidate): Promise<string | null> {
   if (candidate.provider === "paystack") {
-    if (!candidate.accountNumber) return null;
+    // Webhook payloads identify the destination by account number; the
+    // reconciliation sweep only ever gets customer_code (see
+    // normalizePaystackFunding). Both map to the same virtual_accounts row,
+    // so accept either rather than dropping the money when one is absent.
+    if (candidate.accountNumber) {
+      const { data, error } = await db
+        .from("virtual_accounts")
+        .select("user_id")
+        .eq("provider", "paystack")
+        .eq("account_number", candidate.accountNumber)
+        .maybeSingle();
+      if (error) throw error;
+      if (data?.user_id) return data.user_id;
+    }
+    if (!candidate.customerCode) return null;
     const { data, error } = await db
       .from("virtual_accounts")
       .select("user_id")
       .eq("provider", "paystack")
-      .eq("account_number", candidate.accountNumber)
+      .eq("customer_code", candidate.customerCode)
       .maybeSingle();
     if (error) throw error;
     return data?.user_id || null;

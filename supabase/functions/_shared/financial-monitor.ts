@@ -54,6 +54,12 @@ export function evaluateFinancialAlerts(m: FinancialMetrics): FinancialAlert[] {
     m.funding_reconcile_errors,
   );
   add(
+    "funding_reconcile_blind",
+    "Funding reconciliation is running but reading no provider records — missed funding webhooks would not be recovered",
+    "critical",
+    m.funding_reconcile_blind,
+  );
+  add(
     "stuck_foreign_numbers",
     "Foreign-number transactions stuck pending",
     "warning",

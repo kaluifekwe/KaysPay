@@ -66,7 +66,13 @@ async function reconcileProvider(db: ReturnType<typeof adminClient>, provider: F
         else if (result.outcome === "unmatched") unmatched++;
       }
       pages++; page++; finished = !hasMore;
-      await db.from("funding_reconciliation_state").update({ next_page: page, last_run_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() }).eq("provider", provider);
+      // Record whether this sweep actually looked at anything. "Ran without
+      // error" was never enough to prove the sweep works — a normalizer that
+      // rejects every record looks identical to a quiet period unless the
+      // sighting itself is tracked. See migration 110.
+      const progress: Record<string, unknown> = { next_page: page, last_run_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString(), last_seen_count: seen };
+      if (records.length > 0) progress.last_saw_records_at = new Date().toISOString();
+      await db.from("funding_reconciliation_state").update(progress).eq("provider", provider);
     }
     if (finished) {
       await db.from("funding_reconciliation_state").update({ last_success_at: state.window_to, window_from: null, window_to: null, next_page: 1, last_run_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() }).eq("provider", provider);
