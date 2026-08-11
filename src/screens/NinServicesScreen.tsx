@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
+import qrcode from 'qrcode-generator';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -125,9 +126,36 @@ function emblemTag(base64: string, className: string, size = 48): string {
   return `<img src="${base64}" class="${className}" style="width:${size}px;height:${size}px;object-fit:contain;" />`;
 }
 
+// Quiet zone in modules. The QR spec calls for 4; 2 is the widely used
+// compromise that still scans reliably off a printed page while keeping the
+// pattern legible at the slip's small 92px size. It also restores the white
+// border the previous remote PNG included, so the slip's proportions are
+// unchanged.
+const QR_QUIET_ZONE_MODULES = 2;
+
+// Renders the QR entirely on-device as inline SVG.
+//
+// This previously pointed at https://api.qrserver.com/...?data=<NIN>, which
+// put the customer's National Identity Number in a query string sent to an
+// unrelated third party — logged by their servers and any proxy in between,
+// with no contract or data-processing agreement behind it. It also meant the
+// slip rendered a blank square whenever the customer had no signal, and could
+// lose the QR to a race when the PDF finished before the image arrived.
+//
+// Generating locally removes all three problems at once. Inline SVG (rather
+// than a data-URI bitmap) keeps it sharp at any print size, and mirrors how
+// emblemTag already inlines the coat of arms — expo-print's HTML cannot
+// reference RN require()'d assets or, safely, the network.
 function qrTag(nin: string, size = 90): string {
-  const data = encodeURIComponent(nin || '');
-  return `<img class="qr" src="https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${data}" />`;
+  const qr = qrcode(0, 'M');
+  qr.addData(nin || '');
+  qr.make();
+  // Fit modules + quiet zone into exactly `size` px so the slip layout is
+  // untouched, whatever NIN length changes the module count to.
+  const cellSize = size / (qr.getModuleCount() + QR_QUIET_ZONE_MODULES * 2);
+  return qr
+    .createSvgTag({ cellSize, margin: cellSize * QR_QUIET_ZONE_MODULES, scalable: true })
+    .replace('<svg', `<svg class="qr" width="${size}" height="${size}"`);
 }
 
 // Renders a YYYY-MM-DD (or already-loose) date of birth as "01 OCT 1960" to
