@@ -387,6 +387,16 @@ export default function DataScreen({ navigation }: DataScreenProps) {
 
           <View style={styles.section}>
             <Text style={styles.label}>Select Network</Text>
+            {/* Same reasoning as AirtimeScreen's equivalent block — an
+                unrecognized or ported prefix leaves effectiveNetwork null
+                with no explanation otherwise visible near the chips. */}
+            {isValidPhoneFormat(phoneNumber.replace(/\D/g, '')) && !effectiveNetwork && (
+              <View style={styles.undetectedBadge}>
+                <Text style={styles.undetectedText}>
+                  We couldn't detect this number's network automatically — please select it below.
+                </Text>
+              </View>
+            )}
             <View style={styles.networkChips}>
               {NETWORKS.map(({ key, label }) => {
                 const isSelected =
@@ -639,6 +649,17 @@ const styles = StyleSheet.create({
   detectedText: {
     ...Typography.CAPTION,
     color: Colors.GREEN,
+  },
+  undetectedBadge: {
+    marginBottom: Spacing.M,
+    padding: Spacing.S,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 8,
+  },
+  undetectedText: {
+    ...Typography.CAPTION,
+    color: '#92400E',
+    fontWeight: '600',
   },
   networkChips: {
     flexDirection: 'row',

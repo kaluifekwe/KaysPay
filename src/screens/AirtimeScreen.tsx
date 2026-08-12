@@ -309,6 +309,18 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
                 </Text>
               </View>
             )}
+            {/* A prefix that isn't in the detection table (unlisted, or a
+                ported number) leaves selectedNetwork null with nothing
+                telling the user why — the bottom pay-hint alone was too easy
+                to miss. This puts the actual instruction right next to the
+                chips the user needs to tap. */}
+            {isValidPhone && !selectedNetwork && (
+              <View style={styles.undetectedNetworkContainer}>
+                <Text style={styles.undetectedNetworkText}>
+                  We couldn't detect this number's network automatically — please select it below.
+                </Text>
+              </View>
+            )}
             <View style={styles.networkChipsContainer}>
               {NETWORKS.map(({ key, label }) => {
                 const isSelected = selectedNetwork === key;
@@ -580,6 +592,17 @@ const styles = StyleSheet.create({
     ...Typography.CAPTION,
     color: Colors.GREEN,
     fontWeight: '500',
+  },
+  undetectedNetworkContainer: {
+    marginBottom: Spacing.M,
+    padding: Spacing.S,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 8,
+  },
+  undetectedNetworkText: {
+    ...Typography.CAPTION,
+    color: '#92400E',
+    fontWeight: '600',
   },
   networkChipsContainer: {
     flexDirection: 'row',

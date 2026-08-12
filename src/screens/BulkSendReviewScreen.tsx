@@ -622,6 +622,18 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
             )}
           </View>
 
+          {!locked && (
+            // Nothing else on this screen signals that the network badge on
+            // each row is interactive — auto-detection can guess wrong for a
+            // ported number with no visual cue that anything needs checking,
+            // let alone that tapping the badge is how to fix it.
+            <View style={styles.networkHintRow}>
+              <Text style={styles.networkHintText}>
+                Auto-detected network wrong for someone? Tap their network below to correct it.
+              </Text>
+            </View>
+          )}
+
           {phase !== 'review' ? (
             <View style={styles.submissionCard}>
               <View style={styles.submissionIcon}>
@@ -1421,9 +1433,30 @@ const styles = StyleSheet.create({
   // wrong network fails at the provider after the customer has paid, and
   // Nigerian number portability makes prefix detection unreliable, so this
   // is worth stating twice over.
-  networkBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  networkBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 3,
+    paddingHorizontal: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.BORDER,
+    backgroundColor: Colors.LIGHT_GRAY,
+  },
   networkName: { fontSize: 11, fontWeight: '800', color: '#374151' },
   networkChangeHint: { fontSize: 9, color: Colors.GRAY, marginLeft: 1 },
+  networkHintRow: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 8,
+    padding: Spacing.S,
+    marginBottom: Spacing.M,
+  },
+  networkHintText: {
+    ...Typography.CAPTION,
+    color: '#92400E',
+    fontWeight: '600',
+  },
   recipientNumber: { fontSize: 12, color: Colors.GRAY, flexShrink: 1 },
   recipientAmountCol: { alignItems: 'flex-end' },
   recipientAmountInput: {
