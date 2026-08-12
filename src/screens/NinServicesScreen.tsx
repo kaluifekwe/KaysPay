@@ -12,7 +12,7 @@ import {
   Image,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
 import qrcode from 'qrcode-generator';
@@ -539,9 +539,23 @@ const VALIDATE_PRICE = 8000;
 // BVN pricing is per slip type via BVN_SLIP_TIERS (Regular ₦500 / Card ₦700).
 const MODIFY_PRICE = 18000;
 
+// What each of the 4 "NIN Modification" sections actually does, shown as
+// that section's helper text so a user picking e.g. Phone Modification
+// isn't reading generic correction copy that doesn't mention phones at all.
+// Turnaround stated as "3 days" (owner-set 2026-08-12, a safer buffer over
+// CheckMyNINBVN's documented 24-48h) — same figure across all four since
+// they're all reviewed orders on the same provider pipeline.
+const MODIFY_SECTION_INFO: Record<ModifySection, string> = {
+  name: "Correct a wrong or misspelled surname, first name, or middle name on your NIN record with NIMC. You'll need your current details exactly as they appear on your NIN today, plus the corrected version. This is not instant — reviewed orders typically take within 3 days, and the fee is charged upfront (refunded only if NIMC rejects it).",
+  phone: "Update the phone number linked to your NIN record — use this if your registered number is no longer active or was entered incorrectly at enrollment. This is not instant — reviewed orders typically take within 3 days, and the fee is charged upfront (refunded only if NIMC rejects it).",
+  address: "Update the residential address linked to your NIN record to reflect where you currently live. This is not instant — reviewed orders typically take within 3 days, and the fee is charged upfront (refunded only if NIMC rejects it).",
+  validation: "Confirms a NIN was genuinely issued and is active in NIMC's database — for NINs that exist but aren't reflecting properly elsewhere. This is not instant: results typically take within 3 days.",
+};
+
 export default function NinServicesScreen({ navigation }: NinServicesScreenProps) {
   useSensitiveScreenProtection();
   const { authorize } = useTransactionAuth();
+  const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<Mode>('verify');
 
   // Verify state
@@ -1159,12 +1173,18 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     );
   }
 
+  // The correction form's Submit button used to just be the last thing in
+  // the scrolling content — with 4+ fields plus the section picker above it,
+  // it could sit well below the fold. Pinning it to a fixed footer (same
+  // pattern as Airtime/Data/Bulk Send) keeps it visible without scrolling.
+  const showModifySubmitFooter = mode === 'modify' && modifySection !== 'validation' && modifyState !== 'submitted';
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, showModifySubmitFooter && styles.scrollContentWithFooter]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -1354,9 +1374,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
 
           {mode === 'modify' && modifySection === 'validation' && validateState !== 'submitted' && (
             <View>
-              <Text style={styles.helperText}>
-                Confirms a NIN was genuinely issued and is active in NIMC's database — for NINs that exist but aren't reflecting properly elsewhere. This is not instant: results typically take 24-48 hours.
-              </Text>
+              <Text style={styles.helperText}>{MODIFY_SECTION_INFO.validation}</Text>
 
               <Text style={styles.label}>NIN Number</Text>
               <TextInput
@@ -1534,9 +1552,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
 
           {mode === 'modify' && modifySection !== 'validation' && modifyState !== 'submitted' && (
             <View>
-              <Text style={styles.helperText}>
-                Request a correction to your NIN record with NIMC. This is not instant — reviewed orders typically take 24-48 hours, and the fee is charged upfront (refunded only if NIMC rejects it).
-              </Text>
+              <Text style={styles.helperText}>{MODIFY_SECTION_INFO[modifySection]}</Text>
 
               <Text style={styles.label}>NIN Number</Text>
               <TextInput
@@ -1636,18 +1652,6 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
               </TouchableOpacity>
 
               {modifyState === 'error' ? <Text style={styles.errorText}>{modifyMessage}</Text> : null}
-
-              <TouchableOpacity
-                style={[styles.primaryButton, !canModify && styles.primaryButtonDisabled]}
-                onPress={handleModify}
-                disabled={!canModify}
-              >
-                {modifyState === 'processing' ? (
-                  <ActivityIndicator color={Colors.WHITE} />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Submit Request ({formatNaira(MODIFY_PRICE)})</Text>
-                )}
-              </TouchableOpacity>
             </View>
           )}
 
@@ -1661,6 +1665,22 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
             </View>
           )}
         </ScrollView>
+
+        {showModifySubmitFooter && (
+          <View style={[styles.modifyFooter, { paddingBottom: insets.bottom + Spacing.SCREEN_PADDING }]}>
+            <TouchableOpacity
+              style={[styles.primaryButton, !canModify && styles.primaryButtonDisabled]}
+              onPress={handleModify}
+              disabled={!canModify}
+            >
+              {modifyState === 'processing' ? (
+                <ActivityIndicator color={Colors.WHITE} />
+              ) : (
+                <Text style={styles.primaryButtonText}>Submit Request ({formatNaira(MODIFY_PRICE)})</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -1671,6 +1691,19 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: Spacing.SCREEN_PADDING, paddingTop: Spacing.M, paddingBottom: Spacing.XL },
+  // Extra bottom room so the last form field/checkbox never sits behind the
+  // fixed modifyFooter button below it.
+  scrollContentWithFooter: { paddingBottom: 140 },
+  modifyFooter: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: Spacing.SCREEN_PADDING,
+    backgroundColor: Colors.WHITE,
+    borderTopWidth: 1,
+    borderTopColor: Colors.BORDER,
+  },
   backButton: { width: 48, height: 48, justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.L },
   backText: { fontSize: 28, fontWeight: '600', color: Colors.DARK },
   title: { ...Typography.SCREEN_TITLE, marginBottom: Spacing.L },
