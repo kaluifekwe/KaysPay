@@ -1218,7 +1218,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
           {mode === 'verify' && verifyState !== 'result' && (
             <View>
               <Text style={styles.helperText}>
-                Get your NIN slip. Pick a slip type, enter your NIN, then verify to generate it.
+                Confirms your NIN is valid and pulls your official record straight from NIMC — your name, photo, date of birth, and other details exactly as registered. Instant result. Pick a slip type below, then verify to generate your downloadable NIN slip or card.
               </Text>
 
               <Text style={styles.stepLabel}>01  Select Slip Type</Text>
@@ -1436,7 +1436,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
           {mode === 'bvn' && bvnState !== 'result' && (
             <View>
               <Text style={styles.helperText}>
-                Get your BVN slip. Pick a slip type, enter your BVN, then verify to generate it.
+                Confirms your BVN is valid and pulls your official bank verification record — your name, phone number, and other details exactly as registered with your bank. Instant result. Pick a slip type below, then verify to generate your downloadable BVN slip or card.
               </Text>
 
               <Text style={styles.stepLabel}>01  Select Slip Type</Text>
