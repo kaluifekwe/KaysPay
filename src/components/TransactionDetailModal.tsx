@@ -8,7 +8,7 @@ import { formatNaira } from '../utils/formatCurrency';
 import { formatDateTimeFull } from '../utils/formatDateTime';
 import { safeErrorMessage } from '../utils/errorMessages';
 import { downloadPdf, sharePdf } from '../utils/pdf';
-import { buildElectricityReceiptHtml, buildTransactionReceiptHtml } from '../utils/receipts';
+import { buildElectricityReceiptHtml, buildNinCorrectionReceiptHtml, buildTransactionReceiptHtml } from '../utils/receipts';
 import { vtuService } from '../services/vtu.service';
 import { supabase } from '../lib/supabase';
 import { withTimeout } from '../utils/network';
@@ -180,6 +180,64 @@ export default function TransactionDetailModal({
       : buildRegularSlipHtml(ninSlipRecord!, ninFullName, ninSlipNumber, emblemBase64);
   };
 
+  // Correction Confirmation Receipt: covers all four CheckMyNINBVN order
+  // types (name/phone/address modification + validation) — the provider's
+  // status response never returns a corrected record (see receipts.ts), so
+  // this is a receipt of the submitted request and its outcome, not a slip.
+  const NIN_CORRECTION_TYPES = ['nin_name_modification', 'nin_phone_modification', 'nin_address_modification', 'nin_validation'];
+  const isNinCorrection = NIN_CORRECTION_TYPES.includes(transaction.rawType);
+  const buildNinCorrectionReceipt = () =>
+    buildNinCorrectionReceiptHtml({
+      type: transaction.rawType as any,
+      referenceId: transaction.metadata?.reference_id ?? transaction.orderId ?? null,
+      amount: transaction.amount,
+      submittedAt: transaction.timestamp,
+      status: transaction.status,
+      nin: String(transaction.metadata?.nin || transaction.recipientPhone || ''),
+      dateOfBirth: transaction.metadata?.date_of_birth,
+      current: {
+        surname: transaction.metadata?.surname,
+        firstname: transaction.metadata?.firstname,
+        middlename: transaction.metadata?.middlename,
+        phoneNumber: transaction.metadata?.phone_number,
+      },
+      updated: {
+        surname: transaction.metadata?.new_surname,
+        firstname: transaction.metadata?.new_firstname,
+        middlename: transaction.metadata?.new_middlename,
+        phoneNumber: transaction.metadata?.new_phone_number,
+        address: transaction.metadata?.new_address,
+      },
+    });
+
+  const handleDownloadNinCorrectionReceipt = async () => {
+    setGeneratingPdf(true);
+    try {
+      const html = buildNinCorrectionReceipt();
+      await downloadPdf(html, `NIN_Correction_${transaction.metadata?.reference_id || transaction.id}`);
+      Alert.alert(
+        Platform.OS === 'android' ? 'Downloaded' : 'Saved',
+        Platform.OS === 'android' ? 'Receipt saved to the folder you selected.' : 'Choose "Save to Files" to store it on your device.',
+      );
+    } catch (e) {
+      Alert.alert('Error', safeErrorMessage(e, 'Could not save the receipt. Please try again.'));
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  const handleShareNinCorrectionReceipt = async () => {
+    setGeneratingPdf(true);
+    try {
+      const html = buildNinCorrectionReceipt();
+      await sharePdf(html, 'Share your correction confirmation receipt');
+    } catch (e) {
+      Alert.alert('Error', safeErrorMessage(e, 'Could not generate the receipt. Please try again.'));
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
   const buildElectricityReceipt = () =>
     buildElectricityReceiptHtml({
       // provider_id/meter_type are stored top-level in metadata (same as
@@ -289,7 +347,7 @@ export default function TransactionDetailModal({
   // transaction that doesn't already have its own specialized format above
   // — electricity's token receipt and the NIN/BVN slips carry one-time data
   // this generic template doesn't handle, so they keep their own flow untouched.
-  const showGenericReceipt = !electricityToken && !bvnSlipRecord && !ninSlipRecord;
+  const showGenericReceipt = !electricityToken && !bvnSlipRecord && !ninSlipRecord && !isNinCorrection;
 
   const buildGenericReceipt = async () => {
     const { data: { user } } = await withTimeout(supabase.auth.getUser());
@@ -484,6 +542,30 @@ export default function TransactionDetailModal({
                   disabled={generatingPdf}
                 >
                   <Text style={styles.receiptButtonSecondaryText}>Share NIN Slip</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {isNinCorrection && (
+              <View style={styles.receiptSection}>
+                <Text style={styles.sectionTitle}>Correction Confirmation Receipt</Text>
+                <TouchableOpacity
+                  style={[styles.receiptButton, generatingPdf && styles.receiptButtonDisabled]}
+                  onPress={handleDownloadNinCorrectionReceipt}
+                  disabled={generatingPdf}
+                >
+                  {generatingPdf ? (
+                    <ActivityIndicator color={Colors.WHITE} />
+                  ) : (
+                    <Text style={styles.receiptButtonText}>Download Receipt (PDF)</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.receiptButtonSecondary, generatingPdf && styles.receiptButtonDisabled]}
+                  onPress={handleShareNinCorrectionReceipt}
+                  disabled={generatingPdf}
+                >
+                  <Text style={styles.receiptButtonSecondaryText}>Share Receipt</Text>
                 </TouchableOpacity>
               </View>
             )}

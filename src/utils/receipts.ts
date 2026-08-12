@@ -78,6 +78,93 @@ export function buildElectricityReceiptHtml(params: {
   </body></html>`;
 }
 
+const CORRECTION_TITLES: Record<string, string> = {
+  nin_name_modification: 'NIN Name Correction',
+  nin_phone_modification: 'NIN Phone Number Correction',
+  nin_address_modification: 'NIN Address Correction',
+  nin_validation: 'NIN Validation',
+};
+
+// CheckMyNINBVN's own order-status response (confirmed against their docs,
+// 2026-08-12) never returns the corrected personal-data record — only order
+// metadata (reference_id, status, timestamps). So unlike the NIN/BVN Verify
+// slips (which rebuild from a provider-confirmed record), this can only ever
+// show what the USER submitted, not anything NIMC/the provider confirmed.
+// The disclaimer below is load-bearing, not boilerplate — presenting this as
+// an official corrected ID would be actively misleading in a financial app.
+export function buildNinCorrectionReceiptHtml(params: {
+  type: 'nin_name_modification' | 'nin_phone_modification' | 'nin_address_modification' | 'nin_validation';
+  referenceId?: string | null;
+  amount: number; // naira
+  submittedAt: string; // ISO
+  status: 'successful' | 'pending' | 'refunded' | 'failed';
+  nin: string;
+  dateOfBirth?: string; // validation only
+  current?: { surname?: string; firstname?: string; middlename?: string; phoneNumber?: string };
+  updated?: { surname?: string; firstname?: string; middlename?: string; phoneNumber?: string; address?: string };
+}): string {
+  const { type, referenceId, amount, submittedAt, status, nin, dateOfBirth, current, updated } = params;
+  const title = CORRECTION_TITLES[type] || 'NIN Correction';
+  const when = new Date(submittedAt);
+  const dateStr = when.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const st = STATUS_STYLE[status.toLowerCase()] ?? STATUS_STYLE.pending;
+
+  const fullName = (p?: { surname?: string; firstname?: string; middlename?: string }) =>
+    p ? [p.firstname, p.middlename, p.surname].filter(Boolean).join(' ') || 'N/A' : 'N/A';
+
+  let changeRows = '';
+  if (type === 'nin_name_modification') {
+    changeRows = `
+      <tr><td class="label">Name on file (before)</td><td class="value">${escapeHtml(fullName(current))}</td></tr>
+      <tr><td class="label">Corrected name (submitted)</td><td class="value">${escapeHtml(fullName(updated))}</td></tr>`;
+  } else if (type === 'nin_phone_modification') {
+    changeRows = `
+      <tr><td class="label">New phone number (submitted)</td><td class="value">${escapeHtml(updated?.phoneNumber || 'N/A')}</td></tr>`;
+  } else if (type === 'nin_address_modification') {
+    changeRows = `
+      <tr><td class="label">Phone on file</td><td class="value">${escapeHtml(current?.phoneNumber || 'N/A')}</td></tr>
+      <tr><td class="label">Corrected address (submitted)</td><td class="value">${escapeHtml(updated?.address || 'N/A')}</td></tr>`;
+  } else {
+    changeRows = `<tr><td class="label">Date of Birth</td><td class="value">${escapeHtml(dateOfBirth || 'N/A')}</td></tr>`;
+  }
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8" />
+  <style>
+    body { font-family: -apple-system, Helvetica, Arial, sans-serif; padding: 24px; color: #111; background: #f4f4ee; }
+    .receipt { max-width: 480px; margin: 0 auto; background: #ffffff; border: 1px solid #ddd; border-radius: 10px; padding: 24px 28px; }
+    .header { text-align: center; border-bottom: 2px solid #1a5c3a; padding-bottom: 14px; margin-bottom: 18px; }
+    .header h1 { font-size: 16px; margin: 0; color: #1a5c3a; }
+    .header h2 { font-size: 12px; margin: 4px 0 0; color: #777; font-weight: 500; }
+    .status-pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; margin-top: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    td { padding: 8px 4px; font-size: 12.5px; border-bottom: 1px solid #eee; }
+    td.label { color: #777; }
+    td.value { font-weight: 700; color: #111; text-align: right; }
+    .disclaimer { margin-top: 18px; padding: 12px 14px; background: #fff8e1; border: 1px solid #f0dca0; border-radius: 8px; font-size: 10.5px; color: #6b5a1f; line-height: 1.5; }
+    .footer { text-align: center; margin-top: 18px; font-size: 9.5px; color: #999; font-style: italic; }
+  </style></head>
+  <body>
+    <div class="receipt">
+      <div class="header">
+        <h1>${title} — Confirmation</h1>
+        <h2>Kay's Pay</h2>
+        <span class="status-pill" style="background:${st.bg};color:${st.fg}">${st.label}</span>
+      </div>
+      <table>
+        <tr><td class="label">NIN</td><td class="value">${escapeHtml(nin)}</td></tr>
+        ${changeRows}
+        <tr><td class="label">Amount Charged</td><td class="value">${formatNaira(amount)}</td></tr>
+        ${referenceId ? `<tr><td class="label">Reference</td><td class="value">${escapeHtml(referenceId)}</td></tr>` : ''}
+        <tr><td class="label">Submitted</td><td class="value">${dateStr}</td></tr>
+      </table>
+      <div class="disclaimer">
+        This confirms what you submitted to CheckMyNINBVN and its current outcome. It is <b>not an official NIMC identity document</b> — the provider does not return a corrected record for us to verify against. To get an updated, officially-verified NIN slip once this is approved, run a fresh NIN Verify.
+      </div>
+      <div class="footer">Generated by Kay's Pay · kayspay.com.ng</div>
+    </div>
+  </body></html>`;
+}
+
 const LOGO_ASSET = require('../../assets/icon-green.png');
 let cachedLogoBase64: string | null = null;
 
