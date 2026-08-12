@@ -765,20 +765,35 @@ serve(async (req: Request) => {
         // multi-quantity delimiter format is UNCONFIRMED (VTUAfrica used
         // "<=>"), so this splits defensively on known delimiters and falls
         // back to the single raw string rather than ever guessing/losing a
-        // PIN. Verify the real multi-quantity shape with a live test before
-        // trusting this at quantity > 1.
+        // PIN. Quantity is still capped at 1 in the app (see EXAM_PIN_TYPES'
+        // quantityOptions in _shared/vtu-catalog.ts) until multi-quantity
+        // is verified against a real response.
         const pinRaw = normalized.pin ?? undefined;
-        const pins = pinRaw
+        let pins = pinRaw
           ? (pinRaw.includes("<=>") ? pinRaw.split("<=>") : pinRaw.includes(",") ? pinRaw.split(",") : [pinRaw])
               .map((s: string) => s.trim())
               .filter(Boolean)
           : undefined;
         const serialRaw = normalized.serial ?? undefined;
-        const serials = serialRaw
+        let serials = serialRaw
           ? (serialRaw.includes("<=>") ? serialRaw.split("<=>") : serialRaw.includes(",") ? serialRaw.split(",") : [serialRaw])
               .map((s: string) => s.trim())
               .filter(Boolean)
           : undefined;
+
+        // Confirmed via a real quantity=1 NABTEB purchase (2026-08-12):
+        // VTUnaija's live response packed BOTH the pin and serial into the
+        // `pin` field alone (comma-separated), leaving `serial` empty — the
+        // split above then yields more values than were actually ordered.
+        // Anything beyond the ordered quantity is the missing serial, not
+        // an extra pin, so it never gets shown/labeled as one.
+        if (body.service === "exam_pin" && !serials && pins) {
+          const orderedQty = Number(plan.providerPayload?.quantity) || pins.length;
+          if (pins.length > orderedQty) {
+            serials = pins.slice(orderedQty);
+            pins = pins.slice(0, orderedQty);
+          }
+        }
 
         // Electricity: carry the meter's verified customer name/address
         // (checked client-side before payment 鈥?see

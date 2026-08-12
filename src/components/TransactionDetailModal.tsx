@@ -138,11 +138,15 @@ export default function TransactionDetailModal({
   const electricityToken: string | undefined = transaction.metadata?.token;
   const electricityRequest = transaction.metadata?.request;
 
-  // Exam PIN(s) are persisted into the transaction at completion so they can be
-  // re-read here anytime — the user must be able to SEE them (to use), so they
+  // Exam PIN(s) — and Serial(s), when the provider returns one — are
+  // persisted into the transaction at completion so they can be re-read
+  // here anytime — the user must be able to SEE them (to use), so they
   // render as selectable text, not just a receipt.
   const examPins: string[] | undefined = Array.isArray(transaction.metadata?.pins)
     ? (transaction.metadata?.pins as string[]).filter((x) => typeof x === 'string')
+    : undefined;
+  const examSerials: string[] | undefined = Array.isArray(transaction.metadata?.serials)
+    ? (transaction.metadata?.serials as string[]).filter((x) => typeof x === 'string')
     : undefined;
 
   // Re-downloadable BVN slip: a successful BVN verification stores the full
@@ -495,6 +499,13 @@ export default function TransactionDetailModal({
               <View style={styles.receiptSection}>
                 <Text style={styles.sectionTitle}>{examPins.length > 1 ? 'Your PINs' : 'Your PIN'}</Text>
                 <Text style={styles.pinValue} selectable>{examPins.join('\n')}</Text>
+              </View>
+            )}
+
+            {examSerials && examSerials.length > 0 && (
+              <View style={styles.receiptSection}>
+                <Text style={styles.sectionTitle}>{examSerials.length > 1 ? 'Your Serials' : 'Your Serial'}</Text>
+                <Text style={styles.pinValue} selectable>{examSerials.join('\n')}</Text>
               </View>
             )}
 
