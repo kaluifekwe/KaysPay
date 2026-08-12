@@ -50,6 +50,45 @@ function disclaimerParagraphsHtml(): string {
     <p>The FEDERAL GOVERNMENT of NIGERIA assumes no responsibility if you accept any variance in the scan result or do not scan the 2D barcode overleaf.</p>`;
 }
 
+// The Card's back panel used to be a plain HTML block rotated 180deg via
+// CSS `transform` so it reads correctly only after a physical fold. That
+// works in every live browser/WebView preview, but expo-print's actual
+// Print.printToFileAsync() PDF export goes through Android's native
+// WebView-to-PDF converter — a different rendering path that was confirmed
+// (real device test, 2026-08-13) to silently drop CSS-rotated HTML content
+// entirely, rendering a blank box. The QR code elsewhere on this same card
+// is plain SVG with no CSS transform and renders fine through that same
+// pipeline, so this rebuilds the back panel as SVG text (rotated via SVG's
+// own `transform` attribute, not CSS) instead — same technique, same proven
+// reliability. The disclaimer wording never changes, so the lines are
+// hand-wrapped once rather than needing SVG's more limited text reflow.
+function ninCardBackSvg(): string {
+  const lines: { text: string; y: number; size: number; weight: number; style?: string; anchor?: 'start' | 'middle' }[] = [
+    { text: 'DISCLAIMER', y: 28, size: 17, weight: 800, anchor: 'middle' },
+    { text: 'Trust, but verify', y: 46, size: 11, weight: 400, style: 'italic', anchor: 'middle' },
+    { text: 'Kindly ensure each time this ID is presented, that you verify the', y: 70, size: 10.5, weight: 400 },
+    { text: 'credentials using a Government-APPROVED verification resource. The', y: 86.5, size: 10.5, weight: 400 },
+    { text: 'details on the front of this NIN Slip must EXACTLY match the', y: 103, size: 10.5, weight: 400 },
+    { text: 'verification result.', y: 119.5, size: 10.5, weight: 400 },
+    { text: 'CAUTION!', y: 141, size: 14, weight: 800, anchor: 'middle' },
+    { text: 'If this NIN was not issued to the person on the front, please DO', y: 162, size: 10.5, weight: 400 },
+    { text: 'NOT attempt to scan, photocopy or replicate the personal data', y: 178.5, size: 10.5, weight: 400 },
+    { text: 'contained herein.', y: 195, size: 10.5, weight: 400 },
+    { text: 'You are only permitted to scan the barcode for the purpose of', y: 214, size: 10.5, weight: 400 },
+    { text: 'identity verification.', y: 230.5, size: 10.5, weight: 400 },
+    { text: 'The FEDERAL GOVERNMENT of NIGERIA assumes no responsibility if you', y: 249.5, size: 10.5, weight: 400 },
+    { text: 'accept any variance in the scan result or do not scan the 2D', y: 266, size: 10.5, weight: 400 },
+    { text: 'barcode overleaf.', y: 282.5, size: 10.5, weight: 400 },
+  ];
+  const textEls = lines.map((l) =>
+    `<text x="${l.anchor === 'middle' ? 270 : 22}" y="${l.y}" font-family="-apple-system, Helvetica, Arial, sans-serif" font-size="${l.size}" font-weight="${l.weight}" font-style="${l.style || 'normal'}" fill="#111" text-anchor="${l.anchor || 'start'}">${l.text}</text>`,
+  ).join('');
+  return `<svg width="540" height="308" viewBox="0 0 540 308" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="538" height="306" rx="8" fill="#fff" stroke="#333" stroke-width="1.5" />
+    <g transform="rotate(180 270 154)">${textEls}</g>
+  </svg>`;
+}
+
 function ninDisclaimerBackPageHtml(): string {
   return `
     <div class="back-page">
@@ -280,11 +319,7 @@ export function buildStandardSlipHtml(record: NinRecord, fullName: string, nin: 
     .fold-gap { width: 540px; margin: 0 auto; height: 26px; position: relative; }
     .fold-line { position: absolute; left: 0; right: 0; top: 50%; border-top: 1px dashed #b7c4bc; }
     .fold-label { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); background: #fff; padding: 0 8px; font-size: 9px; color: #8a978f; letter-spacing: 1.5px; font-weight: 700; }
-    .back { transform: rotate(180deg); width: 540px; margin: 0 auto; border: 1.5px solid #333; border-radius: 8px; padding: 18px 22px; background: #fff; }
-    .back h2 { font-size: 17px; letter-spacing: 1.5px; margin: 0 0 4px; text-align: center; }
-    .back .tagline { font-style: italic; font-size: 11px; margin-bottom: 14px; text-align: center; color: #333; }
-    .back p { font-size: 10.5px; line-height: 1.55; margin: 9px 0; text-align: left; color: #222; }
-    .back .caution { font-size: 14px; font-weight: 800; margin: 14px 0 6px; text-align: center; }
+    .back-svg { display: block; width: 540px; margin: 0 auto; }
   </style></head>
   <body>
     <div class="card">
@@ -332,11 +367,7 @@ export function buildStandardSlipHtml(record: NinRecord, fullName: string, nin: 
       <div class="fold-line"></div>
       <div class="fold-label">FOLD HERE</div>
     </div>
-    <div class="back">
-      <h2>DISCLAIMER</h2>
-      <div class="tagline">Trust, but verify</div>
-      ${disclaimerParagraphsHtml()}
-    </div>
+    <div class="back-svg">${ninCardBackSvg()}</div>
   </body></html>`;
 }
 
