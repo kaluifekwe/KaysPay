@@ -172,7 +172,7 @@ function formatDobDisplay(dob?: string): string {
 
 // Regular Slip — the classic tabular NIMC-style layout (Tracking ID, field
 // table, footer contact bar).
-function buildRegularSlipHtml(record: NinRecord, fullName: string, nin: string, emblemBase64: string): string {
+export function buildRegularSlipHtml(record: NinRecord, fullName: string, nin: string, emblemBase64: string): string {
   const [firstname, ...rest] = (fullName || '').split(' ');
   return `<!DOCTYPE html><html><head><meta charset="utf-8" />
   <style>
@@ -226,7 +226,7 @@ function buildRegularSlipHtml(record: NinRecord, fullName: string, nin: string, 
 }
 
 // Standard Slip — the modern ID-card-style layout with QR code + watermark.
-function buildStandardSlipHtml(record: NinRecord, fullName: string, nin: string, premium: boolean, emblemBase64: string): string {
+export function buildStandardSlipHtml(record: NinRecord, fullName: string, nin: string, premium: boolean, emblemBase64: string): string {
   const [firstname, ...rest] = (fullName || '').split(' ');
   const givenNames = `${firstname || ''} ${record.middlename || rest.join(' ')}`.trim();
   return `<!DOCTYPE html><html><head><meta charset="utf-8" />

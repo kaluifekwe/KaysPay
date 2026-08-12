@@ -12,8 +12,14 @@ import { buildElectricityReceiptHtml, buildTransactionReceiptHtml } from '../uti
 import { vtuService } from '../services/vtu.service';
 import { supabase } from '../lib/supabase';
 import { withTimeout } from '../utils/network';
-import { buildBvnSlipTraditionalHtml, buildBvnCardHtml, getEmblemBase64 } from '../screens/NinServicesScreen';
-import type { BvnRecord } from '../services/nin.service';
+import {
+  buildBvnSlipTraditionalHtml,
+  buildBvnCardHtml,
+  buildRegularSlipHtml,
+  buildStandardSlipHtml,
+  getEmblemBase64,
+} from '../screens/NinServicesScreen';
+import type { BvnRecord, NinRecord } from '../services/nin.service';
 
 export interface TransactionDetailItem {
   id: string;
@@ -154,6 +160,26 @@ export default function TransactionDetailModal({
       ? buildBvnCardHtml(bvnSlipRecord!, bvnSlipNumber)
       : buildBvnSlipTraditionalHtml(bvnSlipRecord!, bvnSlipNumber, await getEmblemBase64());
 
+  // Re-downloadable NIN slip: same rationale as the BVN slip above — a
+  // successful NIN verification stores the full record in its metadata, so
+  // the slip can be rebuilt any time from History, no re-verification, no charge.
+  const ninSlipRecord: NinRecord | undefined =
+    transaction.rawType === 'nin_verification' && transaction.status === 'successful'
+      ? (transaction.metadata?.record as NinRecord | undefined)
+      : undefined;
+  const ninSlipNumber = String(ninSlipRecord?.nin || transaction.recipientPhone || '');
+  const ninFullName = [ninSlipRecord?.firstname, ninSlipRecord?.middlename, ninSlipRecord?.surname]
+    .filter(Boolean)
+    .join(' ');
+  // Rebuild the SAME slip type the user paid for (regular slip vs card).
+  const ninSlipIsCard = transaction.metadata?.slip_tier === 'card';
+  const buildNinSlipHtml = async () => {
+    const emblemBase64 = await getEmblemBase64();
+    return ninSlipIsCard
+      ? buildStandardSlipHtml(ninSlipRecord!, ninFullName, ninSlipNumber, true, emblemBase64)
+      : buildRegularSlipHtml(ninSlipRecord!, ninFullName, ninSlipNumber, emblemBase64);
+  };
+
   const buildElectricityReceipt = () =>
     buildElectricityReceiptHtml({
       // provider_id/meter_type are stored top-level in metadata (same as
@@ -229,11 +255,41 @@ export default function TransactionDetailModal({
     }
   };
 
+  const handleDownloadNinSlip = async () => {
+    if (!ninSlipRecord) return;
+    setGeneratingPdf(true);
+    try {
+      const html = await buildNinSlipHtml();
+      await downloadPdf(html, `NIN_${ninSlipIsCard ? 'Card' : 'Slip'}_${ninSlipNumber || transaction.id}`);
+      Alert.alert(
+        Platform.OS === 'android' ? 'Downloaded' : 'Saved',
+        Platform.OS === 'android' ? 'Slip saved to the folder you selected.' : 'Choose "Save to Files" to store it on your device.',
+      );
+    } catch (e) {
+      Alert.alert('Error', safeErrorMessage(e, 'Could not save the slip. Please try again.'));
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  const handleShareNinSlip = async () => {
+    if (!ninSlipRecord) return;
+    setGeneratingPdf(true);
+    try {
+      const html = await buildNinSlipHtml();
+      await sharePdf(html, ninSlipIsCard ? 'Share your NIN card' : 'Share your NIN slip');
+    } catch (e) {
+      Alert.alert('Error', safeErrorMessage(e, 'Could not generate the slip. Please try again.'));
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
   // The universal branded receipt (Download/Share) applies to every
   // transaction that doesn't already have its own specialized format above
-  // — electricity's token receipt and the BVN slip carry one-time data this
-  // generic template doesn't handle, so they keep their own flow untouched.
-  const showGenericReceipt = !electricityToken && !bvnSlipRecord;
+  // — electricity's token receipt and the NIN/BVN slips carry one-time data
+  // this generic template doesn't handle, so they keep their own flow untouched.
+  const showGenericReceipt = !electricityToken && !bvnSlipRecord && !ninSlipRecord;
 
   const buildGenericReceipt = async () => {
     const { data: { user } } = await withTimeout(supabase.auth.getUser());
@@ -404,6 +460,30 @@ export default function TransactionDetailModal({
                   disabled={generatingPdf}
                 >
                   <Text style={styles.receiptButtonSecondaryText}>Share BVN Slip</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {ninSlipRecord && (
+              <View style={styles.receiptSection}>
+                <Text style={styles.sectionTitle}>NIN Slip</Text>
+                <TouchableOpacity
+                  style={[styles.receiptButton, generatingPdf && styles.receiptButtonDisabled]}
+                  onPress={handleDownloadNinSlip}
+                  disabled={generatingPdf}
+                >
+                  {generatingPdf ? (
+                    <ActivityIndicator color={Colors.WHITE} />
+                  ) : (
+                    <Text style={styles.receiptButtonText}>Download NIN Slip (PDF)</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.receiptButtonSecondary, generatingPdf && styles.receiptButtonDisabled]}
+                  onPress={handleShareNinSlip}
+                  disabled={generatingPdf}
+                >
+                  <Text style={styles.receiptButtonSecondaryText}>Share NIN Slip</Text>
                 </TouchableOpacity>
               </View>
             )}
