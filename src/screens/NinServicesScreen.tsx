@@ -581,6 +581,13 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   const [modConsent, setModConsent] = useState(false);
   const [modifyState, setModifyState] = useState<ModifyState>('idle');
   const [modifyMessage, setModifyMessage] = useState('');
+  // Gates the correction form behind a compliance notice (owner-provided
+  // wording, 2026-08-12) warning that a NIN modification already started
+  // elsewhere — NIMC app, USSD, another portal — will fail here and may not
+  // be refundable. Deliberately re-shown every time Update is opened (not
+  // remembered on-device) rather than once per install.
+  const [modifyNoticeAcknowledged, setModifyNoticeAcknowledged] = useState(false);
+  const [noticeChecked, setNoticeChecked] = useState(false);
 
   const isNinValid = /^\d{11}$/.test(nin);
   const canVerify = isNinValid && verifyState !== 'processing';
@@ -612,6 +619,10 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   const handleSwitchMode = useCallback((next: Mode) => {
     setMode(next);
     setPrintOpen(false);
+    if (next === 'modify') {
+      setModifyNoticeAcknowledged(false);
+      setNoticeChecked(false);
+    }
   }, []);
 
   const handleVerify = useCallback(async () => {
@@ -1046,6 +1057,86 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
         onDone={handleResetBvn}
         doneLabel="Try Again"
       />
+    );
+  }
+
+  if (mode === 'modify' && !modifyNoticeAcknowledged) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <ScrollView contentContainerStyle={styles.noticeScrollContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.noticeBanner}>
+            <Text style={styles.noticeBannerIcon}>⚠️</Text>
+            <View style={styles.noticeBannerTextCol}>
+              <Text style={styles.noticeBannerTitle}>CRITICAL NOTICE — READ BEFORE PROCEEDING</Text>
+              <Text style={styles.noticeBannerSub}>NIN Modification — Important Restriction</Text>
+            </View>
+          </View>
+
+          <View style={styles.noticeBody}>
+            <View style={styles.noticeBox}>
+              <View style={styles.noticeBoxIcon}><Text style={styles.noticeBoxIconText}>📱</Text></View>
+              <View style={styles.noticeBoxTextCol}>
+                <Text style={styles.noticeBoxTitle}>No Prior Initiation on Any Device</Text>
+                <Text style={styles.noticeBoxText}>
+                  You must <Text style={styles.noticeBold}>NOT</Text> have already started, attempted, or submitted this modification request on any phone, computer, tablet, NIMC app, USSD code, or any other device or platform before using this service.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.noticeBox}>
+              <View style={styles.noticeBoxIcon}><Text style={styles.noticeBoxIconText}>✕</Text></View>
+              <View style={styles.noticeBoxTextCol}>
+                <Text style={styles.noticeBoxTitle}>Previous Attempts Will Cause Failure</Text>
+                <Text style={styles.noticeBoxText}>
+                  If your NIN modification has been initiated anywhere else — even partially — submitting it here <Text style={styles.noticeBold}>will result in an automatic failure</Text> and your payment <Text style={styles.noticeBold}>may not be refundable</Text>.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.noticeBox}>
+              <View style={styles.noticeBoxIcon}><Text style={styles.noticeBoxIconText}>🚫</Text></View>
+              <View style={styles.noticeBoxTextCol}>
+                <Text style={styles.noticeBoxTitle}>This App Must Be the ONLY Point of Initiation</Text>
+                <Text style={styles.noticeBoxText}>
+                  Do not use the NIMC app, NIMC office self-service kiosk, any other third-party service, or any mobile/web platform to initiate the same request alongside Kay's Pay.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.noticeBox}>
+              <View style={styles.noticeBoxIcon}><Text style={styles.noticeBoxIconText}>🚫</Text></View>
+              <View style={styles.noticeBoxTextCol}>
+                <Text style={styles.noticeBoxTitle}>Date of Birth Modification</Text>
+                <Text style={styles.noticeBoxText}>
+                  Kindly be informed that we do not offer NIN Date of Birth modification. Thank you.
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.noticeCheckRow}
+              onPress={() => setNoticeChecked((c) => !c)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.checkbox, noticeChecked && styles.checkboxChecked]}>
+                {noticeChecked && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <Text style={styles.noticeCheckText}>
+                I confirm I have <Text style={styles.noticeBold}>NOT</Text> initiated this modification on any device, mobile app, USSD code, or any other platform. I understand that prior initiation will cause my order to <Text style={styles.noticeBold}>fail</Text> and my payment will <Text style={styles.noticeBold}>not</Text> be refunded.
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.noticeProceedButton, !noticeChecked && styles.noticeProceedButtonDisabled]}
+              disabled={!noticeChecked}
+              onPress={() => setModifyNoticeAcknowledged(true)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.noticeProceedButtonText}>✓  I Understand — Proceed to Form</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
     );
   }
 
@@ -1748,4 +1839,65 @@ const styles = StyleSheet.create({
   cardPreviewIssueValue: { ...Typography.CAPTION, color: Colors.DARK, fontWeight: '700', fontSize: 10 },
   cardPreviewNinLabel: { ...Typography.CAPTION, color: Colors.GRAY, fontSize: 9, textAlign: 'center', marginTop: Spacing.M },
   cardPreviewNin: { ...Typography.HEADING, color: Colors.DARK, fontWeight: '800', letterSpacing: 3, textAlign: 'center' },
+
+  // ---- Critical Notice gate (NIN modification) ----
+  noticeScrollContent: { paddingBottom: Spacing.XL },
+  noticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.M,
+    backgroundColor: Colors.RED,
+    paddingHorizontal: Spacing.SCREEN_PADDING,
+    paddingTop: Spacing.XL,
+    paddingBottom: Spacing.L,
+  },
+  noticeBannerIcon: { fontSize: 26, marginTop: 2 },
+  noticeBannerTextCol: { flex: 1 },
+  noticeBannerTitle: { fontSize: 15, fontWeight: '800', color: Colors.WHITE, letterSpacing: 0.3 },
+  noticeBannerSub: { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 4, fontWeight: '600' },
+  noticeBody: { paddingHorizontal: Spacing.SCREEN_PADDING, paddingTop: Spacing.L },
+  noticeBox: {
+    flexDirection: 'row',
+    gap: Spacing.M,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
+    padding: Spacing.M,
+    marginBottom: Spacing.M,
+  },
+  noticeBoxIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: Colors.RED,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noticeBoxIconText: { fontSize: 13, color: Colors.WHITE, fontWeight: '800' },
+  noticeBoxTextCol: { flex: 1 },
+  noticeBoxTitle: { fontSize: 13.5, fontWeight: '800', color: '#991B1B', marginBottom: 4 },
+  noticeBoxText: { fontSize: 12.5, color: Colors.GRAY, lineHeight: 19 },
+  noticeBold: { fontWeight: '800', color: '#B91C1C' },
+  noticeCheckRow: {
+    flexDirection: 'row',
+    gap: Spacing.M,
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    backgroundColor: '#FFFBEB',
+    borderRadius: 12,
+    padding: Spacing.M,
+    marginBottom: Spacing.L,
+  },
+  noticeCheckText: { flex: 1, fontSize: 12.5, color: Colors.GRAY, lineHeight: 19 },
+  noticeProceedButton: {
+    height: Spacing.BUTTON_HEIGHT_PRIMARY,
+    backgroundColor: Colors.RED,
+    borderRadius: Spacing.BUTTON_RADIUS,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noticeProceedButtonDisabled: { opacity: 0.45 },
+  noticeProceedButtonText: { ...Typography.BUTTON_TEXT },
 });
