@@ -1,7 +1,11 @@
 import { Colors } from '../constants/colors';
 
-const MTN = ['0703', '0706', '0803', '0806', '0810', '0813', '0814', '0816', '0903', '0906', '0913', '0916'];
-const AIRTEL = ['0701', '0708', '0802', '0808', '0812', '0902', '0907', '0912'];
+// Prefix allocations per NCC's own Mobile Number Allocation Table (confirmed
+// 2026-08-12). Portability (MNP, since 2013) means a prefix only reflects
+// original issuance, not necessarily the number's current network — this
+// list can never be 100% accurate on its own for a ported number.
+const MTN = ['0703', '0704', '0706', '0707', '0803', '0806', '0810', '0813', '0814', '0816', '0903', '0906', '0913', '0916'];
+const AIRTEL = ['0701', '0708', '0802', '0808', '0812', '0901', '0902', '0904', '0907', '0911', '0912'];
 const GLO = ['0705', '0805', '0807', '0811', '0815', '0905', '0915'];
 const MOBILE = ['0809', '0817', '0818', '0908', '0909'];
 
@@ -45,6 +49,23 @@ export function formatNigerianPhone(phone: string): string {
   return `${digits.slice(0, 4)} ${digits.slice(4, 7)} ${digits.slice(7, 11)}`;
 }
 
+// Format-only check — 11 digits, starts with 0 — with NO prefix-list
+// requirement. This is what Pay/Buy buttons should gate on: a prefix table
+// can never be complete (NCC keeps allocating new ones, and a ported number
+// can carry an old prefix onto a different network entirely), so refusing
+// to proceed just because a prefix is unrecognized blocks real numbers. Network
+// auto-detection (detectNetwork) stays prefix-based since it's just a
+// convenience pre-fill — the user's own manual network selection is always
+// the final word, and manual selection was never gated on this anyway.
+export function isValidPhoneFormat(phone: string): boolean {
+  const digits = phone.replace(/\D/g, '');
+  return digits.length === 11 && digits.startsWith('0');
+}
+
+// Prefix-gated — recognizes only known-allocated prefixes. Used where a
+// definite network match matters (e.g. auto-detection); NOT for gating
+// whether a purchase can proceed, since an unrecognized prefix doesn't mean
+// an invalid number. See isValidPhoneFormat() above for that.
 export function validateNigerianPhone(phone: string): boolean {
   const digits = phone.replace(/\D/g, '');
 

@@ -18,7 +18,7 @@ import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { Strings } from '../constants/strings';
-import { detectNetwork, validateNigerianPhone, formatNigerianPhone } from '../utils/detectNetwork';
+import { detectNetwork, isValidPhoneFormat, formatNigerianPhone } from '../utils/detectNetwork';
 import { formatNaira } from '../utils/formatCurrency';
 import { vtuService, type NetworkProvider } from '../services/vtu.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
@@ -77,7 +77,7 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
   const scrollRef = useRef<ScrollView>(null);
 
   const formattedPhone = useMemo(() => formatNigerianPhone(phoneNumber), [phoneNumber]);
-  const isValidPhone = useMemo(() => validateNigerianPhone(phoneNumber), [phoneNumber]);
+  const isValidPhone = useMemo(() => isValidPhoneFormat(phoneNumber), [phoneNumber]);
   const numericAmount = useMemo(() => parseInt(amount, 10), [amount]);
   const isValidAmount = !isNaN(numericAmount) && numericAmount >= 100 && numericAmount <= 50000;
 

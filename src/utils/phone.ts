@@ -8,9 +8,13 @@ import { Colors } from '../constants/colors';
 
 export type NgNetwork = 'mtn' | 'airtel' | 'glo' | '9mobile';
 
+// Kept in sync with utils/detectNetwork.ts's prefix lists (NCC's Mobile
+// Number Allocation Table, confirmed 2026-08-12) — two independent copies
+// exist because this module normalizes mixed formats (+234/234/0…) that
+// detectNetwork.ts doesn't handle; update both together.
 const PREFIXES: Record<NgNetwork, string[]> = {
-  mtn: ['0703', '0706', '0803', '0806', '0810', '0813', '0814', '0816', '0903', '0906', '0913', '0916'],
-  airtel: ['0701', '0708', '0802', '0808', '0812', '0902', '0907', '0912'],
+  mtn: ['0703', '0704', '0706', '0707', '0803', '0806', '0810', '0813', '0814', '0816', '0903', '0906', '0913', '0916'],
+  airtel: ['0701', '0708', '0802', '0808', '0812', '0901', '0902', '0904', '0907', '0911', '0912'],
   glo: ['0705', '0805', '0807', '0811', '0815', '0905', '0915'],
   '9mobile': ['0809', '0817', '0818', '0908', '0909'],
 };

@@ -20,7 +20,7 @@ import { Spacing } from '../constants/spacing';
 import { Strings } from '../constants/strings';
 import {
   detectNetwork,
-  validateNigerianPhone,
+  isValidPhoneFormat,
   formatNigerianPhone,
 } from '../utils/detectNetwork';
 import { formatNaira } from '../utils/formatCurrency';
@@ -211,7 +211,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   const handleBuy = useCallback(async () => {
     const digits = phoneNumber.replace(/\D/g, '');
 
-    if (!validateNigerianPhone(digits)) {
+    if (!isValidPhoneFormat(digits)) {
       setErrorMessage(Strings.ERROR_INVALID_PHONE);
       return;
     }
@@ -260,7 +260,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   // greyed button is never a silent dead end. null once everything's ready.
   const payHint = useMemo(() => {
     if (buyState === 'processing') return null;
-    if (!validateNigerianPhone(phoneNumber.replace(/\D/g, ''))) return "Enter the recipient's phone number";
+    if (!isValidPhoneFormat(phoneNumber.replace(/\D/g, ''))) return "Enter the recipient's phone number";
     if (!effectiveNetwork) return 'Select a network to continue';
     if (!selectedBundle) return 'Choose a data bundle to continue';
     return null;

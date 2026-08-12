@@ -69,6 +69,10 @@ interface DataRow {
   bundle: DataBundle | null;
 }
 
+// 9mobile is excluded everywhere else in this screen (contact picking,
+// bulk-add) as currently unsupported, so it's excluded here too.
+const OVERRIDABLE_NETWORKS: NgNetwork[] = ['mtn', 'airtel', 'glo'];
+
 const QUICK_AMOUNTS = [100, 200, 500, 1000];
 
 // Server-enforced floor (AIRTIME_MIN in _shared/vtu-catalog.ts) — the
@@ -149,6 +153,14 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
   // more recipients be appended to an already-built batch instead of
   // forcing the user to back out and re-pick everyone from scratch.
   const [addMoreOpen, setAddMoreOpen] = useState(false);
+  // Phone of the recipient whose network is being manually corrected, or
+  // null. Contact-based network detection is prefix-only (see the
+  // AirtimeRow/DataRow comment above) and the single-recipient Airtime/Data
+  // screens already let the network guess be overridden before paying —
+  // this was the one place that override wasn't possible, forcing a
+  // wrong-network guess to fail at the provider and get refunded rather
+  // than being caught up front.
+  const [networkPickerFor, setNetworkPickerFor] = useState<string | null>(null);
 
   // Read the latest results inside the poll without making it a dependency
   // (which would tear down and restart the interval on every settle).
@@ -213,6 +225,28 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
       }
     }
   }, [contactPickerFor, type, airtimeRows, dataRows]);
+
+  // Corrects just the network for one recipient, keeping the same contact
+  // and any amount/plan already entered — the manual-override counterpart
+  // to the auto-detected `contact.network` both row types start with.
+  const handleNetworkOverride = useCallback((phone: string, network: NgNetwork) => {
+    setNetworkPickerFor(null);
+    if (type === 'airtime') {
+      setAirtimeRows((prev) => prev.map((r) => (r.contact.phone === phone ? { ...r, network } : r)));
+    } else {
+      setDataRows((prev) =>
+        prev.map((r) => {
+          if (r.contact.phone !== phone || r.network === network) return r;
+          // A different network invalidates whatever plan was chosen for the
+          // old one — same reasoning as handleContactSwap's network change.
+          return { ...r, network, bundle: null };
+        }),
+      );
+      if (!vtuService.hasCachedDataBundles(network)) {
+        vtuService.refreshDataBundles(network);
+      }
+    }
+  }, [type]);
 
   // Removing the LAST recipient used to be blocked, both here and by hiding
   // the button once one row remained. That stopped an empty batch, but it did
@@ -407,6 +441,10 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
     () => (activePlanRow ? vtuService.getDataBundles(activePlanRow.network) : []),
     [activePlanRow],
   );
+  const activeNetworkRow = useMemo(() => {
+    const rows: { contact: PickedContact; network: NgNetwork }[] = type === 'airtime' ? airtimeRows : dataRows;
+    return rows.find((r) => r.contact.phone === networkPickerFor) ?? null;
+  }, [type, airtimeRows, dataRows, networkPickerFor]);
 
   // Editing one recipient's amount marks that row custom, which exempts it
   // from any later batch-wide change.
@@ -730,20 +768,30 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
                             {hasName ? row.contact.name : prettyPhone}
                           </Text>
                           <View style={styles.recipientMetaRow}>
-                            {/* The carrier's own logo rather than a coloured
-                                label: it is recognised instantly, and
-                                ProviderLogo degrades to an initials badge if
-                                an image ever fails to load. The name stays
-                                beside it so the carrier is never ambiguous. */}
-                            <ProviderLogo
-                              source={NETWORK_LOGOS[row.network]}
-                              fallbackLabel={NETWORK_LABEL[row.network]}
-                              fallbackColor={NETWORK_COLOR[row.network]}
-                              size={20}
-                            />
-                            <Text style={styles.networkName}>
-                              {NETWORK_LABEL[row.network]}
-                            </Text>
+                            {/* Its own tap target, separate from the
+                                contact-swap area above: correcting a wrong
+                                network guess shouldn't require re-picking the
+                                whole person. Prefix-based detection can't
+                                know about a ported number, so this is the
+                                only reliable fix for it. */}
+                            <TouchableOpacity
+                              style={styles.networkBadge}
+                              onPress={() => setNetworkPickerFor(row.contact.phone)}
+                              disabled={locked}
+                              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                              activeOpacity={0.6}
+                            >
+                              <ProviderLogo
+                                source={NETWORK_LOGOS[row.network]}
+                                fallbackLabel={NETWORK_LABEL[row.network]}
+                                fallbackColor={NETWORK_COLOR[row.network]}
+                                size={20}
+                              />
+                              <Text style={styles.networkName}>
+                                {NETWORK_LABEL[row.network]}
+                              </Text>
+                              {!locked && <Text style={styles.networkChangeHint}>▾</Text>}
+                            </TouchableOpacity>
                             <Text style={styles.recipientNumber} numberOfLines={1}>
                               {hasName ? prettyPhone : 'Not in contacts'}
                             </Text>
@@ -814,13 +862,22 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
                             {hasName ? row.contact.name : prettyPhone}
                           </Text>
                           <View style={styles.recipientMetaRow}>
-                            <ProviderLogo
-                              source={NETWORK_LOGOS[row.network]}
-                              fallbackLabel={NETWORK_LABEL[row.network]}
-                              fallbackColor={NETWORK_COLOR[row.network]}
-                              size={20}
-                            />
-                            <Text style={styles.networkName}>{NETWORK_LABEL[row.network]}</Text>
+                            <TouchableOpacity
+                              style={styles.networkBadge}
+                              onPress={() => setNetworkPickerFor(row.contact.phone)}
+                              disabled={locked}
+                              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                              activeOpacity={0.6}
+                            >
+                              <ProviderLogo
+                                source={NETWORK_LOGOS[row.network]}
+                                fallbackLabel={NETWORK_LABEL[row.network]}
+                                fallbackColor={NETWORK_COLOR[row.network]}
+                                size={20}
+                              />
+                              <Text style={styles.networkName}>{NETWORK_LABEL[row.network]}</Text>
+                              {!locked && <Text style={styles.networkChangeHint}>▾</Text>}
+                            </TouchableOpacity>
                             <Text style={styles.recipientNumber} numberOfLines={1}>
                               {hasName ? prettyPhone : 'Not in contacts'}
                             </Text>
@@ -1033,6 +1090,55 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
             }}
           />
         </SafeAreaView>
+      </Modal>
+
+      <Modal
+        visible={networkPickerFor !== null}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setNetworkPickerFor(null)}
+      >
+        <View style={styles.networkModalOverlay}>
+          <View style={styles.networkModalSheet}>
+            <View style={styles.networkModalHeader}>
+              <Text style={styles.networkModalTitle}>Select Network</Text>
+              <TouchableOpacity
+                onPress={() => setNetworkPickerFor(null)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.planModalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            {activeNetworkRow && (
+              <Text style={styles.networkModalSubtitle} numberOfLines={1}>
+                {activeNetworkRow.contact.name && activeNetworkRow.contact.name !== activeNetworkRow.contact.phone
+                  ? `${activeNetworkRow.contact.name} · `
+                  : ''}
+                {formatNigerianPhone(activeNetworkRow.contact.phone)}
+              </Text>
+            )}
+            {OVERRIDABLE_NETWORKS.map((net) => {
+              const isSelected = activeNetworkRow?.network === net;
+              return (
+                <TouchableOpacity
+                  key={net}
+                  style={[styles.networkModalItem, isSelected && styles.networkModalItemSelected]}
+                  onPress={() => networkPickerFor && handleNetworkOverride(networkPickerFor, net)}
+                  activeOpacity={0.7}
+                >
+                  <ProviderLogo
+                    source={NETWORK_LOGOS[net]}
+                    fallbackLabel={NETWORK_LABEL[net]}
+                    fallbackColor={NETWORK_COLOR[net]}
+                    size={28}
+                  />
+                  <Text style={styles.networkModalItemText}>{NETWORK_LABEL[net]}</Text>
+                  {isSelected && <Text style={styles.planModalItemTick}>✓</Text>}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
       </Modal>
 
       {contactPickerFor !== null && (
@@ -1315,7 +1421,9 @@ const styles = StyleSheet.create({
   // wrong network fails at the provider after the customer has paid, and
   // Nigerian number portability makes prefix detection unreliable, so this
   // is worth stating twice over.
+  networkBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   networkName: { fontSize: 11, fontWeight: '800', color: '#374151' },
+  networkChangeHint: { fontSize: 9, color: Colors.GRAY, marginLeft: 1 },
   recipientNumber: { fontSize: 12, color: Colors.GRAY, flexShrink: 1 },
   recipientAmountCol: { alignItems: 'flex-end' },
   recipientAmountInput: {
@@ -1375,6 +1483,42 @@ const styles = StyleSheet.create({
   planModalSubtitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
   planModalItemMeta: { fontSize: 11.5, color: Colors.GRAY, marginTop: 2 },
   planModalItemTick: { fontSize: 15, fontWeight: '800', color: Colors.GREEN, marginLeft: 8 },
+
+  networkModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  networkModalSheet: {
+    backgroundColor: Colors.WHITE,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: Spacing.L,
+    paddingTop: Spacing.M,
+    paddingBottom: Spacing.XL,
+  },
+  networkModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  networkModalTitle: { ...Typography.CARD_TITLE },
+  networkModalSubtitle: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.M },
+  networkModalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.BORDER,
+  },
+  networkModalItemSelected: {
+    backgroundColor: Colors.GREEN_LIGHT,
+    marginHorizontal: -Spacing.L,
+    paddingHorizontal: Spacing.L,
+  },
+  networkModalItemText: { ...Typography.BODY, color: Colors.DARK, fontWeight: '700', flex: 1 },
 
   footerNetworkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: Spacing.S },
   footerNetworkChip: {
