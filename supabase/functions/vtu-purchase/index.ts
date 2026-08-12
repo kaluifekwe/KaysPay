@@ -375,8 +375,11 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
           provider: "vtunaija",
           endpoint: "/exam/",
           providerPayload: {
-            exam_name: vtunaijaExamCode,
-            quantity,
+            // Sent as strings — VTUnaija's own docs show both quoted
+            // ("exam_name": "2", "quantity": "1") even though exam_name is
+            // numeric and quantity is a number internally here.
+            exam_name: String(vtunaijaExamCode),
+            quantity: String(quantity),
           },
         };
       }
