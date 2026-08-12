@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -61,13 +61,16 @@ function ninDisclaimerBackPageHtml(): string {
     </div>`;
 }
 
-// Two slip types the user picks up front (prices confirmed by owner 2026-07-26).
-// `valueKobo` is now the ACTUAL charge — the server re-derives the same price
-// from `slip_tier`, so the app value is display-only and never authoritative.
-// "Card" is the modern ID-card layout (formerly "Premium").
+// Two slip types the user picks up front. `valueKobo` is now the ACTUAL
+// charge — the server re-derives the same price from `slip_tier`, so the
+// app value is display-only and never authoritative. These are DEFAULTS
+// only: the component fetches the admin's current price (see
+// admin-pricing-controls / migration 112) on mount and overrides them, so
+// the displayed price never goes stale relative to what actually gets
+// charged. "Card" is the modern ID-card layout (formerly "Premium").
 export type SlipTier = 'regular' | 'card';
 
-export const SLIP_TIERS: { id: SlipTier; name: string; valueKobo: number }[] = [
+const DEFAULT_SLIP_TIERS: { id: SlipTier; name: string; valueKobo: number }[] = [
   { id: 'regular', name: 'Regular Slip', valueKobo: 50000 },
   { id: 'card', name: 'Card', valueKobo: 70000 },
 ];
@@ -83,11 +86,12 @@ const SAMPLE_NIN_RECORD: NinRecord = {
   telephoneno: '08000000000',
 };
 
-// BVN mirrors NIN: pick Regular Slip (₦500) or Card (₦700) up front. `valueKobo`
-// is the ACTUAL charge; the server re-derives the same price from slip_tier.
+// BVN mirrors NIN: pick Regular Slip or Card up front. `valueKobo` is the
+// ACTUAL charge; the server re-derives the same price from slip_tier. Also
+// DEFAULTS ONLY — see DEFAULT_SLIP_TIERS above.
 export type BvnSlipTier = 'regular' | 'card';
 
-export const BVN_SLIP_TIERS: { id: BvnSlipTier; name: string; valueKobo: number }[] = [
+const DEFAULT_BVN_SLIP_TIERS: { id: BvnSlipTier; name: string; valueKobo: number }[] = [
   { id: 'regular', name: 'Regular Slip', valueKobo: 50000 },
   { id: 'card', name: 'Card', valueKobo: 70000 },
 ];
@@ -532,12 +536,13 @@ type ValidateState = 'idle' | 'processing' | 'submitted' | 'error';
 type BvnState = 'idle' | 'processing' | 'result' | 'error';
 type ModifyState = 'idle' | 'processing' | 'submitted' | 'error';
 
-// NIN Verify is priced per slip type via SLIP_TIERS (Regular ₦500 / Card ₦700).
-// The amount shown in the PIN prompt comes from the tier the user picked up
-// front; the server (nin-verify) re-derives the same price authoritatively.
-const VALIDATE_PRICE = 8000;
-// BVN pricing is per slip type via BVN_SLIP_TIERS (Regular ₦500 / Card ₦700).
-const MODIFY_PRICE = 18000;
+// NIN Verify is priced per slip type via DEFAULT_SLIP_TIERS. The amount
+// shown in the PIN prompt comes from the tier the user picked up front; the
+// server (nin-verify) re-derives the same price authoritatively. These two
+// are also defaults only — see the fetch effect inside the component.
+const DEFAULT_VALIDATE_PRICE = 8000;
+// BVN pricing is per slip type via DEFAULT_BVN_SLIP_TIERS.
+const DEFAULT_MODIFY_PRICE = 18000;
 
 // What each of the 4 "NIN Modification" sections actually does, shown as
 // that section's helper text so a user picking e.g. Phone Modification
@@ -557,6 +562,36 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   const { authorize } = useTransactionAuth();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<Mode>('verify');
+
+  // Live pricing (see admin-pricing-controls / migration 112) — starts on
+  // today's shipped defaults so the screen never renders blank/zero, then
+  // gets overridden once the fetch resolves. A failed fetch just keeps the
+  // defaults, matching the server's own fallback behaviour, so this can
+  // never leave a screen broken.
+  const [slipTiers, setSlipTiers] = useState(DEFAULT_SLIP_TIERS);
+  const [bvnSlipTiers, setBvnSlipTiers] = useState(DEFAULT_BVN_SLIP_TIERS);
+  const [validatePrice, setValidatePrice] = useState(DEFAULT_VALIDATE_PRICE);
+  const [modifyPrice, setModifyPrice] = useState(DEFAULT_MODIFY_PRICE);
+
+  useEffect(() => {
+    ninService.getServicePricing().then((prices) => {
+      if (!prices) return;
+      if (prices.nin_verify_regular || prices.nin_verify_card) {
+        setSlipTiers([
+          { id: 'regular', name: 'Regular Slip', valueKobo: (prices.nin_verify_regular ?? DEFAULT_SLIP_TIERS[0].valueKobo / 100) * 100 },
+          { id: 'card', name: 'Card', valueKobo: (prices.nin_verify_card ?? DEFAULT_SLIP_TIERS[1].valueKobo / 100) * 100 },
+        ]);
+      }
+      if (prices.bvn_verify_regular || prices.bvn_verify_card) {
+        setBvnSlipTiers([
+          { id: 'regular', name: 'Regular Slip', valueKobo: (prices.bvn_verify_regular ?? DEFAULT_BVN_SLIP_TIERS[0].valueKobo / 100) * 100 },
+          { id: 'card', name: 'Card', valueKobo: (prices.bvn_verify_card ?? DEFAULT_BVN_SLIP_TIERS[1].valueKobo / 100) * 100 },
+        ]);
+      }
+      if (prices.nin_validation) setValidatePrice(prices.nin_validation);
+      if (prices.nin_modification) setModifyPrice(prices.nin_modification);
+    });
+  }, []);
 
   // Verify state
   const [nin, setNin] = useState('');
@@ -662,7 +697,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     if (!canVerify) return;
     const authResult = await authorize({
       title: 'Confirm NIN Verification',
-      amount: (SLIP_TIERS.find((t) => t.id === selectedTier)?.valueKobo || 0) / 100,
+      amount: (slipTiers.find((t) => t.id === selectedTier)?.valueKobo || 0) / 100,
     });
     if (!authResult) return;
 
@@ -686,7 +721,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
       setVerifyError(result.error || 'Could not verify this NIN. Please try again.');
       setVerifyState('error');
     }
-  }, [canVerify, nin, firstname, surname, gender, birthdate, authorize, selectedTier]);
+  }, [canVerify, nin, firstname, surname, gender, birthdate, authorize, selectedTier, slipTiers]);
 
   const handleResetVerify = useCallback(() => {
     setVerifyState('idle');
@@ -704,7 +739,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
 
   const handleValidate = useCallback(async () => {
     if (!canValidate) return;
-    const authResult = await authorize({ title: 'Confirm NIN Validation', amount: VALIDATE_PRICE });
+    const authResult = await authorize({ title: 'Confirm NIN Validation', amount: validatePrice });
     if (!authResult) return;
 
     setValidateState('processing');
@@ -716,7 +751,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
       setValidateMessage(result.error || 'Could not submit validation request.');
       setValidateState('error');
     }
-  }, [canValidate, validateNin, validateDob, authorize]);
+  }, [canValidate, validateNin, validateDob, authorize, validatePrice]);
 
   const handleResetValidate = useCallback(() => {
     setValidateState('idle');
@@ -730,7 +765,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     if (!canVerifyBvn) return;
     const authResult = await authorize({
       title: 'Confirm BVN Verification',
-      amount: (BVN_SLIP_TIERS.find((t) => t.id === selectedBvnTier)?.valueKobo || 0) / 100,
+      amount: (bvnSlipTiers.find((t) => t.id === selectedBvnTier)?.valueKobo || 0) / 100,
     });
     if (!authResult) return;
 
@@ -744,7 +779,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
       setBvnError(result.error || 'Could not verify this BVN. Please try again.');
       setBvnState('error');
     }
-  }, [canVerifyBvn, bvnNumber, authorize, selectedBvnTier]);
+  }, [canVerifyBvn, bvnNumber, authorize, selectedBvnTier, bvnSlipTiers]);
 
   const handleResetBvn = useCallback(() => {
     setBvnState('idle');
@@ -774,7 +809,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     setGeneratingBvnPdf(true);
     try {
       const html = await buildSelectedBvnSlipHtml();
-      const tierName = BVN_SLIP_TIERS.find((t) => t.id === selectedBvnTier)?.name || 'BVN Slip';
+      const tierName = bvnSlipTiers.find((t) => t.id === selectedBvnTier)?.name || 'BVN Slip';
       await downloadPdf(html, `${tierName.replace(/\s+/g, '_')}_${bvnNumber}`);
       Alert.alert(
         Platform.OS === 'android' ? 'Downloaded' : 'Saved',
@@ -785,21 +820,21 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     } finally {
       setGeneratingBvnPdf(false);
     }
-  }, [bvnRecord, selectedBvnTier, buildSelectedBvnSlipHtml, bvnNumber]);
+  }, [bvnRecord, selectedBvnTier, buildSelectedBvnSlipHtml, bvnNumber, bvnSlipTiers]);
 
   const handleShareBvn = useCallback(async () => {
     if (!bvnRecord) return;
     setGeneratingBvnPdf(true);
     try {
       const html = await buildSelectedBvnSlipHtml();
-      const tierName = BVN_SLIP_TIERS.find((t) => t.id === selectedBvnTier)?.name || 'BVN Slip';
+      const tierName = bvnSlipTiers.find((t) => t.id === selectedBvnTier)?.name || 'BVN Slip';
       await sharePdf(html, `Share your ${tierName}`);
     } catch (e) {
       Alert.alert('Error', (e as Error).message || 'Could not generate the PDF. Please try again.');
     } finally {
       setGeneratingBvnPdf(false);
     }
-  }, [bvnRecord, selectedBvnTier, buildSelectedBvnSlipHtml]);
+  }, [bvnRecord, selectedBvnTier, buildSelectedBvnSlipHtml, bvnSlipTiers]);
 
   const handleModify = useCallback(async () => {
     if (!canModify) return;
@@ -808,7 +843,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
       phone: 'Confirm Phone Number Update Request',
       address: 'Confirm Address Update Request',
     };
-    const authResult = await authorize({ title: titles[modifyType], amount: MODIFY_PRICE });
+    const authResult = await authorize({ title: titles[modifyType], amount: modifyPrice });
     if (!authResult) return;
 
     setModifyState('processing');
@@ -835,7 +870,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     }
   }, [
     canModify, modifyType, modNin, modSurname, modFirstname, modPhoneNumber,
-    modMiddlename, modNewSurname, modNewFirstname, modNewPhoneNumber, modNewAddress, authorize,
+    modMiddlename, modNewSurname, modNewFirstname, modNewPhoneNumber, modNewAddress, authorize, modifyPrice,
   ]);
 
   const handleResetModify = useCallback(() => {
@@ -872,7 +907,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     setGeneratingPdf(true);
     try {
       const html = await buildSelectedSlipHtml();
-      const tierName = SLIP_TIERS.find((t) => t.id === selectedTier)?.name || 'NIN Slip';
+      const tierName = slipTiers.find((t) => t.id === selectedTier)?.name || 'NIN Slip';
       await downloadPdf(html, `${tierName.replace(/\s+/g, '_')}_${nin}`);
       Alert.alert(
         Platform.OS === 'android' ? 'Downloaded' : 'Saved',
@@ -883,21 +918,21 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     } finally {
       setGeneratingPdf(false);
     }
-  }, [record, selectedTier, buildSelectedSlipHtml, nin]);
+  }, [record, selectedTier, buildSelectedSlipHtml, nin, slipTiers]);
 
   const handleShare = useCallback(async () => {
     if (!record) return;
     setGeneratingPdf(true);
     try {
       const html = await buildSelectedSlipHtml();
-      const tierName = SLIP_TIERS.find((t) => t.id === selectedTier)?.name || 'NIN Slip';
+      const tierName = slipTiers.find((t) => t.id === selectedTier)?.name || 'NIN Slip';
       await sharePdf(html, `Share your ${tierName}`);
     } catch (e) {
       Alert.alert('Error', (e as Error).message || 'Could not generate the PDF. Please try again.');
     } finally {
       setGeneratingPdf(false);
     }
-  }, [record, selectedTier, buildSelectedSlipHtml]);
+  }, [record, selectedTier, buildSelectedSlipHtml, slipTiers]);
 
   const renderMatchRow = (label: string, key: string) => {
     if (!matches || !(key in matches)) return null;
@@ -1059,8 +1094,8 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
 
   // Tap Pay -> straight to a full-screen Processing state (set before the async
   // verify call) -> the slip result / Failed. Same feel as the VTU services.
-  const ninAmount = (SLIP_TIERS.find((t) => t.id === selectedTier)?.valueKobo || 0) / 100;
-  const bvnAmount = (BVN_SLIP_TIERS.find((t) => t.id === selectedBvnTier)?.valueKobo || 0) / 100;
+  const ninAmount = (slipTiers.find((t) => t.id === selectedTier)?.valueKobo || 0) / 100;
+  const bvnAmount = (bvnSlipTiers.find((t) => t.id === selectedBvnTier)?.valueKobo || 0) / 100;
 
   if (mode === 'verify' && verifyState === 'processing') {
     return <ResultStatusView status="processing" headerTitle="NIN Slip" amount={ninAmount} processingHint="Verifying your NIN…" />;
@@ -1223,7 +1258,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
 
               <Text style={styles.stepLabel}>01  Select Slip Type</Text>
               <View style={styles.tierRow}>
-                {SLIP_TIERS.map((tier) => {
+                {slipTiers.map((tier) => {
                   const isSelected = selectedTier === tier.id;
                   return (
                     <TouchableOpacity
@@ -1264,7 +1299,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                   <ActivityIndicator color={Colors.WHITE} />
                 ) : (
                   <Text style={styles.primaryButtonText}>
-                    Verify & Pay {formatNaira((SLIP_TIERS.find((t) => t.id === selectedTier)?.valueKobo || 0) / 100)}
+                    Verify & Pay {formatNaira((slipTiers.find((t) => t.id === selectedTier)?.valueKobo || 0) / 100)}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -1273,7 +1308,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
               </Text>
 
               <Text style={styles.sampleLabel}>
-                Sample — how your {SLIP_TIERS.find((t) => t.id === selectedTier)?.name} will look
+                Sample — how your {slipTiers.find((t) => t.id === selectedTier)?.name} will look
               </Text>
               {renderSlipPreview(SAMPLE_NIN_RECORD, selectedTier)}
             </View>
@@ -1317,7 +1352,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 )}
 
                 <Text style={styles.readyText}>
-                  Your {SLIP_TIERS.find((t) => t.id === selectedTier)?.name} is ready to download.
+                  Your {slipTiers.find((t) => t.id === selectedTier)?.name} is ready to download.
                 </Text>
                 <TouchableOpacity
                   style={[styles.primaryButton, generatingPdf && styles.primaryButtonDisabled]}
@@ -1417,7 +1452,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 {validateState === 'processing' ? (
                   <ActivityIndicator color={Colors.WHITE} />
                 ) : (
-                  <Text style={styles.primaryButtonText}>Submit Validation ({formatNaira(VALIDATE_PRICE)})</Text>
+                  <Text style={styles.primaryButtonText}>Submit Validation ({formatNaira(validatePrice)})</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1441,7 +1476,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
 
               <Text style={styles.stepLabel}>01  Select Slip Type</Text>
               <View style={styles.tierRow}>
-                {BVN_SLIP_TIERS.map((tier) => {
+                {bvnSlipTiers.map((tier) => {
                   const isSelected = selectedBvnTier === tier.id;
                   return (
                     <TouchableOpacity
@@ -1482,7 +1517,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                   <ActivityIndicator color={Colors.WHITE} />
                 ) : (
                   <Text style={styles.primaryButtonText}>
-                    Verify & Pay {formatNaira((BVN_SLIP_TIERS.find((t) => t.id === selectedBvnTier)?.valueKobo || 0) / 100)}
+                    Verify & Pay {formatNaira((bvnSlipTiers.find((t) => t.id === selectedBvnTier)?.valueKobo || 0) / 100)}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -1491,7 +1526,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
               </Text>
 
               <Text style={styles.sampleLabel}>
-                Sample — how your {BVN_SLIP_TIERS.find((t) => t.id === selectedBvnTier)?.name} will look
+                Sample — how your {bvnSlipTiers.find((t) => t.id === selectedBvnTier)?.name} will look
               </Text>
               {renderBvnSlipPreview(SAMPLE_BVN_RECORD, selectedBvnTier)}
             </View>
@@ -1524,7 +1559,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
               </View>
 
               <Text style={styles.readyText}>
-                Your {BVN_SLIP_TIERS.find((t) => t.id === selectedBvnTier)?.name} is ready to download.
+                Your {bvnSlipTiers.find((t) => t.id === selectedBvnTier)?.name} is ready to download.
               </Text>
               <TouchableOpacity
                 style={[styles.primaryButton, generatingBvnPdf && styles.primaryButtonDisabled]}
@@ -1676,7 +1711,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
               {modifyState === 'processing' ? (
                 <ActivityIndicator color={Colors.WHITE} />
               ) : (
-                <Text style={styles.primaryButtonText}>Submit Request ({formatNaira(MODIFY_PRICE)})</Text>
+                <Text style={styles.primaryButtonText}>Submit Request ({formatNaira(modifyPrice)})</Text>
               )}
             </TouchableOpacity>
           </View>

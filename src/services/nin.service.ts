@@ -69,6 +69,10 @@ export interface BvnVerifyResult {
   error?: string;
 }
 
+export type ServicePricingKey =
+  | 'nin_verify_regular' | 'nin_verify_card' | 'nin_modification'
+  | 'nin_validation' | 'bvn_verify_regular' | 'bvn_verify_card';
+
 export type NinModificationType = 'name' | 'phone' | 'address';
 
 export interface NinModificationFields {
@@ -229,6 +233,23 @@ export const ninService = {
       return { success: true, pending: data.pending, transaction_id: data.transaction_id, message: data.message };
     } catch {
       return { success: false, error: 'Network error. Please try again.' };
+    }
+  },
+
+  /**
+   * Current admin-set prices (naira) for NIN/BVN services, read fresh so the
+   * app never shows a stale price it then charges something different for
+   * (see admin-pricing-controls / migration 112). Returns null on any
+   * failure — callers keep whatever hardcoded default they already have,
+   * same as the server's own fallback behaviour.
+   */
+  async getServicePricing(): Promise<Partial<Record<ServicePricingKey, number>> | null> {
+    try {
+      const { data, error } = await withTimeout(supabase.functions.invoke('service-pricing'));
+      if (error || !data?.success) return null;
+      return data.prices ?? null;
+    } catch {
+      return null;
     }
   },
 };
