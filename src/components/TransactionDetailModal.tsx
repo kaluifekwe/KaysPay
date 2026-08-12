@@ -8,7 +8,7 @@ import { formatNaira } from '../utils/formatCurrency';
 import { formatDateTimeFull } from '../utils/formatDateTime';
 import { safeErrorMessage } from '../utils/errorMessages';
 import { downloadPdf, sharePdf } from '../utils/pdf';
-import { buildElectricityReceiptHtml, buildNinCorrectionReceiptHtml, buildTransactionReceiptHtml } from '../utils/receipts';
+import { buildElectricityReceiptHtml, buildExamPinReceiptHtml, buildNinCorrectionReceiptHtml, buildTransactionReceiptHtml } from '../utils/receipts';
 import { vtuService } from '../services/vtu.service';
 import { supabase } from '../lib/supabase';
 import { withTimeout } from '../utils/network';
@@ -148,6 +148,46 @@ export default function TransactionDetailModal({
   const examSerials: string[] | undefined = Array.isArray(transaction.metadata?.serials)
     ? (transaction.metadata?.serials as string[]).filter((x) => typeof x === 'string')
     : undefined;
+
+  // The generic receipt has no field for a PIN, so a downloaded/shared exam
+  // pin receipt previously showed only the amount and date — never the
+  // actual PIN the customer paid for. This embeds it, same reasoning as the
+  // electricity token receipt below.
+  const buildExamPinReceipt = () =>
+    buildExamPinReceiptHtml({
+      examName: transaction.label,
+      amount: transaction.amount,
+      pins: examPins!,
+      serials: examSerials,
+      orderId: transaction.orderId,
+      date: new Date(transaction.timestamp),
+    });
+
+  const handleDownloadExamPinReceipt = async () => {
+    setGeneratingPdf(true);
+    try {
+      await downloadPdf(buildExamPinReceipt(), `Exam_PIN_Receipt_${transaction.id}`);
+      Alert.alert(
+        Platform.OS === 'android' ? 'Downloaded' : 'Saved',
+        Platform.OS === 'android' ? 'Receipt saved to the folder you selected.' : 'Choose "Save to Files" to store it on your device.',
+      );
+    } catch (e) {
+      Alert.alert('Error', safeErrorMessage(e, 'Could not save the receipt. Please try again.'));
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  const handleShareExamPinReceipt = async () => {
+    setGeneratingPdf(true);
+    try {
+      await sharePdf(buildExamPinReceipt(), 'Share your exam PIN receipt');
+    } catch (e) {
+      Alert.alert('Error', safeErrorMessage(e, 'Could not generate the receipt. Please try again.'));
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
 
   // Re-downloadable BVN slip: a successful BVN verification stores the full
   // record in its metadata, so the slip can be rebuilt any time from History —
@@ -351,7 +391,7 @@ export default function TransactionDetailModal({
   // transaction that doesn't already have its own specialized format above
   // — electricity's token receipt and the NIN/BVN slips carry one-time data
   // this generic template doesn't handle, so they keep their own flow untouched.
-  const showGenericReceipt = !electricityToken && !bvnSlipRecord && !ninSlipRecord && !isNinCorrection;
+  const showGenericReceipt = !electricityToken && !bvnSlipRecord && !ninSlipRecord && !isNinCorrection && !(examPins && examPins.length > 0);
 
   const buildGenericReceipt = async () => {
     const { data: { user } } = await withTimeout(supabase.auth.getUser());
@@ -506,6 +546,29 @@ export default function TransactionDetailModal({
               <View style={styles.receiptSection}>
                 <Text style={styles.sectionTitle}>{examSerials.length > 1 ? 'Your Serials' : 'Your Serial'}</Text>
                 <Text style={styles.pinValue} selectable>{examSerials.join('\n')}</Text>
+              </View>
+            )}
+
+            {examPins && examPins.length > 0 && (
+              <View style={styles.receiptSection}>
+                <TouchableOpacity
+                  style={[styles.receiptButton, generatingPdf && styles.receiptButtonDisabled]}
+                  onPress={handleDownloadExamPinReceipt}
+                  disabled={generatingPdf}
+                >
+                  {generatingPdf ? (
+                    <ActivityIndicator color={Colors.WHITE} />
+                  ) : (
+                    <Text style={styles.receiptButtonText}>Download Receipt (PDF)</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.receiptButtonSecondary, generatingPdf && styles.receiptButtonDisabled]}
+                  onPress={handleShareExamPinReceipt}
+                  disabled={generatingPdf}
+                >
+                  <Text style={styles.receiptButtonSecondaryText}>Share Receipt</Text>
+                </TouchableOpacity>
               </View>
             )}
 
