@@ -31,9 +31,11 @@ import {
   callVTUNaija,
   isVtuNaijaConfigured,
   normalizeCableTVSmartcardVerification,
+  normalizeElectricityMeterVerification,
   normalizeVTUNaijaResult,
   VTUNaijaError,
   verifyCableTVSmartcard,
+  verifyElectricityMeter,
   vtunaijaOutcome,
 } from "../_shared/vtunaija-client.ts";
 
@@ -218,7 +220,17 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
           throw "CATALOG_STALE";
         }
       }
-      const amount = Number(bundle.reseller_kobo);
+      // Admin-settable per-plan price (see migration 112) — same lookup
+      // vtunaija-data-catalog uses to quote this plan to the client, so the
+      // two always agree and the quoted_amount_kobo check below still works.
+      const { data: priceOverride } = await supabase
+        .from("vtu_plan_price_overrides")
+        .select("price_kobo")
+        .eq("provider", "vtunaija")
+        .eq("network", network)
+        .eq("plan_id", bundle.id)
+        .maybeSingle();
+      const amount = Number(priceOverride?.price_kobo ?? bundle.reseller_kobo);
       const quotedAmount = Number(body.quoted_amount_kobo);
       if (Number.isFinite(quotedAmount) && quotedAmount > 0 && quotedAmount !== amount) {
         throw new PriceChangedError(amount);
@@ -274,6 +286,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
         network: "N/A",
         recipient: meter,
         provider: "vtunaija",
+        verificationProviderId: biller,
         endpoint: "/billpayment/",
         providerPayload: {
           disco_name: discoId,
@@ -313,6 +326,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
         network: "N/A",
         recipient: smartcard,
         provider: "vtunaija",
+        verificationProviderId: bouquet.provider,
         endpoint: "/cablesub/",
         providerPayload: {
           cablename: VTUNAIJA_CABLE_IDS[bouquet.provider as TVServiceProvider],
@@ -518,15 +532,48 @@ serve(async (req: Request) => {
     });
   }
 
-  // Re-verify TV ownership server-side before any PIN token is consumed or
-  // wallet money moves. The client-side verification is UX only and cannot
-  // be trusted by a financial endpoint.
+  // A provider verification performed by our authenticated Edge Functions is
+  // reusable for five minutes. This removes the duplicate provider call when
+  // a customer verifies on the payment screen and immediately pays, while the
+  // server-only table remains the source of truth (the mobile client cannot
+  // manufacture a trusted verification).
+  const verificationFreshSince = new Date(Date.now() - 5 * 60 * 1000).toISOString();
   let verifiedTVCustomerName: string | null = null;
   let verifiedTVCurrentBouquet: string | null = null;
-  if (body.service === "tv") {
+  let verifiedElectricityCustomerName: string | null = null;
+  let verifiedElectricityCustomerAddress: string | null = null;
+  if (body.service === "tv" || body.service === "electricity") {
     if (!isVtuNaijaConfigured()) {
-      return json({ success: false, error: "Smartcard verification isn't available right now." }, 503);
+      return json({
+        success: false,
+        error: body.service === "tv"
+          ? "Smartcard verification isn't available right now."
+          : "Meter verification isn't available right now.",
+      }, 503);
     }
+
+    const verificationProviderId = String(
+      (plan as { verificationProviderId?: unknown }).verificationProviderId || "",
+    );
+    const verificationAccountNumber = String(plan.recipient || "");
+    const { data: freshVerification } = await supabase
+      .from("saved_billing_accounts")
+      .select("customer_name, customer_address, last_verified_at")
+      .eq("user_id", user.id)
+      .eq("service", body.service)
+      .eq("provider_id", verificationProviderId)
+      .eq("account_number", verificationAccountNumber)
+      .gte("last_verified_at", verificationFreshSince)
+      .maybeSingle();
+
+    if (freshVerification) {
+      if (body.service === "tv") {
+        verifiedTVCustomerName = freshVerification.customer_name;
+      } else {
+        verifiedElectricityCustomerName = freshVerification.customer_name;
+        verifiedElectricityCustomerAddress = freshVerification.customer_address;
+      }
+    } else if (body.service === "tv") {
     try {
       const payload = plan.providerPayload as Record<string, unknown>;
       const verificationResult = await verifyCableTVSmartcard(
@@ -542,11 +589,61 @@ serve(async (req: Request) => {
       }
       verifiedTVCustomerName = verified.customerName;
       verifiedTVCurrentBouquet = verified.currentBouquet;
+
+      const now = new Date().toISOString();
+      const { error: saveError } = await supabase.from("saved_billing_accounts").upsert({
+        user_id: user.id,
+        service: "tv",
+        provider_id: verificationProviderId,
+        account_number: verificationAccountNumber,
+        customer_name: verified.customerName,
+        provider_customer_name: verified.customerName,
+        last_verified_at: now,
+        last_used_at: now,
+      }, { onConflict: "user_id,service,provider_id,account_number" });
+      if (saveError) console.error("Could not save fresh TV verification:", saveError.code);
     } catch {
       return json({
         success: false,
         error: "Could not verify this smartcard number right now. Please try again.",
       }, 503);
+    }
+    } else {
+      try {
+        const payload = plan.providerPayload as Record<string, unknown>;
+        const verificationResult = await verifyElectricityMeter(
+          String(payload.disco_name || ""),
+          verificationAccountNumber,
+        );
+        const verified = normalizeElectricityMeterVerification(verificationResult);
+        if (!verified.ok || !verified.customerName) {
+          return json({
+            success: false,
+            error: "This meter number could not be verified for the selected electricity provider.",
+          }, 400);
+        }
+        verifiedElectricityCustomerName = verified.customerName;
+        verifiedElectricityCustomerAddress = verified.customerAddress;
+
+        const now = new Date().toISOString();
+        const { error: saveError } = await supabase.from("saved_billing_accounts").upsert({
+          user_id: user.id,
+          service: "electricity",
+          provider_id: verificationProviderId,
+          account_number: verificationAccountNumber,
+          customer_name: verified.customerName,
+          provider_customer_name: verified.customerName,
+          customer_address: verified.customerAddress,
+          last_verified_at: now,
+          last_used_at: now,
+        }, { onConflict: "user_id,service,provider_id,account_number" });
+        if (saveError) console.error("Could not save fresh electricity verification:", saveError.code);
+      } catch {
+        return json({
+          success: false,
+          error: "Could not verify this meter number right now. Your wallet has not been debited.",
+        }, 503);
+      }
     }
   }
 
@@ -686,8 +783,12 @@ serve(async (req: Request) => {
         // same as the token, so History can rebuild the full receipt later
         // without re-verifying. Purely opaque display strings 鈥?never used
         // for any money decision.
-        const customerName = body.service === "electricity" ? safeDisplayString(body.customer_name) : undefined;
-        const customerAddress = body.service === "electricity" ? safeDisplayString(body.customer_address) : undefined;
+        const customerName = body.service === "electricity"
+          ? safeDisplayString(verifiedElectricityCustomerName)
+          : undefined;
+        const customerAddress = body.service === "electricity"
+          ? safeDisplayString(verifiedElectricityCustomerAddress)
+          : undefined;
 
         if (electricityToken || pins || serials || body.service === "electricity" || body.service === "tv") {
           await supabase

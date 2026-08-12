@@ -14,6 +14,10 @@ const NETWORK_NAME_MAP: Record<string, typeof NETWORKS[number]> = {
   AIRTEL: "airtel",
 };
 
+function familyKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "other";
+}
+
 class CatalogSyncError extends Error {
   constructor(public readonly safeCode: "PROVIDER_FETCH_FAILED" | "SNAPSHOT_INVALID" | "DATABASE_SAVE_FAILED") {
     super(safeCode);
@@ -27,7 +31,20 @@ function json(body: unknown, status = 200) {
   });
 }
 
-async function fetchCatalog() {
+// Reads vtu_pricing_config's 'data' row (see migration 074) so the resale
+// tier can be flipped from the Supabase Table Editor — no code deploy —
+// once the owner is ready to move off the launch cost-price promo. Defaults
+// to 'premium' (cost) if the row is ever missing, matching launch behavior.
+async function getDataPricingTier(supabase: ReturnType<typeof adminClient>): Promise<"premium" | "basic"> {
+  const { data } = await supabase
+    .from("vtu_pricing_config")
+    .select("tier")
+    .eq("product", "data")
+    .maybeSingle();
+  return data?.tier === "basic" ? "basic" : "premium";
+}
+
+async function fetchCatalog(tier: "premium" | "basic") {
   let payload: any;
   try {
     payload = await callVTUNaija("/listdataplans/", {});
@@ -42,18 +59,23 @@ async function fetchCatalog() {
 
   const rows: {
     id: string; network: typeof NETWORKS[number]; data_plan_id: string;
-    name: string; validity: string; reseller_kobo: number; available: boolean;
+    name: string; validity: string; family_key: string; family_name: string;
+    reseller_kobo: number; available: boolean;
   }[] = [];
   let skipped = 0;
+  const priceField = tier === "basic" ? "price_for_basicuser" : "price_for_premiumuser";
 
   for (const raw of payload.dataplans as Record<string, unknown>[]) {
     const network = NETWORK_NAME_MAP[String(raw.the_network_name).toUpperCase()];
     if (!network) continue; // an unrelated/unsupported network name — not an error
 
     const dataPlanId = String(raw.data_plan_id ?? "");
-    // Owner-confirmed tier: price_for_premiumuser is what this account is
-    // actually billed, so that's the price passed on to customers.
-    const priceNaira = Number(raw.price_for_premiumuser);
+    // price_for_premiumuser is what this account is actually billed
+    // (confirmed via VTUnaija's own dashboard price list, 2026-08-03);
+    // price_for_basicuser is their suggested retail price (always >= premium
+    // — the spread is our resale margin). Which one customers pay is a
+    // runtime switch, not a code choice — see getDataPricingTier() above.
+    const priceNaira = Number(raw[priceField]);
     const size = String(raw.size ?? "").trim();
     const datatype = String(raw.the_datatype_name ?? "").trim();
     const name = datatype ? `${size} (${datatype})` : size;
@@ -75,6 +97,8 @@ async function fetchCatalog() {
       data_plan_id: dataPlanId,
       name,
       validity: durationDays ? `${durationDays} Days` : "See provider",
+      family_key: familyKey(datatype || "Other"),
+      family_name: (datatype || "Other").slice(0, 120),
       reseller_kobo: Math.round(priceNaira * 100),
       available: String(raw.status ?? "").toLowerCase() === "on",
     });
@@ -85,7 +109,8 @@ async function fetchCatalog() {
 }
 
 async function refreshCatalog(supabase: ReturnType<typeof adminClient>) {
-  const rows = await fetchCatalog(); // already logs + throws CatalogSyncError itself
+  const tier = await getDataPricingTier(supabase);
+  const rows = await fetchCatalog(tier); // already logs + throws CatalogSyncError itself
   if (NETWORKS.some((network) => rows.filter((row) => row.network === network).length < 3) || rows.length < 10) {
     console.error(
       "vtunaija-data-catalog: snapshot too small after filtering,",
@@ -172,7 +197,7 @@ serve(async (req: Request) => {
 
   let { data, error } = await supabase
     .from("vtunaija_data_catalog")
-    .select("id, network, name, validity, reseller_kobo, provider_seen_at")
+    .select("id, network, name, validity, family_key, family_name, reseller_kobo, provider_seen_at")
     .eq("network", network)
     .eq("available", true)
     .order("reseller_kobo", { ascending: true });
@@ -184,7 +209,7 @@ serve(async (req: Request) => {
       await withJobLock(supabase, "vtunaija-data-catalog-sync", () => refreshCatalog(supabase));
       const refreshed = await supabase
         .from("vtunaija_data_catalog")
-        .select("id, network, name, validity, reseller_kobo, provider_seen_at")
+        .select("id, network, name, validity, family_key, family_name, reseller_kobo, provider_seen_at")
         .eq("network", network)
         .eq("available", true)
         .order("reseller_kobo", { ascending: true });
@@ -194,14 +219,41 @@ serve(async (req: Request) => {
     }
   }
 
+  const { data: disabledControls, error: controlsError } = await supabase
+    .from("vtu_plan_controls")
+    .select("scope_type, scope_value")
+    .eq("provider", "vtunaija")
+    .eq("network", network)
+    .eq("enabled", false);
+  if (controlsError) return json({ error: "Availability controls temporarily unavailable" }, 503);
+  const disabled = disabledControls ?? [];
+  const visible = (data ?? []).filter((row) => !disabled.some((control) =>
+    (control.scope_type === "network" && control.scope_value === "*") ||
+    (control.scope_type === "family" && control.scope_value === row.family_key) ||
+    (control.scope_type === "plan" && control.scope_value === row.id)
+  ));
+
+  // Admin-settable per-plan price (see migration 112) — overrides the
+  // provider's reseller_kobo when set. Read AFTER the availability filter so
+  // this only queries prices for plans actually being returned.
+  const { data: overrides, error: overridesError } = await supabase
+    .from("vtu_plan_price_overrides")
+    .select("plan_id, price_kobo")
+    .eq("provider", "vtunaija")
+    .eq("network", network);
+  if (overridesError) return json({ error: "Pricing temporarily unavailable" }, 503);
+  const priceByPlan = new Map((overrides ?? []).map((row) => [row.plan_id, Number(row.price_kobo)]));
+
   return json({
     success: true,
-    plans: (data ?? []).map((row) => ({
+    plans: visible.map((row) => ({
       id: row.id,
       network: row.network,
       name: row.name,
       validity: row.validity,
-      amount: Number(row.reseller_kobo) / 100,
+      family_key: row.family_key,
+      family_name: row.family_name,
+      amount: (priceByPlan.get(row.id) ?? Number(row.reseller_kobo)) / 100,
     })),
     updated_at: data?.[0]?.provider_seen_at ?? null,
   });

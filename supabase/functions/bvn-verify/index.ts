@@ -10,6 +10,8 @@ import {
   readJsonBody,
   RequestBodyError,
 } from "../_shared/auth.ts";
+import { confirmServiceRefund } from "../_shared/service-refund.ts";
+import { getServicePriceKobo } from "../_shared/service-pricing.ts";
 import {
   isPremblyConfigured,
   verifyBvnFull as verifyBvnPremblyFull,
@@ -216,7 +218,11 @@ serve(async (req: Request) => {
     )
     ? String(body.slip_tier)
     : DEFAULT_SLIP_TIER;
-  const priceKobo = SLIP_PRICE_KOBO[slipTier];
+  const priceKobo = await getServicePriceKobo(
+    supabase,
+    slipTier === "card" ? "bvn_verify_card" : "bvn_verify_regular",
+    SLIP_PRICE_KOBO[slipTier],
+  );
 
   // Same 24h cache rationale as nin-verify: a BVN record doesn't change
   // day-to-day, so a repeat lookup shouldn't cost the user twice or risk
@@ -357,11 +363,12 @@ serve(async (req: Request) => {
   }
 
   if (!outcome.ok) {
-    await supabase.rpc("refund_service_transaction", {
-      p_tx_id: txId,
-      p_reason: JSON.stringify({ primary: primaryError, shown: lastError })
-        .slice(0, 500),
-    });
+    await confirmServiceRefund(
+      supabase,
+      txId,
+      JSON.stringify({ primary: primaryError, shown: lastError }).slice(0, 500),
+      "automatic",
+    );
     return json({
       success: false,
       error: lastError || "Could not verify this BVN. Please try again.",

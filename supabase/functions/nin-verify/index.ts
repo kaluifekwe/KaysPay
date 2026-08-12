@@ -10,6 +10,8 @@ import {
   readJsonBody,
   RequestBodyError,
 } from "../_shared/auth.ts";
+import { confirmServiceRefund } from "../_shared/service-refund.ts";
+import { getServicePriceKobo } from "../_shared/service-pricing.ts";
 import {
   isPremblyConfigured,
   verifyNin as verifyNinPrembly,
@@ -205,7 +207,11 @@ serve(async (req: Request) => {
     )
     ? String(body.slip_tier)
     : DEFAULT_SLIP_TIER;
-  const priceKobo = SLIP_PRICE_KOBO[slipTier];
+  const priceKobo = await getServicePriceKobo(
+    supabase,
+    slipTier === "card" ? "nin_verify_card" : "nin_verify_regular",
+    SLIP_PRICE_KOBO[slipTier],
+  );
 
   // CACHE: if this user already verified this same NIN in the last 24h,
   // serve our stored copy — no new charge and, crucially, no provider call.
@@ -374,11 +380,12 @@ serve(async (req: Request) => {
     // Logged reason keeps CheckMyNINBVN's real error (primaryError) even
     // when it gets superseded by a friendlier user-facing message below —
     // otherwise the actual cause of a failure is lost.
-    await supabase.rpc("refund_service_transaction", {
-      p_tx_id: txId,
-      p_reason: JSON.stringify({ primary: primaryError, shown: lastError })
-        .slice(0, 500),
-    });
+    await confirmServiceRefund(
+      supabase,
+      txId,
+      JSON.stringify({ primary: primaryError, shown: lastError }).slice(0, 500),
+      "automatic",
+    );
     return json({
       success: false,
       error: lastError || "Could not verify this NIN. Please try again.",

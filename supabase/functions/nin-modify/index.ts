@@ -10,6 +10,8 @@ import {
   readJsonBody,
   RequestBodyError,
 } from "../_shared/auth.ts";
+import { confirmServiceRefund } from "../_shared/service-refund.ts";
+import { getServicePriceKobo } from "../_shared/service-pricing.ts";
 import {
   isNinBvnConfigured,
   NinBvnError,
@@ -181,12 +183,13 @@ serve(async (req: Request) => {
 
   const requestId = String(body.idempotency_key || newRequestId());
   const txType = TX_TYPE[modType];
+  const priceKobo = await getServicePriceKobo(supabase, "nin_modification", MODIFICATION_PRICE_KOBO);
 
   const { data: txId, error: debitError } = await supabase.rpc(
     "debit_for_service",
     {
       p_user_id: user.id,
-      p_amount: MODIFICATION_PRICE_KOBO,
+      p_amount: priceKobo,
       p_type: txType,
       p_network: "N/A",
       p_recipient: nin,
@@ -218,10 +221,7 @@ serve(async (req: Request) => {
       data?.order_id ?? data?.data?.order_id;
 
     if (status >= 400 || !referenceId) {
-      await supabase.rpc("refund_service_transaction", {
-        p_tx_id: txId,
-        p_reason: data?.message || "order_rejected",
-      });
+      await confirmServiceRefund(supabase, txId, data?.message || "order_rejected", "automatic");
       return json({
         success: false,
         error: data?.message ||
@@ -249,12 +249,12 @@ serve(async (req: Request) => {
     });
   } catch (e) {
     const isConfigError = e instanceof NinBvnError;
-    await supabase.rpc("refund_service_transaction", {
-      p_tx_id: txId,
-      p_reason: isConfigError
-        ? `ninbvn_config: ${e.message}`
-        : "provider_unreachable",
-    });
+    await confirmServiceRefund(
+      supabase,
+      txId,
+      isConfigError ? `ninbvn_config: ${e.message}` : "provider_unreachable",
+      "automatic",
+    );
     return json({
       success: false,
       error: isConfigError
