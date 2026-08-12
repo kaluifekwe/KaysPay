@@ -38,17 +38,25 @@ const NIN_BACK_PAGE_CSS = `
     .disclaimer-box p { font-size: 11px; line-height: 1.6; margin: 10px 0; text-align: left; }
     .disclaimer-box .caution { font-size: 15px; font-weight: 800; margin: 16px 0 6px; }`;
 
+// Shared between the Regular Slip's separate back page (below) and the
+// Card's same-page fold-over back (see buildStandardSlipHtml) — one copy of
+// the wording so the two layouts can never drift apart.
+function disclaimerParagraphsHtml(): string {
+  return `
+    <p>Kindly ensure each time this ID is presented, that you verify the credentials using a Government-APPROVED verification resource. The details on the front of this NIN Slip must EXACTLY match the verification result.</p>
+    <div class="caution">CAUTION!</div>
+    <p>If this NIN was not issued to the person on the front, please DO NOT attempt to scan, photocopy or replicate the personal data contained herein.</p>
+    <p>You are only permitted to scan the barcode for the purpose of identity verification.</p>
+    <p>The FEDERAL GOVERNMENT of NIGERIA assumes no responsibility if you accept any variance in the scan result or do not scan the 2D barcode overleaf.</p>`;
+}
+
 function ninDisclaimerBackPageHtml(): string {
   return `
     <div class="back-page">
       <div class="disclaimer-box">
         <h1>DISCLAIMER</h1>
         <div class="tagline">Trust, but verify</div>
-        <p>Kindly ensure each time this ID is presented, that you verify the credentials using a Government-APPROVED verification resource. The details on the front of this NIN Slip must EXACTLY match the verification result.</p>
-        <div class="caution">CAUTION!</div>
-        <p>If this NIN was not issued to the person on the front, please DO NOT attempt to scan, photocopy or replicate the personal data contained herein.</p>
-        <p>You are only permitted to scan the barcode for the purpose of identity verification.</p>
-        <p>The FEDERAL GOVERNMENT of NIGERIA assumes no responsibility if you accept any variance in the scan result or do not scan the 2D barcode overleaf.</p>
+        ${disclaimerParagraphsHtml()}
       </div>
     </div>`;
 }
@@ -226,9 +234,17 @@ export function buildRegularSlipHtml(record: NinRecord, fullName: string, nin: s
 }
 
 // Standard Slip — the modern ID-card-style layout with QR code + watermark.
+// Front and back are printed on ONE page (back rotated 180deg, directly
+// below the front) rather than as a separate second page — matching a
+// reference "print your own NIN card" layout the owner provided, where a
+// single cut + single fold lines the two sides up with no manual alignment.
+// The vertical NIN watermark along both edges is the same reference's
+// anti-copy treatment, absent from the previous two-page version.
 export function buildStandardSlipHtml(record: NinRecord, fullName: string, nin: string, premium: boolean, emblemBase64: string): string {
   const [firstname, ...rest] = (fullName || '').split(' ');
   const givenNames = `${firstname || ''} ${record.middlename || rest.join(' ')}`.trim();
+  const ninDigitsRaw = record.nin || nin || '';
+  const vwmText = `${ninDigitsRaw}&nbsp;&nbsp;&nbsp;&nbsp;${ninDigitsRaw}`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8" />
   <style>
     body { font-family: -apple-system, Helvetica, Arial, sans-serif; padding: 32px; color: #111; }
@@ -236,10 +252,13 @@ export function buildStandardSlipHtml(record: NinRecord, fullName: string, nin: 
             padding: 20px 24px; background: #f4faf6; overflow: hidden; }
     .bg-pattern { position: absolute; inset: 0; background-image: repeating-linear-gradient(135deg, rgba(26,92,58,0.05) 0px, rgba(26,92,58,0.05) 1px, transparent 1px, transparent 6px); }
     .watermark { position: absolute; opacity: 0.14; left: 50%; top: 48%; transform: translate(-50%, -50%); }
+    .vwm { position: absolute; font-size: 10.5px; letter-spacing: 3px; color: rgba(26,92,58,0.3); font-family: 'Courier New', monospace; white-space: nowrap; }
+    .vwm-left { left: -20px; top: 50%; transform: translateY(-50%) rotate(-90deg); }
+    .vwm-right { right: -20px; top: 50%; transform: translateY(-50%) rotate(90deg); }
     .header-row { display: flex; justify-content: space-between; align-items: flex-start; position: relative; margin-bottom: 14px; }
     .brand-fed { font-size: 15px; font-weight: 800; color: #1a5c3a; line-height: 1.3; }
     .brand-sub { font-size: 12px; font-weight: 800; color: #16281f; letter-spacing: 0.5px; }
-    .qr { width: 92px; height: 92px; }
+    .qr { width: 108px; height: 108px; }
     .content-row { display: flex; position: relative; }
     .photo { width: 92px; height: 108px; object-fit: cover; border: 1px solid #9db9a8; }
     .photo-blank { background: #cfd8d2; }
@@ -253,18 +272,28 @@ export function buildStandardSlipHtml(record: NinRecord, fullName: string, nin: 
     .issue-value { font-size: 10px; font-weight: 700; color: #14231a; }
     .nin-row { text-align: center; margin-top: 20px; position: relative; }
     .nin-label { font-size: 10px; color: #16281f; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; }
-    .nin-digits { font-size: 28px; font-weight: 800; letter-spacing: 8px; margin-top: 4px; font-family: 'Courier New', monospace; color: #0d1a12; }${NIN_BACK_PAGE_CSS}
+    .nin-digits { font-size: 28px; font-weight: 800; letter-spacing: 8px; margin-top: 4px; font-family: 'Courier New', monospace; color: #0d1a12; }
+    .fold-gap { width: 540px; margin: 0 auto; height: 26px; position: relative; }
+    .fold-line { position: absolute; left: 0; right: 0; top: 50%; border-top: 1px dashed #b7c4bc; }
+    .fold-label { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); background: #fff; padding: 0 8px; font-size: 9px; color: #8a978f; letter-spacing: 1.5px; font-weight: 700; }
+    .back { transform: rotate(180deg); width: 540px; margin: 0 auto; border: 1.5px solid #333; border-radius: 8px; padding: 18px 22px; background: #fff; }
+    .back h2 { font-size: 17px; letter-spacing: 1.5px; margin: 0 0 4px; text-align: center; }
+    .back .tagline { font-style: italic; font-size: 11px; margin-bottom: 14px; text-align: center; color: #333; }
+    .back p { font-size: 10.5px; line-height: 1.55; margin: 9px 0; text-align: left; color: #222; }
+    .back .caution { font-size: 14px; font-weight: 800; margin: 14px 0 6px; text-align: center; }
   </style></head>
   <body>
     <div class="card">
       <div class="bg-pattern"></div>
       ${emblemTag(emblemBase64, 'watermark', 300)}
+      <div class="vwm vwm-left">${vwmText}</div>
+      <div class="vwm vwm-right">${vwmText}</div>
       <div class="header-row">
         <div>
           ${premium ? '<div class="brand-fed">FEDERAL REPUBLIC OF NIGERIA</div>' : ''}
           <div class="brand-sub">DIGITAL NIN SLIP</div>
         </div>
-        ${qrTag(record.nin || nin, 92)}
+        ${qrTag(record.nin || nin, 108)}
       </div>
       <div class="content-row">
         ${photoTag(record.photo)}
@@ -295,7 +324,15 @@ export function buildStandardSlipHtml(record: NinRecord, fullName: string, nin: 
         <div class="nin-digits">${(record.nin || nin || '').replace(/(\d{3})(?=\d)/g, '$1 ')}</div>
       </div>
     </div>
-    ${ninDisclaimerBackPageHtml()}
+    <div class="fold-gap">
+      <div class="fold-line"></div>
+      <div class="fold-label">FOLD HERE</div>
+    </div>
+    <div class="back">
+      <h2>DISCLAIMER</h2>
+      <div class="tagline">Trust, but verify</div>
+      ${disclaimerParagraphsHtml()}
+    </div>
   </body></html>`;
 }
 
