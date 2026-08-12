@@ -520,7 +520,13 @@ interface NinServicesScreenProps {
   navigation: { goBack: () => void };
 }
 
-type Mode = 'verify' | 'validate' | 'bvn' | 'modify';
+type Mode = 'verify' | 'bvn' | 'modify';
+// Which of the 4 options under the "NIN Modification" tab is showing.
+// Validation shares the tab with the 3 correction types (owner request,
+// 2026-08-12) even though it's a different backend call/price — it still
+// goes through the same provider review pipeline, so the Critical Notice
+// gate above correctly covers it too now that it lives in this tab.
+type ModifySection = 'name' | 'phone' | 'address' | 'validation';
 type VerifyState = 'idle' | 'processing' | 'result' | 'error';
 type ValidateState = 'idle' | 'processing' | 'submitted' | 'error';
 type BvnState = 'idle' | 'processing' | 'result' | 'error';
@@ -588,6 +594,8 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   // remembered on-device) rather than once per install.
   const [modifyNoticeAcknowledged, setModifyNoticeAcknowledged] = useState(false);
   const [noticeChecked, setNoticeChecked] = useState(false);
+  // Which of the 4 sub-options is active under "NIN Modification".
+  const [modifySection, setModifySection] = useState<ModifySection>('name');
 
   const isNinValid = /^\d{11}$/.test(nin);
   const canVerify = isNinValid && verifyState !== 'processing';
@@ -622,6 +630,17 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     if (next === 'modify') {
       setModifyNoticeAcknowledged(false);
       setNoticeChecked(false);
+      setModifySection('name');
+    }
+  }, []);
+
+  // Selecting a section under "NIN Modification". Name/Phone/Address keep
+  // modifyType (used by handleModify/canModify) in sync; Validation uses its
+  // own separate state/handlers (handleValidate) untouched by this.
+  const handleSelectModifySection = useCallback((section: ModifySection) => {
+    setModifySection(section);
+    if (section !== 'validation') {
+      setModifyType(section);
     }
   }, []);
 
@@ -1160,25 +1179,19 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
               style={[styles.segment, mode === 'verify' && styles.segmentActive]}
               onPress={() => handleSwitchMode('verify')}
             >
-              <Text style={[styles.segmentText, mode === 'verify' && styles.segmentTextActive]}>NIN</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.segment, mode === 'validate' && styles.segmentActive]}
-              onPress={() => handleSwitchMode('validate')}
-            >
-              <Text style={[styles.segmentText, mode === 'validate' && styles.segmentTextActive]}>Validate</Text>
+              <Text style={[styles.segmentText, mode === 'verify' && styles.segmentTextActive]}>NIN Verification</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.segment, mode === 'bvn' && styles.segmentActive]}
               onPress={() => handleSwitchMode('bvn')}
             >
-              <Text style={[styles.segmentText, mode === 'bvn' && styles.segmentTextActive]}>BVN</Text>
+              <Text style={[styles.segmentText, mode === 'bvn' && styles.segmentTextActive]}>BVN Verification</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.segment, mode === 'modify' && styles.segmentActive]}
               onPress={() => handleSwitchMode('modify')}
             >
-              <Text style={[styles.segmentText, mode === 'modify' && styles.segmentTextActive]}>Update</Text>
+              <Text style={[styles.segmentText, mode === 'modify' && styles.segmentTextActive]}>NIN Modification</Text>
             </TouchableOpacity>
           </View>
 
@@ -1311,7 +1324,35 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
             </View>
           )}
 
-          {mode === 'validate' && validateState !== 'submitted' && (
+          {mode === 'modify' && (modifySection === 'validation' ? validateState !== 'submitted' : modifyState !== 'submitted') && (
+            <View style={styles.modifySectionGrid}>
+              {(
+                [
+                  { key: 'name', label: 'Name Modification' },
+                  { key: 'phone', label: 'Phone Modification' },
+                  { key: 'address', label: 'Address Modification' },
+                  { key: 'validation', label: 'NIN Validation' },
+                ] as const
+              ).map(({ key, label }) => (
+                <TouchableOpacity
+                  key={key}
+                  style={[styles.modifySectionButton, modifySection === key && styles.modifySectionButtonSelected]}
+                  onPress={() => handleSelectModifySection(key)}
+                >
+                  <Text
+                    style={[
+                      styles.modifySectionButtonText,
+                      modifySection === key && styles.modifySectionButtonTextSelected,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {mode === 'modify' && modifySection === 'validation' && validateState !== 'submitted' && (
             <View>
               <Text style={styles.helperText}>
                 Confirms a NIN was genuinely issued and is active in NIMC's database — for NINs that exist but aren't reflecting properly elsewhere. This is not instant: results typically take 24-48 hours.
@@ -1364,7 +1405,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
             </View>
           )}
 
-          {mode === 'validate' && validateState === 'submitted' && (
+          {mode === 'modify' && modifySection === 'validation' && validateState === 'submitted' && (
             <View style={styles.resultCard}>
               <Text style={styles.resultName}>Validation Submitted</Text>
               <Text style={styles.helperText}>{validateMessage}</Text>
@@ -1491,25 +1532,11 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
             </View>
           )}
 
-          {mode === 'modify' && modifyState !== 'submitted' && (
+          {mode === 'modify' && modifySection !== 'validation' && modifyState !== 'submitted' && (
             <View>
               <Text style={styles.helperText}>
                 Request a correction to your NIN record with NIMC. This is not instant — reviewed orders typically take 24-48 hours, and the fee is charged upfront (refunded only if NIMC rejects it).
               </Text>
-
-              <View style={styles.genderRow}>
-                {(['name', 'phone', 'address'] as const).map((t) => (
-                  <TouchableOpacity
-                    key={t}
-                    style={[styles.genderButton, modifyType === t && styles.genderButtonSelected]}
-                    onPress={() => setModifyType(t)}
-                  >
-                    <Text style={[styles.genderText, modifyType === t && styles.genderTextSelected]}>
-                      {t === 'name' ? 'Name' : t === 'phone' ? 'Phone' : 'Address'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
 
               <Text style={styles.label}>NIN Number</Text>
               <TextInput
@@ -1624,7 +1651,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
             </View>
           )}
 
-          {mode === 'modify' && modifyState === 'submitted' && (
+          {mode === 'modify' && modifySection !== 'validation' && modifyState === 'submitted' && (
             <View style={styles.resultCard}>
               <Text style={styles.resultName}>Request Submitted</Text>
               <Text style={styles.helperText}>{modifyMessage}</Text>
@@ -1670,19 +1697,23 @@ const styles = StyleSheet.create({
     color: Colors.DARK,
     marginBottom: Spacing.M,
   },
-  genderRow: { flexDirection: 'row', gap: Spacing.M, marginBottom: Spacing.M },
-  genderButton: {
-    flex: 1,
-    height: Spacing.CHIP_HEIGHT,
-    borderRadius: Spacing.CHIP_HEIGHT / 2,
+  // 2x2 grid — 4 sub-options under "NIN Modification" each need a full
+  // label ("Name Modification", etc.), too long to fit a single row of 4.
+  modifySectionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.M, marginBottom: Spacing.L },
+  modifySectionButton: {
+    flexBasis: '47%',
+    flexGrow: 1,
+    paddingVertical: Spacing.M,
+    paddingHorizontal: Spacing.M,
+    borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
     borderColor: Colors.BORDER,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  genderButtonSelected: { borderColor: Colors.GREEN, backgroundColor: Colors.GREEN_LIGHT },
-  genderText: { ...Typography.BODY, color: Colors.DARK },
-  genderTextSelected: { color: Colors.GREEN_DARK, fontWeight: '600' },
+  modifySectionButtonSelected: { borderColor: Colors.GREEN, backgroundColor: Colors.GREEN_LIGHT },
+  modifySectionButtonText: { ...Typography.BODY, fontSize: 13, color: Colors.DARK, textAlign: 'center' },
+  modifySectionButtonTextSelected: { color: Colors.GREEN_DARK, fontWeight: '700' },
   consentRow: { flexDirection: 'row', alignItems: 'center', marginVertical: Spacing.L },
   checkbox: {
     width: 22,
