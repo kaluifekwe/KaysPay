@@ -69,7 +69,11 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [tab, setTab] = useState<Tab>('deposit');
   const [ngnBalance, setNgnBalance] = useState<number | null>(null);
   const [usdtBalance, setUsdtBalance] = useState<number | null>(null);
+  // Live USDT/NGN market price from Quidax. buyRate is the ask, sellRate the
+  // bid — each side of the screen quotes the price it would really get.
   const [rate, setRate] = useState<number | null>(null);
+  const [buyRate, setBuyRate] = useState<number | null>(null);
+  const [sellRate, setSellRate] = useState<number | null>(null);
 
   // Live balance held at Quidax under the user's own sub-account — kept
   // deliberately separate from usdtBalance (the old pooled-ledger number
@@ -111,7 +115,9 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     ]);
     if (walletResult.success && walletResult.wallet) setNgnBalance(walletResult.wallet.available_balance);
     setUsdtBalance(usdt);
-    setRate(liveRate);
+    setRate(liveRate?.rate ?? null);
+    setBuyRate(liveRate?.buyRate ?? null);
+    setSellRate(liveRate?.sellRate ?? null);
     setSavedAddresses(saved);
     if (quidaxAccount.success) {
       setQuidaxWallets(quidaxAccount.wallets);
@@ -173,8 +179,8 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const numericSellUsdt = parseFloat(sellUsdt);
   const numericWdAmount = parseFloat(wdAmount);
 
-  const buyNgnEstimate = rate && numericBuyUsd > 0 ? numericBuyUsd * rate : null;
-  const sellNgnEstimate = rate && numericSellUsdt > 0 ? numericSellUsdt * rate : null;
+  const buyNgnEstimate = buyRate && numericBuyUsd > 0 ? numericBuyUsd * buyRate : null;
+  const sellNgnEstimate = sellRate && numericSellUsdt > 0 ? numericSellUsdt * sellRate : null;
 
   const wdAddressValid = wdAddress.trim().length > 0 && isValidCryptoAddress(wdNetwork, wdAddress);
   const wdAddressError = wdAddress.trim().length > 0 && !wdAddressValid

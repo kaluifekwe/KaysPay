@@ -163,6 +163,42 @@ export async function createDepositAddress(params: {
   };
 }
 
+export interface QuidaxTicker {
+  /** Last traded price. */
+  last: number;
+  /** Best bid — what the market pays you when SELLING into it. */
+  bid: number;
+  /** Best ask — what you pay the market when BUYING from it. */
+  ask: number;
+}
+
+/**
+ * Live market price for a pair (e.g. "usdtngn"), straight from Quidax's own
+ * order book. This is the real crypto market rate — deliberately NOT the
+ * interbank USD/NGN feed in _shared/esim-catalog.ts, which is a once-daily
+ * bank rate built for eSIM pricing and sits well below what USDT actually
+ * trades at in Nigeria. Pricing crypto off that feed sold USDT below market.
+ */
+export async function getMarketTicker(market: string): Promise<QuidaxTicker> {
+  const { status, data } = await callQuidax(`/markets/tickers/${encodeURIComponent(market)}`, "GET");
+  if (status >= 400 || data?.status !== "success") {
+    throw new QuidaxError(data?.message || "Could not fetch the market price", status);
+  }
+  // Response is keyed by the market name: data.data.usdtngn.ticker
+  const ticker = data.data?.[market]?.ticker ?? data.data?.ticker;
+  const last = Number(ticker?.last);
+  const bid = Number(ticker?.buy);
+  const ask = Number(ticker?.sell);
+  if (!Number.isFinite(last) || last <= 0) {
+    throw new QuidaxError("Quidax returned no usable price for " + market);
+  }
+  return {
+    last,
+    bid: Number.isFinite(bid) && bid > 0 ? bid : last,
+    ask: Number.isFinite(ask) && ask > 0 ? ask : last,
+  };
+}
+
 /** The merchant's own (parent) account. Its id doubles as the `fund_uid`
  * for internal sub-account -> main transfers. */
 export async function getParentAccount(): Promise<QuidaxSubAccount> {

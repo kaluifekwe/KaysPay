@@ -65,12 +65,25 @@ export const cryptoService = {
     return micro / 1_000_000;
   },
 
-  /** Live USD->NGN rate for display only — buy/sell always re-fetch it server-side. */
-  async getQuoteRate(): Promise<number | null> {
+  /**
+   * Live USDT/NGN market price from Quidax, for display only — buy and sell
+   * always re-derive their own price server-side. `buyRate` is the ask (what
+   * buying costs) and `sellRate` the bid (what selling earns), so each side
+   * of the screen can show the price it would really get instead of a single
+   * mid-market number that flatters both.
+   */
+  async getQuoteRate(): Promise<{ rate: number; buyRate: number; sellRate: number } | null> {
     try {
       const { data, error } = await withTimeout(supabase.functions.invoke('crypto-quote', { body: {} }));
       if (error || !data?.success || !Number.isFinite(data.rate)) return null;
-      return Number(data.rate);
+      const rate = Number(data.rate);
+      const buyRate = Number(data.buy_rate);
+      const sellRate = Number(data.sell_rate);
+      return {
+        rate,
+        buyRate: Number.isFinite(buyRate) && buyRate > 0 ? buyRate : rate,
+        sellRate: Number.isFinite(sellRate) && sellRate > 0 ? sellRate : rate,
+      };
     } catch {
       return null;
     }
