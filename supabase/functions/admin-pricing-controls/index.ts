@@ -9,6 +9,7 @@ const SERVICE_KEYS = [
   "nin_validation", "bvn_verify_regular", "bvn_verify_card",
 ];
 const CABLETV_PROVIDERS = ["gotv", "dstv", "startimes"];
+const EXAM_IDS = ["waec", "neco", "nabteb", "jamb", "waec-registration", "nbais"];
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -34,6 +35,8 @@ serve(async (req) => {
       { data: cabletvPlans, error: cabletvPlanError },
       { data: cabletvOverrides, error: cabletvOverrideError },
       { data: electricityFee, error: electricityFeeError },
+      { data: examPlans, error: examPlanError },
+      { data: examOverrides, error: examOverrideError },
     ] = await Promise.all([
       db.from("vtunaija_data_catalog")
         .select("id, network, family_key, family_name, name, validity, available, reseller_kobo")
@@ -51,8 +54,15 @@ serve(async (req) => {
         .select("provider, plan_id, price_kobo, updated_at")
         .order("provider"),
       db.from("electricity_fee_config").select("fee_kobo, updated_at").eq("id", true).maybeSingle(),
+      db.from("vtunaija_exam_catalog")
+        .select("id, name, customer_kobo, available, requires_review")
+        .order("exam_code"),
+      db.from("vtu_exam_price_overrides").select("exam_id, price_kobo, updated_at"),
     ]);
-    if (planError || overrideError || serviceError || cabletvPlanError || cabletvOverrideError || electricityFeeError) {
+    if (
+      planError || overrideError || serviceError || cabletvPlanError || cabletvOverrideError ||
+      electricityFeeError || examPlanError || examOverrideError
+    ) {
       return json({ error: "Could not load pricing" }, 500);
     }
     return json({
@@ -63,6 +73,8 @@ serve(async (req) => {
       cabletv_plans: cabletvPlans,
       cabletv_price_overrides: cabletvOverrides,
       electricity_fee: electricityFee,
+      exam_plans: examPlans,
+      exam_price_overrides: examOverrides,
     });
   }
 
@@ -155,6 +167,29 @@ serve(async (req) => {
 
     const { error } = await db.rpc("set_cabletv_price", {
       p_admin_user_id: admin.userId, p_provider: provider, p_plan_id: planId, p_price_kobo: priceKobo,
+    });
+    if (error) return json({ error: "Could not save the custom price" }, 500);
+    return json({ success: true, price_kobo: priceKobo });
+  }
+
+  if (target === "exam_pin") {
+    const examId = String(body.exam_id || "");
+    const clear = body.clear === true;
+    if (!EXAM_IDS.includes(examId)) return json({ error: "Invalid exam" }, 400);
+
+    if (clear) {
+      const { error } = await db.rpc("clear_exam_pin_price", {
+        p_admin_user_id: admin.userId, p_exam_id: examId,
+      });
+      if (error) return json({ error: "Could not clear the custom price" }, 500);
+      return json({ success: true, cleared: true });
+    }
+
+    const priceKobo = Math.round(Number(body.price_kobo));
+    if (!Number.isFinite(priceKobo) || priceKobo <= 0) return json({ error: "Enter a valid price" }, 400);
+
+    const { error } = await db.rpc("set_exam_pin_price", {
+      p_admin_user_id: admin.userId, p_exam_id: examId, p_price_kobo: priceKobo,
     });
     if (error) return json({ error: "Could not save the custom price" }, 500);
     return json({ success: true, price_kobo: priceKobo });

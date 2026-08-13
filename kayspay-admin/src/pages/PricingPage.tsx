@@ -46,6 +46,20 @@ interface CableTVOverride {
   updated_at: string;
 }
 
+interface ExamPlan {
+  id: string;
+  name: string;
+  customer_kobo: number;
+  available: boolean;
+  requires_review: boolean;
+}
+
+interface ExamOverride {
+  exam_id: string;
+  price_kobo: number;
+  updated_at: string;
+}
+
 interface ElectricityFee {
   fee_kobo: number;
   updated_at: string;
@@ -83,6 +97,8 @@ export default function PricingPage() {
   const [servicePricing, setServicePricing] = useState<ServicePrice[]>([]);
   const [cabletvPlans, setCabletvPlans] = useState<CableTVPlan[]>([]);
   const [cabletvOverrides, setCabletvOverrides] = useState<CableTVOverride[]>([]);
+  const [examPlans, setExamPlans] = useState<ExamPlan[]>([]);
+  const [examOverrides, setExamOverrides] = useState<ExamOverride[]>([]);
   const [electricityFee, setElectricityFee] = useState<ElectricityFee | null>(null);
   const [network, setNetwork] = useState('mtn');
   const [cabletvProvider, setCabletvProvider] = useState('gotv');
@@ -92,6 +108,7 @@ export default function PricingPage() {
   const [serviceCostInputs, setServiceCostInputs] = useState<Record<string, string>>({});
   const [serviceMarkupInputs, setServiceMarkupInputs] = useState<Record<string, string>>({});
   const [cabletvInputs, setCabletvInputs] = useState<Record<string, string>>({});
+  const [examInputs, setExamInputs] = useState<Record<string, string>>({});
   const [electricityFeeInput, setElectricityFeeInput] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -102,6 +119,7 @@ export default function PricingPage() {
       const result = await callAdmin<{
         plans: DataPlan[]; price_overrides: PriceOverride[]; service_pricing: ServicePrice[];
         cabletv_plans: CableTVPlan[]; cabletv_price_overrides: CableTVOverride[]; electricity_fee: ElectricityFee | null;
+        exam_plans: ExamPlan[]; exam_price_overrides: ExamOverride[];
       }>('admin-pricing-controls');
       setPlans(result.plans);
       setOverrides(result.price_overrides);
@@ -109,6 +127,8 @@ export default function PricingPage() {
       setCabletvPlans(result.cabletv_plans);
       setCabletvOverrides(result.cabletv_price_overrides);
       setElectricityFee(result.electricity_fee);
+      setExamPlans(result.exam_plans);
+      setExamOverrides(result.exam_price_overrides);
     } catch (e) {
       setError(e instanceof AdminApiError ? e.message : 'Could not load pricing');
     } finally {
@@ -224,6 +244,42 @@ export default function PricingPage() {
       setCabletvOverrides((current) => [
         ...current.filter((item) => !(item.provider === cabletvProvider && item.plan_id === planId)),
         { provider: cabletvProvider, plan_id: planId, price_kobo: priceKobo, updated_at: new Date().toISOString() },
+      ]);
+    } catch (e) {
+      setError(e instanceof AdminApiError ? e.message : 'Could not save the price');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const examOverrideFor = (examId: string) => examOverrides.find((item) => item.exam_id === examId);
+
+  const saveExamPrice = async (examId: string) => {
+    const key = `exam:${examId}`;
+    const text = examInputs[examId];
+    setError(null);
+    setBusy(key);
+    try {
+      if (text === undefined || text.trim() === '') {
+        await callAdmin('admin-pricing-controls', { method: 'POST', body: { target: 'exam_pin', exam_id: examId, clear: true } });
+        setExamOverrides((current) => current.filter((item) => item.exam_id !== examId));
+        return;
+      }
+      const markupKobo = nairaTextToMarkupKobo(text);
+      if (markupKobo === null) {
+        setError('Enter a valid markup (0 or more), or leave it blank to use the provider price.');
+        return;
+      }
+      const exam = examPlans.find((item) => item.id === examId);
+      if (!exam) {
+        setError('Could not find this exam — try reloading the page.');
+        return;
+      }
+      const priceKobo = exam.customer_kobo + markupKobo;
+      await callAdmin('admin-pricing-controls', { method: 'POST', body: { target: 'exam_pin', exam_id: examId, price_kobo: priceKobo } });
+      setExamOverrides((current) => [
+        ...current.filter((item) => item.exam_id !== examId),
+        { exam_id: examId, price_kobo: priceKobo, updated_at: new Date().toISOString() },
       ]);
     } catch (e) {
       setError(e instanceof AdminApiError ? e.message : 'Could not save the price');
@@ -418,6 +474,54 @@ export default function PricingPage() {
                       {canEdit && (
                         <td>
                           <button className="primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === `service:${serviceKey}`} onClick={() => void saveServicePrice(serviceKey)}>
+                            Save
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="card">
+            <h3>Exam PIN Pricing</h3>
+            <p className="muted">
+              Provider Price is synced from VTUnaija every 15 minutes and re-syncs regardless of any markup set here — your markup is stored separately and re-applied automatically on top of whatever the provider is currently charging.
+            </p>
+            <table>
+              <thead><tr><th>Exam</th><th>Status</th><th>Provider Price</th><th>Your Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr></thead>
+              <tbody>
+                {examPlans.map((exam) => {
+                  const key = `exam:${exam.id}`;
+                  const override = examOverrideFor(exam.id);
+                  const inputValue = examInputs[exam.id] ?? (override ? ((override.price_kobo - exam.customer_kobo) / 100).toFixed(2) : '');
+                  const draftText = examInputs[exam.id];
+                  const previewMarkupKobo = draftText === undefined
+                    ? (override ? override.price_kobo - exam.customer_kobo : 0)
+                    : (draftText.trim() === '' ? 0 : nairaTextToMarkupKobo(draftText));
+                  const customerPaysKobo = previewMarkupKobo === null ? null : exam.customer_kobo + previewMarkupKobo;
+                  const statusLabel = exam.requires_review ? 'Needs Review' : (exam.available ? 'Available' : 'Unavailable');
+                  return (
+                    <tr key={exam.id}>
+                      <td>{exam.name}</td>
+                      <td><span className={`badge ${exam.available && !exam.requires_review ? 'enabled' : 'disabled'}`}>{statusLabel}</span></td>
+                      <td className="mono muted">{formatNaira(exam.customer_kobo)}</td>
+                      <td>
+                        <input
+                          className="mono"
+                          style={{ width: 110, textAlign: 'right', borderColor: override ? 'var(--warning)' : undefined, background: override ? '#fffbeb' : undefined }}
+                          placeholder="0"
+                          value={inputValue}
+                          disabled={!canEdit}
+                          onChange={(event) => setExamInputs((current) => ({ ...current, [exam.id]: event.target.value }))}
+                        />
+                      </td>
+                      <td className="mono">{customerPaysKobo === null ? '—' : formatNaira(customerPaysKobo)}</td>
+                      {canEdit && (
+                        <td>
+                          <button className="primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === key} onClick={() => void saveExamPrice(exam.id)}>
                             Save
                           </button>
                         </td>

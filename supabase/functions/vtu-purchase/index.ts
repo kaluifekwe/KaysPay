@@ -383,7 +383,15 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
           }
         }
         if (liveExam.available !== true || liveExam.requires_review === true) throw "EXAM_UNAVAILABLE";
-        const unitAmount = Number(liveExam.customer_kobo);
+        // Admin-settable markup (see migration 115) — customer_kobo itself is
+        // re-synced from the provider every 15 min with no markup applied, so
+        // the override lives in its own table the sync never touches.
+        const { data: examOverride } = await supabase
+          .from("vtu_exam_price_overrides")
+          .select("price_kobo")
+          .eq("exam_id", examId)
+          .maybeSingle();
+        const unitAmount = Number(examOverride?.price_kobo ?? liveExam.customer_kobo);
         if (!Number.isSafeInteger(unitAmount) || unitAmount <= 0) throw "CATALOG_STALE";
         const totalAmount = unitAmount * quantity;
         const quotedAmount = Number(body.quoted_amount_kobo);
