@@ -163,6 +163,118 @@ export async function createDepositAddress(params: {
   };
 }
 
+/** The merchant's own (parent) account. Its id doubles as the `fund_uid`
+ * for internal sub-account -> main transfers. */
+export async function getParentAccount(): Promise<QuidaxSubAccount> {
+  const { status, data } = await callQuidax("/users/me", "GET");
+  if (status >= 400 || data?.status !== "success") {
+    throw new QuidaxError(data?.message || "Could not fetch the Quidax parent account", status);
+  }
+  return { id: String(data.data.id), sn: String(data.data.sn), email: String(data.data.email) };
+}
+
+export interface QuidaxSwapQuotation {
+  id: string;
+  fromAmount: string;
+  toAmount: string;
+  quotedPrice: string;
+}
+
+/**
+ * Prices a swap on a sub-account's own balance. The quote is only valid for
+ * ~15 seconds, so confirmSwapQuotation must follow immediately — never
+ * quote on one request and confirm on a later one.
+ */
+export async function createSwapQuotation(params: {
+  quidaxUserId: string;
+  fromCurrency: string;
+  toCurrency: string;
+  fromAmount: string;
+}): Promise<QuidaxSwapQuotation> {
+  const { status, data } = await callQuidax(
+    `/users/${encodeURIComponent(params.quidaxUserId)}/swap_quotation`,
+    "POST",
+    {
+      from_currency: params.fromCurrency,
+      to_currency: params.toCurrency,
+      from_amount: params.fromAmount,
+    },
+  );
+  if (status >= 400 || data?.status !== "success") {
+    throw new QuidaxError(data?.message || "Could not price this swap", status);
+  }
+  return {
+    id: String(data.data.id),
+    fromAmount: String(data.data.from_amount),
+    toAmount: String(data.data.to_amount),
+    quotedPrice: String(data.data.quoted_price),
+  };
+}
+
+export interface QuidaxSwapTransaction {
+  id: string;
+  status: string;
+  receivedAmount: string | null;
+}
+
+/** Executes a quotation. Comes back "initiated" — the swap settles
+ * asynchronously and is confirmed by the swap_transaction.complete webhook. */
+export async function confirmSwapQuotation(params: {
+  quidaxUserId: string;
+  quotationId: string;
+}): Promise<QuidaxSwapTransaction> {
+  const { status, data } = await callQuidax(
+    `/users/${encodeURIComponent(params.quidaxUserId)}/swap_quotation/${encodeURIComponent(params.quotationId)}/confirm`,
+    "POST",
+  );
+  if (status >= 400 || data?.status !== "success") {
+    throw new QuidaxError(data?.message || "Could not complete this swap", status);
+  }
+  return {
+    id: String(data.data.id),
+    status: String(data.data.status),
+    receivedAmount: data.data.received_amount != null ? String(data.data.received_amount) : null,
+  };
+}
+
+/**
+ * Moves funds out of a sub-account. `fundUid` is either an external
+ * blockchain address (a real withdrawal) or another Quidax account id (an
+ * internal transfer — that's how sub-account -> main sweeps work). Settles
+ * asynchronously via the withdraw.successful / withdraw.rejected webhooks,
+ * matched on `reference`, which must be unique per withdrawal.
+ */
+export async function createWithdrawal(params: {
+  quidaxUserId: string;
+  currency: string;
+  amount: string;
+  fundUid: string;
+  reference: string;
+  network?: string;
+  narration?: string;
+}): Promise<{ id: string; status: string; fee: string | null }> {
+  const { status, data } = await callQuidax(
+    `/users/${encodeURIComponent(params.quidaxUserId)}/withdraws`,
+    "POST",
+    {
+      currency: params.currency,
+      amount: params.amount,
+      fund_uid: params.fundUid,
+      reference: params.reference,
+      ...(params.network ? { network: params.network } : {}),
+      ...(params.narration ? { narration: params.narration } : {}),
+    },
+  );
+  if (status >= 400 || data?.status !== "success") {
+    throw new QuidaxError(data?.message || "Could not start this withdrawal", status);
+  }
+  return {
+    id: String(data.data.id),
+    status: String(data.data.status),
+    fee: data.data.fee != null ? String(data.data.fee) : null,
+  };
+}
+
 /**
  * Verifies a Quidax webhook's HMAC-SHA256 signature. Header format is
  * `t=<timestamp>,s=<signature>`; the signed payload is `${timestamp}.${rawBody}`

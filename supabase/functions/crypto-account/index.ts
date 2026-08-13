@@ -45,10 +45,8 @@ serve(async (req: Request) => {
       })),
     });
   } catch (e) {
-    const detail = e instanceof Error ? e.message : String(e);
-    console.error("crypto-account failed:", detail);
-    // TEMPORARY: surfacing the real error while diagnosing the first live
-    // failure report — revert to a generic message once resolved.
-    return json({ success: false, error: `Could not load your crypto account: ${detail}` }, 500);
+    // Provider detail stays in the logs, never in the client response.
+    console.error("crypto-account failed:", e instanceof Error ? e.message : e);
+    return json({ success: false, error: "Could not load your crypto account. Please try again." }, 500);
   }
 });

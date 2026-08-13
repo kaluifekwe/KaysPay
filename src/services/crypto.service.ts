@@ -42,6 +42,10 @@ export interface CryptoActionResult {
   success: boolean;
   error?: string;
   transactionId?: string;
+  // Sell and withdraw settle asynchronously on Quidax's side — the request
+  // succeeding only means it was accepted, not that it has completed.
+  pending?: boolean;
+  message?: string;
 }
 
 function newIdempotencyKey(prefix: string): string {
@@ -177,7 +181,12 @@ export const cryptoService = {
         return { success: false, error: msg };
       }
       if (!data?.success) return { success: false, error: data?.error || 'Sale failed' };
-      return { success: true, transactionId: data.transaction_id };
+      return {
+        success: true,
+        transactionId: data.transaction_id,
+        pending: data.pending === true,
+        message: data.message,
+      };
     } catch {
       return { success: false, error: 'Network error. Please try again.' };
     }
@@ -212,7 +221,12 @@ export const cryptoService = {
         return { success: false, error: msg };
       }
       if (!data?.success) return { success: false, error: data?.error || 'Withdrawal failed' };
-      return { success: true, transactionId: data.transaction_id };
+      return {
+        success: true,
+        transactionId: data.transaction_id,
+        pending: data.pending === true,
+        message: data.message,
+      };
     } catch {
       return { success: false, error: 'Network error. Please try again.' };
     }

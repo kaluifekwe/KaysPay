@@ -87,6 +87,9 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
   const [actionState, setActionState] = useState<ResultStatus | 'idle'>('idle');
   const [actionError, setActionError] = useState('');
+  // Sell and withdraw are accepted-then-settled, so the result screen needs
+  // to say "processing", not imply the money already moved.
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionAmountNgn, setActionAmountNgn] = useState<number | null>(null);
 
   const [buyUsd, setBuyUsd] = useState('');
@@ -123,6 +126,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   }, [loadAll]);
 
   const quidaxUsdt = quidaxWallets.find((w) => w.currency === 'USDT');
+  // Sell and Withdraw both spend the real balance held in the user's own
+  // Quidax sub-account — never the legacy `usdtBalance` ledger number,
+  // which only backs the not-yet-migrated Buy flow.
+  const quidaxUsdtBalance = quidaxUsdt ? Number(quidaxUsdt.balance) : null;
 
   // Any network change invalidates whatever address is on screen — never
   // show a TRC20 address after the user switched to BEP20.
@@ -177,9 +184,9 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const canBuy = Number.isFinite(numericBuyUsd) && numericBuyUsd >= 1 && numericBuyUsd <= 2000
     && ngnBalance != null && buyNgnEstimate != null && buyNgnEstimate <= ngnBalance;
   const canSell = Number.isFinite(numericSellUsdt) && numericSellUsdt >= 1 && numericSellUsdt <= 2000
-    && usdtBalance != null && numericSellUsdt <= usdtBalance;
+    && quidaxUsdtBalance != null && numericSellUsdt <= quidaxUsdtBalance;
   const canWithdraw = Number.isFinite(numericWdAmount) && numericWdAmount >= 5 && numericWdAmount <= 2000
-    && usdtBalance != null && numericWdAmount <= usdtBalance && wdAddressValid && wdVerified;
+    && quidaxUsdtBalance != null && numericWdAmount <= quidaxUsdtBalance && wdAddressValid && wdVerified;
 
   const handleBuy = useCallback(async () => {
     if (!canBuy) return;
@@ -206,6 +213,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     setActionState('processing');
     const result = await cryptoService.sell(numericSellUsdt, authResult.token);
     if (result.success) {
+      setActionMessage(result.message ?? null);
       setActionState('success');
       setSellUsdt('');
       loadAll();
@@ -225,6 +233,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     setActionState('processing');
     const result = await cryptoService.withdraw(wdNetwork, wdAddress, numericWdAmount, authResult.token);
     if (result.success) {
+      setActionMessage(result.message ?? null);
       setActionState('success');
       await cryptoService.saveAddress(wdNetwork, wdAddress, '');
       setWdAddress('');
@@ -255,8 +264,8 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
         status={actionState}
         headerTitle="Crypto"
         amount={actionAmountNgn ?? undefined}
-        message={actionState === 'failed' ? actionError : undefined}
-        onDone={() => setActionState('idle')}
+        message={actionState === 'failed' ? actionError : actionMessage ?? undefined}
+        onDone={() => { setActionMessage(null); setActionState('idle'); }}
       />
     );
   }
@@ -398,7 +407,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 {sellNgnEstimate != null && (
                   <Text style={styles.estimateText}>≈ {formatNaira(sellNgnEstimate)}</Text>
                 )}
-                {usdtBalance != null && numericSellUsdt > usdtBalance && (
+                {quidaxUsdtBalance != null && numericSellUsdt > quidaxUsdtBalance && (
                   <Text style={styles.errorText}>Insufficient USDT balance.</Text>
                 )}
                 <TouchableOpacity
@@ -415,8 +424,8 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             {tab === 'withdraw' && (
               <View>
                 <Text style={styles.notLiveBanner}>
-                  External wallet withdrawals aren't live yet — you can set everything up now, but sending will show
-                  "not available" until this goes live.
+                  Sends the USDT held in your crypto account to any external wallet. Network fees are deducted by the
+                  network itself.
                 </Text>
 
                 {savedAddresses.length > 0 && (
@@ -468,7 +477,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   placeholderTextColor={Colors.GRAY}
                   keyboardType="decimal-pad"
                 />
-                {usdtBalance != null && numericWdAmount > usdtBalance && (
+                {quidaxUsdtBalance != null && numericWdAmount > quidaxUsdtBalance && (
                   <Text style={styles.errorText}>Insufficient USDT balance.</Text>
                 )}
 
