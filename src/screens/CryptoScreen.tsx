@@ -11,8 +11,10 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -35,6 +37,37 @@ interface CryptoScreenProps {
 }
 
 type Tab = 'deposit' | 'buy' | 'sell' | 'withdraw';
+
+// A deliberately darker theme for just this screen — the rest of the app
+// stays on the shared light Colors palette, but a "your investment/crypto
+// balance lives here" section reading as a distinct, premium space is a
+// common, deliberate pattern (Binance, Trust Wallet) rather than an
+// inconsistency. Scoped locally since nothing else in the app reuses it.
+const Dark = {
+  BG: '#0E1712',
+  PANEL: '#131F19',
+  PANEL_BORDER: '#1E2E25',
+  CHIP: '#1B2A22',
+  ACCENT: '#5FCB9A',
+  TEXT: '#FFFFFF',
+  TEXT_MUTED: '#B7CCC1',
+  TEXT_FAINT: '#7FA895',
+  BORDER: '#23342A',
+  ERROR: '#E29A9A',
+};
+
+const TAB_ICONS: Record<Tab, keyof typeof Ionicons.glyphMap> = {
+  deposit: 'arrow-down-circle-outline',
+  buy: 'add-circle-outline',
+  sell: 'arrow-up-circle-outline',
+  withdraw: 'paper-plane-outline',
+};
+const TAB_LABELS: Record<Tab, string> = {
+  deposit: 'Deposit',
+  buy: 'Buy',
+  sell: 'Sell',
+  withdraw: 'Withdraw',
+};
 
 function formatUsdt(n: number): string {
   return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDT`;
@@ -241,246 +274,243 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle="light-content" backgroundColor={Dark.BG} />
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>{'<'}</Text>
+          <Ionicons name="chevron-back" size={26} color={Dark.TEXT} />
         </TouchableOpacity>
         <Text style={styles.topTitle}>Crypto</Text>
       </View>
 
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-          <View style={styles.balanceRow}>
-            <View style={styles.balanceCard}>
-              <Text style={styles.balanceLabel}>Wallet</Text>
-              <Text style={styles.balanceValue}>{ngnBalance != null ? formatNaira(ngnBalance) : '—'}</Text>
-            </View>
-            <View style={styles.balanceCard}>
-              <Text style={styles.balanceLabel}>USDT Balance</Text>
-              <Text style={styles.balanceValue}>{usdtBalance != null ? formatUsdt(usdtBalance) : '—'}</Text>
-            </View>
-          </View>
-          <View style={styles.balanceCardWide}>
-            <Text style={styles.balanceLabel}>Deposited USDT (held in your own crypto account)</Text>
-            <Text style={styles.balanceValue}>
+          <View style={styles.hero}>
+            <Text style={styles.heroLabel}>Deposited USDT</Text>
+            <Text style={styles.heroValue}>
               {quidaxUsdt ? formatUsdt(Number(quidaxUsdt.balance)) : quidaxLoadError ? '—' : formatUsdt(0)}
             </Text>
-            {quidaxLoadError && <Text style={styles.errorText}>{quidaxLoadError}</Text>}
+            {quidaxLoadError ? (
+              <Text style={styles.heroError}>{quidaxLoadError}</Text>
+            ) : (
+              <Text style={styles.heroSub}>
+                Naira wallet {ngnBalance != null ? formatNaira(ngnBalance) : '—'}
+                {rate != null ? ` · 1 USDT ≈ ${formatNaira(rate)}` : ''}
+              </Text>
+            )}
+            {usdtBalance != null && usdtBalance > 0 && (
+              <Text style={styles.heroLegacy}>+ {formatUsdt(usdtBalance)} from Buy (not yet deposited)</Text>
+            )}
           </View>
-          {rate != null && (
-            <Text style={styles.rateText}>1 USDT ≈ {formatNaira(rate)}</Text>
-          )}
 
-          <View style={styles.tabs}>
+          <View style={styles.actionsRow}>
             {(['deposit', 'buy', 'sell', 'withdraw'] as Tab[]).map((t) => (
-              <TouchableOpacity
-                key={t}
-                style={[styles.tab, tab === t && styles.tabActive]}
-                onPress={() => setTab(t)}
-              >
-                <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-                  {t === 'deposit' ? 'Deposit' : t === 'buy' ? 'Buy' : t === 'sell' ? 'Sell' : 'Withdraw'}
-                </Text>
+              <TouchableOpacity key={t} style={styles.actionItem} onPress={() => setTab(t)} activeOpacity={0.75}>
+                <View style={[styles.actionIcon, tab === t && styles.actionIconActive]}>
+                  <Ionicons name={TAB_ICONS[t]} size={20} color={Dark.ACCENT} />
+                </View>
+                <Text style={[styles.actionLabel, tab === t && styles.actionLabelActive]}>{TAB_LABELS[t]}</Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          {tab === 'deposit' && (
-            <View style={styles.section}>
-              <Text style={styles.hintText}>
-                Bring USDT you already hold on Binance, Bybit, or another exchange into your own crypto account here.
-              </Text>
-
-              <Text style={styles.label}>Network</Text>
-              <View style={styles.networkRow}>
-                {CRYPTO_NETWORKS.map((n) => (
-                  <TouchableOpacity
-                    key={n.key}
-                    style={[styles.networkChip, depositNetwork === n.key && styles.networkChipSelected]}
-                    onPress={() => setDepositNetwork(n.key)}
-                  >
-                    <Text style={[styles.networkChipText, depositNetwork === n.key && styles.networkChipTextSelected]}>
-                      {n.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              {depositAddress ? (
-                <View style={styles.confirmBox}>
-                  <View style={styles.qrWrapper}>
-                    <QrCodeView value={depositAddress} size={180} />
-                  </View>
-                  <Text style={styles.depositAddressText} selectable>{depositAddress}</Text>
-                  <TouchableOpacity style={styles.copyAddressButton} onPress={handleCopyDepositAddress}>
-                    <Text style={styles.copyAddressButtonText}>{addressCopied ? 'Copied ✓' : 'Copy Address'}</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.confirmWarning}>
-                    Only send USDT on {depositNetwork} to this address. Sending on the wrong network, or any other
-                    asset, cannot be recovered.
-                  </Text>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.primaryButton, depositLoading && styles.primaryButtonDisabled]}
-                  onPress={handleGenerateDepositAddress}
-                  disabled={depositLoading}
-                >
-                  {depositLoading ? (
-                    <ActivityIndicator color={Colors.WHITE} />
-                  ) : (
-                    <Text style={styles.primaryButtonText}>Generate Deposit Address</Text>
-                  )}
-                </TouchableOpacity>
-              )}
-              {depositError && <Text style={styles.errorText}>{depositError}</Text>}
-            </View>
-          )}
-
-          {tab === 'buy' && (
-            <View style={styles.section}>
-              <Text style={styles.label}>Amount (USD)</Text>
-              <TextInput
-                style={styles.input}
-                value={buyUsd}
-                onChangeText={(t) => setBuyUsd(t.replace(/[^0-9.]/g, ''))}
-                placeholder="e.g. 30"
-                placeholderTextColor={Colors.GRAY}
-                keyboardType="decimal-pad"
-              />
-              {buyNgnEstimate != null && (
-                <Text style={styles.estimateText}>
-                  ≈ {numericBuyUsd.toFixed(2)} USDT · {formatNaira(buyNgnEstimate)}
+          <View style={styles.panel}>
+            {tab === 'deposit' && (
+              <View>
+                <Text style={styles.hintText}>
+                  Bring USDT you already hold on Binance, Bybit, or another exchange into your own crypto account here.
                 </Text>
-              )}
-              {ngnBalance != null && buyNgnEstimate != null && buyNgnEstimate > ngnBalance && (
-                <Text style={styles.errorText}>Insufficient wallet balance.</Text>
-              )}
-              <TouchableOpacity
-                style={[styles.primaryButton, !canBuy && styles.primaryButtonDisabled]}
-                onPress={handleBuy}
-                disabled={!canBuy}
-              >
-                <Text style={styles.primaryButtonText}>Buy USDT</Text>
-              </TouchableOpacity>
-            </View>
-          )}
 
-          {tab === 'sell' && (
-            <View style={styles.section}>
-              <Text style={styles.label}>Amount (USDT)</Text>
-              <TextInput
-                style={styles.input}
-                value={sellUsdt}
-                onChangeText={(t) => setSellUsdt(t.replace(/[^0-9.]/g, ''))}
-                placeholder="e.g. 10"
-                placeholderTextColor={Colors.GRAY}
-                keyboardType="decimal-pad"
-              />
-              {sellNgnEstimate != null && (
-                <Text style={styles.estimateText}>≈ {formatNaira(sellNgnEstimate)}</Text>
-              )}
-              {usdtBalance != null && numericSellUsdt > usdtBalance && (
-                <Text style={styles.errorText}>Insufficient USDT balance.</Text>
-              )}
-              <TouchableOpacity
-                style={[styles.primaryButton, !canSell && styles.primaryButtonDisabled]}
-                onPress={handleSell}
-                disabled={!canSell}
-              >
-                <Text style={styles.primaryButtonText}>Sell USDT</Text>
-              </TouchableOpacity>
-              <Text style={styles.hintText}>Proceeds go straight to your wallet — withdraw to your bank from Home as usual.</Text>
-            </View>
-          )}
-
-          {tab === 'withdraw' && (
-            <View style={styles.section}>
-              <Text style={styles.notLiveBanner}>
-                External wallet withdrawals aren't live yet — you can set everything up now, but sending will show
-                "not available" until this goes live.
-              </Text>
-
-              {savedAddresses.length > 0 && (
-                <>
-                  <Text style={styles.label}>Saved addresses</Text>
-                  {savedAddresses.map((a) => (
-                    <TouchableOpacity key={a.id} style={styles.savedRow} onPress={() => handlePickSaved(a)}>
-                      <Text style={styles.savedRowText} numberOfLines={1}>
-                        {a.label ? `${a.label} · ` : ''}{a.address.slice(0, 6)}...{a.address.slice(-4)} ({a.network})
+                <Text style={styles.label}>Network</Text>
+                <View style={styles.networkRow}>
+                  {CRYPTO_NETWORKS.map((n) => (
+                    <TouchableOpacity
+                      key={n.key}
+                      style={[styles.networkChip, depositNetwork === n.key && styles.networkChipSelected]}
+                      onPress={() => setDepositNetwork(n.key)}
+                    >
+                      <Text style={[styles.networkChipText, depositNetwork === n.key && styles.networkChipTextSelected]}>
+                        {n.label}
                       </Text>
                     </TouchableOpacity>
                   ))}
-                </>
-              )}
-
-              <Text style={styles.label}>Network</Text>
-              <View style={styles.networkRow}>
-                {CRYPTO_NETWORKS.map((n) => (
-                  <TouchableOpacity
-                    key={n.key}
-                    style={[styles.networkChip, wdNetwork === n.key && styles.networkChipSelected]}
-                    onPress={() => setWdNetwork(n.key)}
-                  >
-                    <Text style={[styles.networkChipText, wdNetwork === n.key && styles.networkChipTextSelected]}>
-                      {n.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.label}>Wallet Address</Text>
-              <TextInput
-                style={styles.input}
-                value={wdAddress}
-                onChangeText={setWdAddress}
-                placeholder={`Paste your ${wdNetwork} address`}
-                placeholderTextColor={Colors.GRAY}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              {wdAddressError && <Text style={styles.errorText}>{wdAddressError}</Text>}
-
-              <Text style={styles.label}>Amount (USDT)</Text>
-              <TextInput
-                style={styles.input}
-                value={wdAmount}
-                onChangeText={(t) => setWdAmount(t.replace(/[^0-9.]/g, ''))}
-                placeholder="e.g. 20"
-                placeholderTextColor={Colors.GRAY}
-                keyboardType="decimal-pad"
-              />
-              {usdtBalance != null && numericWdAmount > usdtBalance && (
-                <Text style={styles.errorText}>Insufficient USDT balance.</Text>
-              )}
-
-              {wdAddressValid && numericWdAmount > 0 && (
-                <View style={styles.confirmBox}>
-                  <Text style={styles.confirmText}>
-                    Sending {Number.isFinite(numericWdAmount) ? numericWdAmount : 0} USDT on {wdNetwork} to{'\n'}
-                    {wdAddress.trim()}
-                  </Text>
-                  <Text style={styles.confirmWarning}>
-                    This cannot be reversed if the address or network is wrong. Only send to a wallet you control.
-                  </Text>
-                  <TouchableOpacity style={styles.checkRow} onPress={() => setWdVerified((v) => !v)}>
-                    <View style={[styles.checkbox, wdVerified && styles.checkboxChecked]}>
-                      {wdVerified && <Text style={styles.checkboxMark}>✓</Text>}
-                    </View>
-                    <Text style={styles.checkLabel}>I've checked this address and network are correct</Text>
-                  </TouchableOpacity>
                 </View>
-              )}
 
-              <TouchableOpacity
-                style={[styles.primaryButton, !canWithdraw && styles.primaryButtonDisabled]}
-                onPress={handleWithdraw}
-                disabled={!canWithdraw}
-              >
-                <Text style={styles.primaryButtonText}>Withdraw USDT</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+                {depositAddress ? (
+                  <View style={styles.confirmBox}>
+                    <View style={styles.qrCard}>
+                      <QrCodeView value={depositAddress} size={160} />
+                    </View>
+                    <Text style={styles.depositAddressText} selectable>{depositAddress}</Text>
+                    <TouchableOpacity style={styles.copyAddressButton} onPress={handleCopyDepositAddress}>
+                      <Text style={styles.copyAddressButtonText}>{addressCopied ? 'Copied ✓' : 'Copy Address'}</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.confirmWarning}>
+                      Only send USDT on {depositNetwork} to this address. Sending on the wrong network, or any other
+                      asset, cannot be recovered.
+                    </Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.primaryButton, depositLoading && styles.primaryButtonDisabled]}
+                    onPress={handleGenerateDepositAddress}
+                    disabled={depositLoading}
+                  >
+                    {depositLoading ? (
+                      <ActivityIndicator color={Dark.BG} />
+                    ) : (
+                      <Text style={styles.primaryButtonText}>Generate Deposit Address</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+                {depositError && <Text style={styles.errorText}>{depositError}</Text>}
+              </View>
+            )}
+
+            {tab === 'buy' && (
+              <View>
+                <Text style={styles.label}>Amount (USD)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={buyUsd}
+                  onChangeText={(t) => setBuyUsd(t.replace(/[^0-9.]/g, ''))}
+                  placeholder="e.g. 30"
+                  placeholderTextColor={Dark.TEXT_FAINT}
+                  keyboardType="decimal-pad"
+                />
+                {buyNgnEstimate != null && (
+                  <Text style={styles.estimateText}>
+                    ≈ {numericBuyUsd.toFixed(2)} USDT · {formatNaira(buyNgnEstimate)}
+                  </Text>
+                )}
+                {ngnBalance != null && buyNgnEstimate != null && buyNgnEstimate > ngnBalance && (
+                  <Text style={styles.errorText}>Insufficient wallet balance.</Text>
+                )}
+                <TouchableOpacity
+                  style={[styles.primaryButton, !canBuy && styles.primaryButtonDisabled]}
+                  onPress={handleBuy}
+                  disabled={!canBuy}
+                >
+                  <Text style={styles.primaryButtonText}>Buy USDT</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {tab === 'sell' && (
+              <View>
+                <Text style={styles.label}>Amount (USDT)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={sellUsdt}
+                  onChangeText={(t) => setSellUsdt(t.replace(/[^0-9.]/g, ''))}
+                  placeholder="e.g. 10"
+                  placeholderTextColor={Dark.TEXT_FAINT}
+                  keyboardType="decimal-pad"
+                />
+                {sellNgnEstimate != null && (
+                  <Text style={styles.estimateText}>≈ {formatNaira(sellNgnEstimate)}</Text>
+                )}
+                {usdtBalance != null && numericSellUsdt > usdtBalance && (
+                  <Text style={styles.errorText}>Insufficient USDT balance.</Text>
+                )}
+                <TouchableOpacity
+                  style={[styles.primaryButton, !canSell && styles.primaryButtonDisabled]}
+                  onPress={handleSell}
+                  disabled={!canSell}
+                >
+                  <Text style={styles.primaryButtonText}>Sell USDT</Text>
+                </TouchableOpacity>
+                <Text style={styles.hintText}>Proceeds go straight to your wallet — withdraw to your bank from Home as usual.</Text>
+              </View>
+            )}
+
+            {tab === 'withdraw' && (
+              <View>
+                <Text style={styles.notLiveBanner}>
+                  External wallet withdrawals aren't live yet — you can set everything up now, but sending will show
+                  "not available" until this goes live.
+                </Text>
+
+                {savedAddresses.length > 0 && (
+                  <>
+                    <Text style={styles.label}>Saved addresses</Text>
+                    {savedAddresses.map((a) => (
+                      <TouchableOpacity key={a.id} style={styles.savedRow} onPress={() => handlePickSaved(a)}>
+                        <Text style={styles.savedRowText} numberOfLines={1}>
+                          {a.label ? `${a.label} · ` : ''}{a.address.slice(0, 6)}...{a.address.slice(-4)} ({a.network})
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </>
+                )}
+
+                <Text style={styles.label}>Network</Text>
+                <View style={styles.networkRow}>
+                  {CRYPTO_NETWORKS.map((n) => (
+                    <TouchableOpacity
+                      key={n.key}
+                      style={[styles.networkChip, wdNetwork === n.key && styles.networkChipSelected]}
+                      onPress={() => setWdNetwork(n.key)}
+                    >
+                      <Text style={[styles.networkChipText, wdNetwork === n.key && styles.networkChipTextSelected]}>
+                        {n.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.label}>Wallet Address</Text>
+                <TextInput
+                  style={styles.input}
+                  value={wdAddress}
+                  onChangeText={setWdAddress}
+                  placeholder={`Paste your ${wdNetwork} address`}
+                  placeholderTextColor={Dark.TEXT_FAINT}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {wdAddressError && <Text style={styles.errorText}>{wdAddressError}</Text>}
+
+                <Text style={styles.label}>Amount (USDT)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={wdAmount}
+                  onChangeText={(t) => setWdAmount(t.replace(/[^0-9.]/g, ''))}
+                  placeholder="e.g. 20"
+                  placeholderTextColor={Dark.TEXT_FAINT}
+                  keyboardType="decimal-pad"
+                />
+                {usdtBalance != null && numericWdAmount > usdtBalance && (
+                  <Text style={styles.errorText}>Insufficient USDT balance.</Text>
+                )}
+
+                {wdAddressValid && numericWdAmount > 0 && (
+                  <View style={styles.confirmBox}>
+                    <Text style={styles.confirmText}>
+                      Sending {Number.isFinite(numericWdAmount) ? numericWdAmount : 0} USDT on {wdNetwork} to{'\n'}
+                      {wdAddress.trim()}
+                    </Text>
+                    <Text style={styles.confirmWarning}>
+                      This cannot be reversed if the address or network is wrong. Only send to a wallet you control.
+                    </Text>
+                    <TouchableOpacity style={styles.checkRow} onPress={() => setWdVerified((v) => !v)}>
+                      <View style={[styles.checkbox, wdVerified && styles.checkboxChecked]}>
+                        {wdVerified && <Text style={styles.checkboxMark}>✓</Text>}
+                      </View>
+                      <Text style={styles.checkLabel}>I've checked this address and network are correct</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.primaryButton, !canWithdraw && styles.primaryButtonDisabled]}
+                  onPress={handleWithdraw}
+                  disabled={!canWithdraw}
+                >
+                  <Text style={styles.primaryButtonText}>Withdraw USDT</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -488,7 +518,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE },
+  container: { flex: 1, backgroundColor: Dark.BG },
   flex: { flex: 1 },
   topBar: {
     flexDirection: 'row',
@@ -498,69 +528,56 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.S,
   },
   backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  backText: { fontSize: 26, fontWeight: '600', color: Colors.DARK },
-  topTitle: { ...Typography.SECTION_HEADING, color: Colors.DARK, marginLeft: Spacing.S },
+  topTitle: { ...Typography.SECTION_HEADING, color: Dark.TEXT, marginLeft: Spacing.S },
   scrollContent: { paddingHorizontal: Spacing.SCREEN_PADDING, paddingBottom: 60 },
 
-  balanceRow: { flexDirection: 'row', gap: Spacing.M, marginTop: Spacing.S },
-  balanceCard: {
-    flex: 1,
-    backgroundColor: Colors.LIGHT_GRAY,
-    borderRadius: Spacing.CARD_RADIUS,
-    padding: Spacing.CARD_PADDING,
-  },
-  balanceLabel: { ...Typography.CAPTION, color: Colors.GRAY },
-  balanceValue: { ...Typography.CARD_TITLE, marginTop: Spacing.XS },
-  balanceCardWide: {
-    backgroundColor: Colors.LIGHT_GRAY,
-    borderRadius: Spacing.CARD_RADIUS,
-    padding: Spacing.CARD_PADDING,
-    marginTop: Spacing.M,
-  },
-  rateText: { ...Typography.CAPTION, color: Colors.GRAY, textAlign: 'center', marginTop: Spacing.M },
-  qrWrapper: { alignItems: 'center', marginBottom: Spacing.M },
-  depositAddressText: { ...Typography.BODY, color: Colors.DARK, textAlign: 'center', marginBottom: Spacing.M },
-  copyAddressButton: {
-    height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    borderRadius: Spacing.BUTTON_RADIUS,
-    borderWidth: 1,
-    borderColor: Colors.GREEN,
+  hero: { paddingTop: Spacing.M, paddingBottom: Spacing.L },
+  heroLabel: { ...Typography.CAPTION, color: Dark.TEXT_FAINT, marginBottom: Spacing.XS },
+  heroValue: { fontSize: 30, fontWeight: '600', color: Dark.TEXT, marginBottom: Spacing.S },
+  heroSub: { ...Typography.CAPTION, color: Dark.TEXT_FAINT },
+  heroError: { ...Typography.CAPTION, color: Dark.ERROR },
+  heroLegacy: { ...Typography.CAPTION, color: Dark.TEXT_MUTED, marginTop: Spacing.XS },
+
+  actionsRow: { flexDirection: 'row', justifyContent: 'space-around', paddingBottom: Spacing.L },
+  actionItem: { alignItems: 'center', minWidth: 64 },
+  actionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Dark.CHIP,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: Spacing.XS,
   },
-  copyAddressButtonText: { ...Typography.BUTTON_TEXT, color: Colors.GREEN },
+  actionIconActive: { borderWidth: 1.5, borderColor: Dark.ACCENT },
+  actionLabel: { ...Typography.CAPTION, color: Dark.TEXT_MUTED },
+  actionLabelActive: { color: Dark.ACCENT, fontWeight: '700' },
 
-  tabs: {
-    flexDirection: 'row',
-    backgroundColor: Colors.LIGHT_GRAY,
-    borderRadius: Spacing.BUTTON_RADIUS,
-    padding: 4,
-    marginTop: Spacing.L,
-    marginBottom: Spacing.L,
+  panel: {
+    backgroundColor: Dark.PANEL,
+    borderRadius: Spacing.CARD_RADIUS,
+    borderWidth: 1,
+    borderColor: Dark.PANEL_BORDER,
+    padding: Spacing.CARD_PADDING,
   },
-  tab: { flex: 1, paddingVertical: Spacing.S, borderRadius: Spacing.BUTTON_RADIUS - 2, alignItems: 'center' },
-  tabActive: { backgroundColor: Colors.WHITE },
-  tabText: { ...Typography.BODY, color: Colors.GRAY, fontWeight: '600' },
-  tabTextActive: { color: Colors.GREEN_DARK },
-
-  section: { marginBottom: Spacing.XL },
-  label: { ...Typography.SECTION_HEADING, marginTop: Spacing.M, marginBottom: Spacing.M },
+  label: { ...Typography.SECTION_HEADING, color: Dark.TEXT, marginTop: Spacing.M, marginBottom: Spacing.M },
   input: {
     height: Spacing.INPUT_HEIGHT,
     borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
+    borderColor: Dark.BORDER,
     borderRadius: Spacing.BUTTON_RADIUS,
     paddingHorizontal: Spacing.L,
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: Dark.TEXT,
+    backgroundColor: Dark.BG,
   },
-  estimateText: { ...Typography.BODY, color: Colors.GREEN, fontWeight: '700', marginTop: Spacing.S },
-  errorText: { ...Typography.ERROR, marginTop: Spacing.S },
-  hintText: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: Spacing.M },
+  estimateText: { ...Typography.BODY, color: Dark.ACCENT, fontWeight: '700', marginTop: Spacing.S },
+  errorText: { ...Typography.ERROR, color: Dark.ERROR, marginTop: Spacing.S },
+  hintText: { ...Typography.CAPTION, color: Dark.TEXT_FAINT, marginTop: Spacing.M },
   notLiveBanner: {
     ...Typography.CAPTION,
-    color: Colors.GREEN_DARK,
-    backgroundColor: Colors.GREEN_10,
+    color: Dark.ACCENT,
+    backgroundColor: Dark.CHIP,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.M,
     marginBottom: Spacing.L,
@@ -568,23 +585,23 @@ const styles = StyleSheet.create({
 
   primaryButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: Dark.ACCENT,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: Spacing.L,
   },
   primaryButtonDisabled: { opacity: 0.5 },
-  primaryButtonText: { ...Typography.BUTTON_TEXT },
+  primaryButtonText: { ...Typography.BUTTON_TEXT, color: Dark.BG },
 
   savedRow: {
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: Dark.BORDER,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.M,
     marginBottom: Spacing.S,
   },
-  savedRowText: { ...Typography.BODY, color: Colors.DARK },
+  savedRowText: { ...Typography.BODY, color: Dark.TEXT },
 
   networkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.S },
   networkChip: {
@@ -592,32 +609,46 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.S,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: Dark.BORDER,
   },
-  networkChipSelected: { backgroundColor: Colors.GREEN_10, borderColor: Colors.GREEN },
-  networkChipText: { ...Typography.CAPTION, color: Colors.GRAY, fontWeight: '600' },
-  networkChipTextSelected: { color: Colors.GREEN_DARK },
+  networkChipSelected: { backgroundColor: Dark.CHIP, borderColor: Dark.ACCENT },
+  networkChipText: { ...Typography.CAPTION, color: Dark.TEXT_MUTED, fontWeight: '600' },
+  networkChipTextSelected: { color: Dark.ACCENT },
+
+  qrCard: { alignSelf: 'center', backgroundColor: Colors.WHITE, borderRadius: 12, padding: Spacing.M, marginBottom: Spacing.M },
+  depositAddressText: { ...Typography.BODY, color: Dark.TEXT, textAlign: 'center', marginBottom: Spacing.M },
+  copyAddressButton: {
+    height: Spacing.BUTTON_HEIGHT_PRIMARY,
+    borderRadius: Spacing.BUTTON_RADIUS,
+    borderWidth: 1,
+    borderColor: Dark.ACCENT,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  copyAddressButtonText: { ...Typography.BUTTON_TEXT, color: Dark.ACCENT },
 
   confirmBox: {
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: Dark.BG,
     borderRadius: Spacing.CARD_RADIUS,
+    borderWidth: 1,
+    borderColor: Dark.BORDER,
     padding: Spacing.CARD_PADDING,
     marginTop: Spacing.L,
   },
-  confirmText: { ...Typography.BODY, color: Colors.DARK },
-  confirmWarning: { ...Typography.CAPTION, color: Colors.ERROR, marginTop: Spacing.S },
+  confirmText: { ...Typography.BODY, color: Dark.TEXT },
+  confirmWarning: { ...Typography.CAPTION, color: Dark.ERROR, marginTop: Spacing.S },
   checkRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.M },
   checkbox: {
     width: 22,
     height: 22,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: Colors.GREEN,
+    borderColor: Dark.ACCENT,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: Spacing.M,
   },
-  checkboxChecked: { backgroundColor: Colors.GREEN },
-  checkboxMark: { color: Colors.WHITE, fontSize: 14, fontWeight: '700' },
-  checkLabel: { ...Typography.CAPTION, color: Colors.DARK, flex: 1 },
+  checkboxChecked: { backgroundColor: Dark.ACCENT },
+  checkboxMark: { color: Dark.BG, fontSize: 14, fontWeight: '700' },
+  checkLabel: { ...Typography.CAPTION, color: Dark.TEXT, flex: 1 },
 });
