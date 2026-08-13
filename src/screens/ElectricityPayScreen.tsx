@@ -70,6 +70,15 @@ export default function ElectricityPayScreen(props: any) {
   const [savedAccountsLoading, setSavedAccountsLoading] = useState(true);
   const [cachedPreviewName, setCachedPreviewName] = useState<string | null>(null);
   const [showManualInput, setShowManualInput] = useState(false);
+  // Admin-set convenience fee (see vtuService.getElectricityFee) — added on
+  // top of whatever the customer types below. Fetched fresh on every visit
+  // so it can never go stale across a session; the server re-derives its own
+  // authoritative fee at charge time regardless of what this shows.
+  const [convenienceFee, setConvenienceFee] = useState(0);
+
+  useFocusEffect(useCallback(() => {
+    void vtuService.getElectricityFee().then(setConvenienceFee);
+  }, []));
 
   const selectedSavedAccount = useMemo(
     () => savedAccounts.find((account) => account.account_number === meterNumber) ?? null,
@@ -90,6 +99,7 @@ export default function ElectricityPayScreen(props: any) {
   }, [loadSavedAccounts]));
 
   const numericAmount = useMemo(() => parseInt(amount, 10), [amount]);
+  const totalWithFee = numericAmount + convenienceFee;
   const isValidAmount = !isNaN(numericAmount) && numericAmount >= 500 && numericAmount <= 500000;
   const isValidMeter = meterNumber.trim().length >= 6;
   const canProceed =
@@ -217,19 +227,24 @@ export default function ElectricityPayScreen(props: any) {
     // Subtitle shows exactly what's being confirmed — disco, meter, and (if
     // verified) the real customer name — so the PIN prompt is never a bare
     // "enter your PIN" with no context to check against.
-    const subtitle = verifiedName
-      ? `${provider.name} · Meter ${meterNumber.trim()} · ${verifiedName}`
-      : `${provider.name} · Meter ${meterNumber.trim()}`;
-    const authResult = await authorize({ title: 'Confirm Electricity Payment', amount: numericAmount, subtitle });
+    const subtitle = convenienceFee > 0
+      ? `${provider.name} · Meter ${meterNumber.trim()}${verifiedName ? ` · ${verifiedName}` : ''} · includes ${formatNaira(convenienceFee)} fee`
+      : verifiedName
+        ? `${provider.name} · Meter ${meterNumber.trim()} · ${verifiedName}`
+        : `${provider.name} · Meter ${meterNumber.trim()}`;
+    const authResult = await authorize({ title: 'Confirm Electricity Payment', amount: totalWithFee, subtitle });
     if (!authResult) return;
 
     setErrorMessage('');
     // Go STRAIGHT to the result screen — it runs the purchase itself and shows
     // Processing -> Successful (with the meter token, units, and Download/Share
-    // Receipt). No spinner on the Pay button first.
+    // Receipt). No spinner on the Pay button first. request.amount stays the
+    // customer's entered top-up amount (what the meter is credited) — the
+    // server adds its own authoritative fee on top of that for the wallet
+    // debit, so `amount` here (header/receipt display) mirrors that total.
     navigation.navigate('TransactionStatus', {
       title: 'Electricity',
-      amount: numericAmount,
+      amount: totalWithFee,
       recipient: meterNumber.trim(),
       paymentMethod: 'Balance',
       electricity: {
@@ -249,7 +264,7 @@ export default function ElectricityPayScreen(props: any) {
         customerAddress: verifiedAddress ?? undefined,
       },
     });
-  }, [canProceed, provider, meterNumber, numericAmount, navigation, authorize, verifiedName, verifiedAddress]);
+  }, [canProceed, provider, meterNumber, numericAmount, totalWithFee, convenienceFee, navigation, authorize, verifiedName, verifiedAddress]);
 
   const buildReceiptHtml = useCallback(
     () =>
@@ -257,12 +272,13 @@ export default function ElectricityPayScreen(props: any) {
         providerName: provider.name,
         meterType: provider.type,
         meterNumber,
-        amount: numericAmount,
+        amount: totalWithFee,
+        feeAmount: convenienceFee,
         token: resultToken,
         units: resultUnits,
         orderId: resultOrderId,
       }),
-    [provider, meterNumber, numericAmount, resultToken, resultUnits, resultOrderId],
+    [provider, meterNumber, totalWithFee, convenienceFee, resultToken, resultUnits, resultOrderId],
   );
 
   const handleDownloadReceipt = useCallback(async () => {
@@ -306,7 +322,10 @@ export default function ElectricityPayScreen(props: any) {
           )}
           <Text style={styles.resultDetail}>{provider.name}</Text>
           <Text style={styles.resultDetail}>Meter: {meterNumber}</Text>
-          <Text style={styles.resultAmount}>{formatNaira(numericAmount)}</Text>
+          <Text style={styles.resultAmount}>{formatNaira(totalWithFee)}</Text>
+          {convenienceFee > 0 && (
+            <Text style={styles.resultDetail}>{formatNaira(numericAmount)} top-up + {formatNaira(convenienceFee)} fee</Text>
+          )}
           {resultToken && (
             <View style={styles.tokenContainer}>
               <Text style={styles.tokenLabel}>Your Token</Text>
@@ -531,6 +550,11 @@ export default function ElectricityPayScreen(props: any) {
                   : 'Maximum amount is ₦500,000'}
               </Text>
             )}
+            {isValidAmount && convenienceFee > 0 && (
+              <Text style={styles.feeNoticeText}>
+                + {formatNaira(convenienceFee)} convenience fee — you'll pay {formatNaira(totalWithFee)}, the meter is credited {formatNaira(numericAmount)}
+              </Text>
+            )}
           </View>
 
           {errorMessage ? (
@@ -546,7 +570,7 @@ export default function ElectricityPayScreen(props: any) {
               <Text style={styles.summaryText} numberOfLines={1}>
                 {provider.name}{' · '}Meter {meterNumber || '---'}
               </Text>
-              <Text style={styles.summaryAmount}>{formatNaira(numericAmount)}</Text>
+              <Text style={styles.summaryAmount}>{formatNaira(totalWithFee)}</Text>
             </View>
           )}
           {payHint && (
@@ -566,7 +590,7 @@ export default function ElectricityPayScreen(props: any) {
               <ActivityIndicator color={Colors.WHITE} />
             ) : (
               <Text style={styles.primaryButtonText}>
-                Pay{numericAmount > 0 ? ` ${formatNaira(numericAmount)}` : ''}
+                Pay{numericAmount > 0 ? ` ${formatNaira(totalWithFee)}` : ''}
               </Text>
             )}
           </TouchableOpacity>
@@ -646,6 +670,7 @@ const styles = StyleSheet.create({
   currencySymbol: { ...Typography.BODY, fontWeight: '600', color: Colors.DARK, marginRight: Spacing.S },
   amountInput: { flex: 1, ...Typography.BODY, color: Colors.DARK },
   amountError: { ...Typography.ERROR, marginTop: Spacing.S },
+  feeNoticeText: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: Spacing.S },
   verifyRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.S },
   arrearsNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.M, backgroundColor: Colors.GREEN_10, borderWidth: 1, borderColor: Colors.GREEN_LIGHT, borderRadius: Spacing.BUTTON_RADIUS, padding: Spacing.M, marginBottom: Spacing.M },
   arrearsNoticeText: { ...Typography.CAPTION, flex: 1, color: Colors.DARK, lineHeight: 19 },

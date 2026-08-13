@@ -37,9 +37,10 @@ serve(async (req: Request) => {
   if (!(await getAuthUser(req))) return json({ error: "Unauthorized" }, 401);
 
   const supabase = adminClient();
-  const [{ data, error }, modificationEnabled] = await Promise.all([
+  const [{ data, error }, modificationEnabled, { data: feeRow }] = await Promise.all([
     supabase.from("service_pricing").select("service_key, price_kobo"),
     isServiceEnabled(supabase, "nin_modification"),
+    supabase.from("electricity_fee_config").select("fee_kobo").eq("id", true).maybeSingle(),
   ]);
   if (error) return json({ error: "Pricing temporarily unavailable" }, 503);
 
@@ -50,6 +51,12 @@ serve(async (req: Request) => {
     const validKobo = Number.isFinite(kobo) && (kobo as number) > 0 ? (kobo as number) : DEFAULTS_KOBO[key];
     prices[key] = validKobo / 100;
   }
+  const electricityFeeNaira = (Number(feeRow?.fee_kobo) || 0) / 100;
 
-  return json({ success: true, prices, nin_modification_enabled: modificationEnabled });
+  return json({
+    success: true,
+    prices,
+    nin_modification_enabled: modificationEnabled,
+    electricity_fee: electricityFeeNaira,
+  });
 });

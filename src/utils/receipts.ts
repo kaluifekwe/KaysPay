@@ -28,8 +28,14 @@ export function buildElectricityReceiptHtml(params: {
   date?: Date;
   customerName?: string | null;
   customerAddress?: string | null;
+  // The convenience-fee portion of `amount` (see migration 114) — when set
+  // and > 0, the receipt breaks the total into top-up + fee instead of a
+  // single opaque "Amount Paid", so it's never a surprise the meter got
+  // credited less than what the wallet was charged.
+  feeAmount?: number;
 }): string {
-  const { providerName, meterType, meterNumber, amount, token, units, orderId, date, customerName, customerAddress } = params;
+  const { providerName, meterType, meterNumber, amount, token, units, orderId, date, customerName, customerAddress, feeAmount } = params;
+  const hasFee = !!feeAmount && feeAmount > 0;
   const when = date ?? new Date();
   const dateStr = when.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   const timeStr = when.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -62,7 +68,11 @@ export function buildElectricityReceiptHtml(params: {
         <tr><td class="label">Meter Type</td><td class="value">${meterType}</td></tr>
         <tr><td class="label">Meter Number</td><td class="value">${meterNumber}</td></tr>
         ${customerAddress ? `<tr><td class="label">Address</td><td class="value">${escapeHtml(customerAddress)}</td></tr>` : ''}
-        <tr><td class="label">Amount Paid</td><td class="value">${formatNaira(amount)}</td></tr>
+        ${hasFee ? `
+        <tr><td class="label">Top-up Amount</td><td class="value">${formatNaira(amount - feeAmount!)}</td></tr>
+        <tr><td class="label">Convenience Fee</td><td class="value">${formatNaira(feeAmount!)}</td></tr>
+        <tr><td class="label">Total Paid</td><td class="value">${formatNaira(amount)}</td></tr>
+        ` : `<tr><td class="label">Amount Paid</td><td class="value">${formatNaira(amount)}</td></tr>`}
         ${orderId ? `<tr><td class="label">Reference</td><td class="value">${orderId}</td></tr>` : ''}
         <tr><td class="label">Date</td><td class="value">${dateStr}</td></tr>
         <tr><td class="label">Time</td><td class="value">${timeStr}</td></tr>

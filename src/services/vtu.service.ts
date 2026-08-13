@@ -443,6 +443,25 @@ export const vtuService = {
     return newIdempotencyKey();
   },
 
+  /**
+   * The admin-set flat convenience fee (naira) added on top of whatever
+   * amount a customer tops up on electricity (see migration 114) — fetched
+   * fresh so the pre-payment total shown always matches what vtu-purchase
+   * will actually charge. Falls back to 0 (no fee) on any failure; the
+   * server independently re-derives the real fee at charge time regardless
+   * of what this reports.
+   */
+  async getElectricityFee(): Promise<number> {
+    try {
+      const { data, error } = await withTimeout(supabase.functions.invoke('service-pricing'));
+      if (error || !data?.success) return 0;
+      const fee = Number(data.electricity_fee);
+      return Number.isFinite(fee) && fee >= 0 ? fee : 0;
+    } catch {
+      return 0;
+    }
+  },
+
   getDataBundles(network: NetworkProvider): DataBundle[] {
     return cachedDataBundles(network);
   },

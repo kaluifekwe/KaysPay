@@ -160,7 +160,7 @@ serve(async (req: Request) => {
 
   let { data, error } = await supabase
     .from("vtunaija_cabletv_catalog")
-    .select("id, provider, name, validity, reseller_kobo, provider_seen_at")
+    .select("id, provider, cabletv_plan_id, name, validity, reseller_kobo, provider_seen_at")
     .eq("provider", provider)
     .eq("available", true)
     .order("reseller_kobo", { ascending: true });
@@ -171,7 +171,7 @@ serve(async (req: Request) => {
       await withJobLock(supabase, "vtunaija-cabletv-catalog-sync", () => refreshCatalog(supabase));
       const refreshed = await supabase
         .from("vtunaija_cabletv_catalog")
-        .select("id, provider, name, validity, reseller_kobo, provider_seen_at")
+        .select("id, provider, cabletv_plan_id, name, validity, reseller_kobo, provider_seen_at")
         .eq("provider", provider)
         .eq("available", true)
         .order("reseller_kobo", { ascending: true });
@@ -181,6 +181,15 @@ serve(async (req: Request) => {
     }
   }
 
+  // Admin-settable per-bouquet price (see migration 114) — same lookup
+  // vtu-purchase uses at charge time, so the quote and the actual charge
+  // always agree.
+  const { data: overrides } = await supabase
+    .from("vtu_cabletv_price_overrides")
+    .select("plan_id, price_kobo")
+    .eq("provider", provider);
+  const priceByPlan = new Map((overrides ?? []).map((row) => [row.plan_id, Number(row.price_kobo)]));
+
   return json({
     success: true,
     bouquets: (data ?? []).map((row) => ({
@@ -188,7 +197,7 @@ serve(async (req: Request) => {
       provider: row.provider,
       name: row.name,
       validity: row.validity,
-      amount: Number(row.reseller_kobo) / 100,
+      amount: (priceByPlan.get(row.cabletv_plan_id) ?? Number(row.reseller_kobo)) / 100,
     })),
     updated_at: data?.[0]?.provider_seen_at ?? null,
   });

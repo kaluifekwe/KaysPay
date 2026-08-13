@@ -280,8 +280,22 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
       const discoId = await resolveVtunaijaDiscoId(supabase, biller);
       if (!discoId) throw "INVALID_PROVIDER";
 
+      // Flat convenience fee (see migration 114) added to what the wallet is
+      // debited, on top of whatever amount the customer chose to top up —
+      // the DISCO only ever gets credited the customer's entered amount
+      // (providerPayload.amount below), never the fee. Read fresh, never
+      // trusted from the client, so a stale client-side quote can't be used
+      // to skip it.
+      const { data: feeRow } = await supabase
+        .from("electricity_fee_config")
+        .select("fee_kobo")
+        .eq("id", true)
+        .maybeSingle();
+      const feeKobo = Number(feeRow?.fee_kobo) || 0;
+      const totalAmount = amount + feeKobo;
+
       return {
-        amount,
+        amount: totalAmount,
         txType: "bill",
         network: "N/A",
         recipient: meter,
@@ -320,8 +334,17 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
         }
       }
 
+      // Admin-settable per-bouquet price (see migration 114) — same lookup
+      // vtunaija-cabletv-catalog uses to quote this bouquet to the client.
+      const { data: cabletvOverride } = await supabase
+        .from("vtu_cabletv_price_overrides")
+        .select("price_kobo")
+        .eq("provider", bouquet.provider)
+        .eq("plan_id", bouquet.cabletv_plan_id)
+        .maybeSingle();
+
       return {
-        amount: Number(bouquet.reseller_kobo),
+        amount: Number(cabletvOverride?.price_kobo ?? bouquet.reseller_kobo),
         txType: "bill",
         network: "N/A",
         recipient: smartcard,
