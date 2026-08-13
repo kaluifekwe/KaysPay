@@ -26,6 +26,9 @@ verify_jwt = false
 [functions.paystack-webhook]
 verify_jwt = false
 
+[functions.crypto-quidax-webhook]
+verify_jwt = false
+
 # --- Cron-only: JWT + separate x-cron-secret check ---
 [functions.vtunaija-data-catalog]
 verify_jwt = true
