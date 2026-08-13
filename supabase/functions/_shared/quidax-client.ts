@@ -25,7 +25,7 @@ async function callQuidax(
   path: string,
   method = "GET",
   body?: Record<string, unknown>,
-): Promise<{ status: number; data: any }> {
+): Promise<{ status: number; data: any; headers: Headers }> {
   if (!QUIDAX_SECRET_KEY) throw new QuidaxError("Quidax not configured");
 
   const response = await fetchWithTimeout(`${QUIDAX_BASE_URL}${path}`, {
@@ -46,7 +46,7 @@ async function callQuidax(
     console.error("Quidax returned a non-JSON response:", redactSecrets(text.slice(0, 300)));
     data = { status: "error", message: "Quidax returned an unexpected response" };
   }
-  return { status: response.status, data };
+  return { status: response.status, data, headers: response.headers };
 }
 
 export interface QuidaxSubAccount {
@@ -81,14 +81,28 @@ export async function createSubAccount(params: {
   return { id: data.data.id, sn: data.data.sn, email: data.data.email };
 }
 
-/** All sub-accounts under this merchant — used only to recover an orphaned
- * sub-account (see createSubAccount's doc comment), never on the normal path. */
+/**
+ * All sub-accounts under this merchant, across every page — used only to
+ * recover an orphaned sub-account (see createSubAccount's doc comment),
+ * never on the normal path. Quidax paginates this via response HEADERS
+ * (x-next-page/x-total-pages), not a body field, and caps at 100/page — a
+ * single unpaginated call would silently miss anything past the first page.
+ */
 export async function getSubAccounts(): Promise<QuidaxSubAccount[]> {
-  const { status, data } = await callQuidax("/users", "GET");
-  if (status >= 400 || data?.status !== "success") {
-    throw new QuidaxError(data?.message || "Could not list Quidax sub-accounts", status);
+  const results: QuidaxSubAccount[] = [];
+  let page = 1;
+  for (let guard = 0; guard < 50; guard++) {
+    const { status, data, headers } = await callQuidax(`/users?per_page=100&page=${page}`, "GET");
+    if (status >= 400 || data?.status !== "success") {
+      throw new QuidaxError(data?.message || "Could not list Quidax sub-accounts", status);
+    }
+    results.push(...(data.data as any[]).map((u) => ({ id: String(u.id), sn: String(u.sn), email: String(u.email) })));
+    const nextPage = headers.get("x-next-page");
+    if (!nextPage) break;
+    page = Number(nextPage);
+    if (!Number.isFinite(page) || page <= 0) break;
   }
-  return (data.data as any[]).map((u) => ({ id: String(u.id), sn: String(u.sn), email: String(u.email) }));
+  return results;
 }
 
 export interface QuidaxWallet {
