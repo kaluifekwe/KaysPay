@@ -293,6 +293,14 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
         .maybeSingle();
       const feeKobo = Number(feeRow?.fee_kobo) || 0;
       const totalAmount = amount + feeKobo;
+      // Same price-drift guard as data/cable/exam — if the fee changed
+      // between the customer confirming and this request landing, fail
+      // closed and make them re-confirm the new total rather than silently
+      // charging more than what they saw on screen.
+      const quotedAmount = Number(body.quoted_amount_kobo);
+      if (Number.isFinite(quotedAmount) && quotedAmount > 0 && quotedAmount !== totalAmount) {
+        throw new PriceChangedError(totalAmount);
+      }
 
       return {
         amount: totalAmount,
@@ -342,9 +350,14 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
         .eq("provider", bouquet.provider)
         .eq("plan_id", bouquet.cabletv_plan_id)
         .maybeSingle();
+      const amount = Number(cabletvOverride?.price_kobo ?? bouquet.reseller_kobo);
+      const quotedAmount = Number(body.quoted_amount_kobo);
+      if (Number.isFinite(quotedAmount) && quotedAmount > 0 && quotedAmount !== amount) {
+        throw new PriceChangedError(amount);
+      }
 
       return {
-        amount: Number(cabletvOverride?.price_kobo ?? bouquet.reseller_kobo),
+        amount,
         txType: "bill",
         network: "N/A",
         recipient: smartcard,

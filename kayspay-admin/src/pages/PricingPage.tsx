@@ -112,23 +112,30 @@ export default function PricingPage() {
   const [electricityFeeInput, setElectricityFeeInput] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
 
+  type PricingData = {
+    plans: DataPlan[]; price_overrides: PriceOverride[]; service_pricing: ServicePrice[];
+    cabletv_plans: CableTVPlan[]; cabletv_price_overrides: CableTVOverride[]; electricity_fee: ElectricityFee | null;
+    exam_plans: ExamPlan[]; exam_price_overrides: ExamOverride[];
+  };
+
+  const fetchPricingData = () => callAdmin<PricingData>('admin-pricing-controls');
+
+  const applyPricingData = (result: PricingData) => {
+    setPlans(result.plans);
+    setOverrides(result.price_overrides);
+    setServicePricing(result.service_pricing);
+    setCabletvPlans(result.cabletv_plans);
+    setCabletvOverrides(result.cabletv_price_overrides);
+    setElectricityFee(result.electricity_fee);
+    setExamPlans(result.exam_plans);
+    setExamOverrides(result.exam_price_overrides);
+  };
+
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await callAdmin<{
-        plans: DataPlan[]; price_overrides: PriceOverride[]; service_pricing: ServicePrice[];
-        cabletv_plans: CableTVPlan[]; cabletv_price_overrides: CableTVOverride[]; electricity_fee: ElectricityFee | null;
-        exam_plans: ExamPlan[]; exam_price_overrides: ExamOverride[];
-      }>('admin-pricing-controls');
-      setPlans(result.plans);
-      setOverrides(result.price_overrides);
-      setServicePricing(result.service_pricing);
-      setCabletvPlans(result.cabletv_plans);
-      setCabletvOverrides(result.cabletv_price_overrides);
-      setElectricityFee(result.electricity_fee);
-      setExamPlans(result.exam_plans);
-      setExamOverrides(result.exam_price_overrides);
+      applyPricingData(await fetchPricingData());
     } catch (e) {
       setError(e instanceof AdminApiError ? e.message : 'Could not load pricing');
     } finally {
@@ -160,7 +167,13 @@ export default function PricingPage() {
         setError('Enter a valid markup (0 or more), or leave it blank to use the provider price.');
         return;
       }
-      const plan = networkPlans.find((item) => item.id === planId);
+      // Refetch right before computing the final price — the provider's own
+      // price syncs every few minutes, and the plan list on screen could be
+      // stale if this tab has been open a while. Saving against a stale
+      // provider price would silently bake in the wrong total.
+      const fresh = await fetchPricingData();
+      applyPricingData(fresh);
+      const plan = fresh.plans.find((item) => item.id === planId && item.network === network);
       if (!plan) {
         setError('Could not find this plan — try reloading the page.');
         return;
@@ -234,7 +247,11 @@ export default function PricingPage() {
         setError('Enter a valid markup (0 or more), or leave it blank to use the provider price.');
         return;
       }
-      const plan = cabletvPlans.find((item) => item.provider === cabletvProvider && item.cabletv_plan_id === planId);
+      // See savePlanPrice — refetch so the markup is added to the provider's
+      // CURRENT price, not whatever was on screen when the tab was opened.
+      const fresh = await fetchPricingData();
+      applyPricingData(fresh);
+      const plan = fresh.cabletv_plans.find((item) => item.provider === cabletvProvider && item.cabletv_plan_id === planId);
       if (!plan) {
         setError('Could not find this bouquet — try reloading the page.');
         return;
@@ -270,7 +287,13 @@ export default function PricingPage() {
         setError('Enter a valid markup (0 or more), or leave it blank to use the provider price.');
         return;
       }
-      const exam = examPlans.find((item) => item.id === examId);
+      // See savePlanPrice — refetch so the markup is added to the provider's
+      // CURRENT price. This one matters most here: the exam catalog sync
+      // runs every 15 minutes and can move customer_kobo while this tab sits
+      // open.
+      const fresh = await fetchPricingData();
+      applyPricingData(fresh);
+      const exam = fresh.exam_plans.find((item) => item.id === examId);
       if (!exam) {
         setError('Could not find this exam — try reloading the page.');
         return;

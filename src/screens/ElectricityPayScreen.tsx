@@ -262,6 +262,7 @@ export default function ElectricityPayScreen(props: any) {
         authToken: authResult.token,
         customerName: verifiedName ?? undefined,
         customerAddress: verifiedAddress ?? undefined,
+        quotedTotalNaira: totalWithFee,
       },
     });
   }, [canProceed, provider, meterNumber, numericAmount, totalWithFee, convenienceFee, navigation, authorize, verifiedName, verifiedAddress]);

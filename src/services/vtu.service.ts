@@ -618,6 +618,10 @@ export const vtuService = {
     idempotencyKey?: string,
     customerName?: string,
     customerAddress?: string,
+    // The topup + convenience fee total shown/confirmed on the Electricity
+    // screen — lets the server detect a fee change between confirm and
+    // charge and force a re-confirm instead of silently charging more.
+    quotedTotalNaira?: number,
   ): Promise<VTUResult & { token?: string; units?: string }> {
     return purchase({
       service: 'electricity',
@@ -627,6 +631,7 @@ export const vtuService = {
       type,
       ...(customerName ? { customer_name: customerName } : {}),
       ...(customerAddress ? { customer_address: customerAddress } : {}),
+      ...(quotedTotalNaira != null ? { quoted_amount_kobo: nairaToKobo(quotedTotalNaira) } : {}),
     }, authToken, idempotencyKey);
   },
 
@@ -741,16 +746,20 @@ export const vtuService = {
     providerId: string,
     smartcardNumber: string,
     bouquetId: string,
-    _amount: number,
+    amount: number,
     authToken: string,
     idempotencyKey?: string,
   ): Promise<VTUResult> {
-    // Price is resolved server-side from bouquetId; client amount is ignored.
+    // Price is resolved server-side from bouquetId; amount here is only the
+    // last-quoted price the customer saw, sent so the server can detect a
+    // drift (an admin price edit landing between quote and charge) and force
+    // a re-confirm instead of silently charging the new price.
     return purchase({
       service: 'tv',
       provider_id: providerId,
       smartcard_number: smartcardNumber,
       bouquet_id: bouquetId,
+      quoted_amount_kobo: nairaToKobo(amount),
     }, authToken, idempotencyKey);
   },
 

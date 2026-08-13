@@ -18,7 +18,7 @@ type TxStatus = 'processing' | 'success' | 'failed';
 export type PurchaseRequest =
   | { kind: 'airtime'; phone: string; network: NetworkProvider; amount: number; authToken: string }
   | { kind: 'data'; phone: string; network: NetworkProvider; bundle: DataBundle; authToken: string }
-  | { kind: 'electricity'; providerId: string; meterNumber: string; amount: number; type: 'prepaid' | 'postpaid'; authToken: string; customerName?: string; customerAddress?: string }
+  | { kind: 'electricity'; providerId: string; meterNumber: string; amount: number; type: 'prepaid' | 'postpaid'; authToken: string; customerName?: string; customerAddress?: string; quotedTotalNaira?: number }
   | { kind: 'tv'; providerId: string; smartcardNumber: string; bouquetId: string; amount: number; authToken: string }
   | { kind: 'exam'; examType: ExamType; quantity: number; profileCode?: string; authToken: string };
 
@@ -54,7 +54,7 @@ async function runRequest(req: PurchaseRequest, key: string): Promise<FullResult
     case 'data':
       return vtuService.buyData(req.phone, req.network, req.bundle, req.authToken, key);
     case 'electricity':
-      return vtuService.buyElectricity(req.providerId, req.meterNumber, req.amount, req.type, req.authToken, key, req.customerName, req.customerAddress);
+      return vtuService.buyElectricity(req.providerId, req.meterNumber, req.amount, req.type, req.authToken, key, req.customerName, req.customerAddress, req.quotedTotalNaira);
     case 'tv':
       return vtuService.buyTVSubscription(req.providerId, req.smartcardNumber, req.bouquetId, req.amount, req.authToken, key);
     case 'exam':
