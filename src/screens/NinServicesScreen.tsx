@@ -63,29 +63,30 @@ function disclaimerParagraphsHtml(): string {
 // reliability. The disclaimer wording never changes, so the lines are
 // hand-wrapped once rather than needing SVG's more limited text reflow.
 function ninCardBackSvg(): string {
+  // Lines rebalanced (owner feedback, 2026-08-13) — the first cut packed each
+  // line as full as possible and left a short, choppy final line per
+  // paragraph. These wrap at a shorter, more even width instead, so every
+  // paragraph reads as a properly typeset block rather than jagged fragments.
   const lines: { text: string; y: number; size: number; weight: number; style?: string; anchor?: 'start' | 'middle' }[] = [
     { text: 'DISCLAIMER', y: 28, size: 17, weight: 800, anchor: 'middle' },
     { text: 'Trust, but verify', y: 46, size: 11, weight: 400, style: 'italic', anchor: 'middle' },
-    { text: 'Kindly ensure each time this ID is presented, that you verify the', y: 70, size: 10.5, weight: 400 },
-    { text: 'credentials using a Government-APPROVED verification resource. The', y: 86.5, size: 10.5, weight: 400 },
-    { text: 'details on the front of this NIN Slip must EXACTLY match the', y: 103, size: 10.5, weight: 400 },
-    { text: 'verification result.', y: 119.5, size: 10.5, weight: 400 },
-    { text: 'CAUTION!', y: 141, size: 14, weight: 800, anchor: 'middle' },
-    { text: 'If this NIN was not issued to the person on the front, please DO', y: 162, size: 10.5, weight: 400 },
-    { text: 'NOT attempt to scan, photocopy or replicate the personal data', y: 178.5, size: 10.5, weight: 400 },
-    { text: 'contained herein.', y: 195, size: 10.5, weight: 400 },
-    { text: 'You are only permitted to scan the barcode for the purpose of', y: 214, size: 10.5, weight: 400 },
-    { text: 'identity verification.', y: 230.5, size: 10.5, weight: 400 },
-    { text: 'The FEDERAL GOVERNMENT of NIGERIA assumes no responsibility if you', y: 249.5, size: 10.5, weight: 400 },
-    { text: 'accept any variance in the scan result or do not scan the 2D', y: 266, size: 10.5, weight: 400 },
-    { text: 'barcode overleaf.', y: 282.5, size: 10.5, weight: 400 },
+    { text: 'Kindly ensure each time this ID is presented, that you verify the credentials', y: 72, size: 10.5, weight: 400 },
+    { text: 'using a Government-APPROVED verification resource. The details on the front', y: 88.5, size: 10.5, weight: 400 },
+    { text: 'of this NIN Slip must EXACTLY match the verification result.', y: 105, size: 10.5, weight: 400 },
+    { text: 'CAUTION!', y: 127, size: 14, weight: 800, anchor: 'middle' },
+    { text: 'If this NIN was not issued to the person on the front, please DO NOT', y: 148, size: 10.5, weight: 400 },
+    { text: 'attempt to scan, photocopy or replicate the personal data contained herein.', y: 164.5, size: 10.5, weight: 400 },
+    { text: 'You are only permitted to scan the barcode for the purpose of', y: 186, size: 10.5, weight: 400 },
+    { text: 'identity verification.', y: 202.5, size: 10.5, weight: 400 },
+    { text: 'The FEDERAL GOVERNMENT of NIGERIA assumes no responsibility if you accept', y: 224, size: 10.5, weight: 400 },
+    { text: 'any variance in the scan result or do not scan the 2D barcode overleaf.', y: 240.5, size: 10.5, weight: 400 },
   ];
   const textEls = lines.map((l) =>
     `<text x="${l.anchor === 'middle' ? 270 : 22}" y="${l.y}" font-family="-apple-system, Helvetica, Arial, sans-serif" font-size="${l.size}" font-weight="${l.weight}" font-style="${l.style || 'normal'}" fill="#111" text-anchor="${l.anchor || 'start'}">${l.text}</text>`,
   ).join('');
-  return `<svg width="540" height="308" viewBox="0 0 540 308" xmlns="http://www.w3.org/2000/svg">
-    <rect x="1" y="1" width="538" height="306" rx="8" fill="#fff" stroke="#333" stroke-width="1.5" />
-    <g transform="rotate(180 270 154)">${textEls}</g>
+  return `<svg width="540" height="270" viewBox="0 0 540 270" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="538" height="268" rx="8" fill="#fff" stroke="#333" stroke-width="1.5" />
+    <g transform="rotate(180 270 135)">${textEls}</g>
   </svg>`;
 }
 
