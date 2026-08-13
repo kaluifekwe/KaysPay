@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import * as Clipboard from 'expo-clipboard';
 import {
   View,
   StyleSheet,
@@ -23,15 +24,17 @@ import {
   CRYPTO_NETWORKS,
   type CryptoNetwork,
   type SavedCryptoAddress,
+  type QuidaxWalletBalance,
 } from '../services/crypto.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import ResultStatusView, { type ResultStatus } from '../components/ResultStatusView';
+import QrCodeView from '../components/QrCodeView';
 
 interface CryptoScreenProps {
   navigation: { goBack: () => void };
 }
 
-type Tab = 'buy' | 'sell' | 'withdraw';
+type Tab = 'deposit' | 'buy' | 'sell' | 'withdraw';
 
 function formatUsdt(n: number): string {
   return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDT`;
@@ -41,10 +44,24 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const { authorize } = useTransactionAuth();
   const insets = useSafeAreaInsets();
 
-  const [tab, setTab] = useState<Tab>('buy');
+  const [tab, setTab] = useState<Tab>('deposit');
   const [ngnBalance, setNgnBalance] = useState<number | null>(null);
   const [usdtBalance, setUsdtBalance] = useState<number | null>(null);
   const [rate, setRate] = useState<number | null>(null);
+
+  // Live balance held at Quidax under the user's own sub-account — kept
+  // deliberately separate from usdtBalance (the old pooled-ledger number
+  // above) until Sell/Withdraw/Buy are migrated onto Quidax in later
+  // phases; showing them as one merged figure right now would be wrong,
+  // since deposits here don't yet affect what Sell/Withdraw can spend.
+  const [quidaxWallets, setQuidaxWallets] = useState<QuidaxWalletBalance[]>([]);
+  const [quidaxLoadError, setQuidaxLoadError] = useState<string | null>(null);
+
+  const [depositNetwork, setDepositNetwork] = useState<CryptoNetwork>('TRC20');
+  const [depositAddress, setDepositAddress] = useState<string | null>(null);
+  const [depositLoading, setDepositLoading] = useState(false);
+  const [depositError, setDepositError] = useState<string | null>(null);
+  const [addressCopied, setAddressCopied] = useState(false);
 
   const [actionState, setActionState] = useState<ResultStatus | 'idle'>('idle');
   const [actionError, setActionError] = useState('');
@@ -60,21 +77,61 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [savedAddresses, setSavedAddresses] = useState<SavedCryptoAddress[]>([]);
 
   const loadAll = useCallback(async () => {
-    const [walletResult, usdt, liveRate, saved] = await Promise.all([
+    const [walletResult, usdt, liveRate, saved, quidaxAccount] = await Promise.all([
       walletService.getWallet(),
       cryptoService.getBalance('USDT'),
       cryptoService.getQuoteRate(),
       cryptoService.listSavedAddresses('USDT'),
+      cryptoService.getOrCreateAccount(),
     ]);
     if (walletResult.success && walletResult.wallet) setNgnBalance(walletResult.wallet.available_balance);
     setUsdtBalance(usdt);
     setRate(liveRate);
     setSavedAddresses(saved);
+    if (quidaxAccount.success) {
+      setQuidaxWallets(quidaxAccount.wallets);
+      setQuidaxLoadError(null);
+    } else {
+      setQuidaxLoadError(quidaxAccount.error || 'Could not load your crypto account.');
+    }
   }, []);
 
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  const quidaxUsdt = quidaxWallets.find((w) => w.currency === 'USDT');
+
+  // Any network change invalidates whatever address is on screen — never
+  // show a TRC20 address after the user switched to BEP20.
+  useEffect(() => {
+    setDepositAddress(null);
+    setDepositError(null);
+    setAddressCopied(false);
+  }, [depositNetwork]);
+
+  const handleGenerateDepositAddress = useCallback(async () => {
+    setDepositLoading(true);
+    setDepositError(null);
+    const result = await cryptoService.getDepositAddress(depositNetwork);
+    setDepositLoading(false);
+    if (result.success && result.address) {
+      setDepositAddress(result.address);
+    } else {
+      setDepositError(result.error || 'Could not generate a deposit address.');
+    }
+  }, [depositNetwork]);
+
+  const handleCopyDepositAddress = useCallback(async () => {
+    if (!depositAddress) return;
+    try {
+      await Clipboard.setStringAsync(depositAddress);
+      setAddressCopied(true);
+      setTimeout(() => setAddressCopied(false), 2000);
+    } catch {
+      Alert.alert('Copy address', 'Could not copy the address. Please try again.');
+    }
+  }, [depositAddress]);
 
   // Any edit to the withdrawal address/network invalidates the "I've
   // checked this" confirmation — never let a stale confirmation carry over
@@ -203,23 +260,82 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
               <Text style={styles.balanceValue}>{usdtBalance != null ? formatUsdt(usdtBalance) : '—'}</Text>
             </View>
           </View>
+          <View style={styles.balanceCardWide}>
+            <Text style={styles.balanceLabel}>Deposited USDT (held in your own crypto account)</Text>
+            <Text style={styles.balanceValue}>
+              {quidaxUsdt ? formatUsdt(Number(quidaxUsdt.balance)) : quidaxLoadError ? '—' : formatUsdt(0)}
+            </Text>
+            {quidaxLoadError && <Text style={styles.errorText}>{quidaxLoadError}</Text>}
+          </View>
           {rate != null && (
             <Text style={styles.rateText}>1 USDT ≈ {formatNaira(rate)}</Text>
           )}
 
           <View style={styles.tabs}>
-            {(['buy', 'sell', 'withdraw'] as Tab[]).map((t) => (
+            {(['deposit', 'buy', 'sell', 'withdraw'] as Tab[]).map((t) => (
               <TouchableOpacity
                 key={t}
                 style={[styles.tab, tab === t && styles.tabActive]}
                 onPress={() => setTab(t)}
               >
                 <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-                  {t === 'buy' ? 'Buy' : t === 'sell' ? 'Sell' : 'Withdraw'}
+                  {t === 'deposit' ? 'Deposit' : t === 'buy' ? 'Buy' : t === 'sell' ? 'Sell' : 'Withdraw'}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
+
+          {tab === 'deposit' && (
+            <View style={styles.section}>
+              <Text style={styles.hintText}>
+                Bring USDT you already hold on Binance, Bybit, or another exchange into your own crypto account here.
+              </Text>
+
+              <Text style={styles.label}>Network</Text>
+              <View style={styles.networkRow}>
+                {CRYPTO_NETWORKS.map((n) => (
+                  <TouchableOpacity
+                    key={n.key}
+                    style={[styles.networkChip, depositNetwork === n.key && styles.networkChipSelected]}
+                    onPress={() => setDepositNetwork(n.key)}
+                  >
+                    <Text style={[styles.networkChipText, depositNetwork === n.key && styles.networkChipTextSelected]}>
+                      {n.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {depositAddress ? (
+                <View style={styles.confirmBox}>
+                  <View style={styles.qrWrapper}>
+                    <QrCodeView value={depositAddress} size={180} />
+                  </View>
+                  <Text style={styles.depositAddressText} selectable>{depositAddress}</Text>
+                  <TouchableOpacity style={styles.copyAddressButton} onPress={handleCopyDepositAddress}>
+                    <Text style={styles.copyAddressButtonText}>{addressCopied ? 'Copied ✓' : 'Copy Address'}</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.confirmWarning}>
+                    Only send USDT on {depositNetwork} to this address. Sending on the wrong network, or any other
+                    asset, cannot be recovered.
+                  </Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.primaryButton, depositLoading && styles.primaryButtonDisabled]}
+                  onPress={handleGenerateDepositAddress}
+                  disabled={depositLoading}
+                >
+                  {depositLoading ? (
+                    <ActivityIndicator color={Colors.WHITE} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Generate Deposit Address</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+              {depositError && <Text style={styles.errorText}>{depositError}</Text>}
+            </View>
+          )}
 
           {tab === 'buy' && (
             <View style={styles.section}>
@@ -395,7 +511,24 @@ const styles = StyleSheet.create({
   },
   balanceLabel: { ...Typography.CAPTION, color: Colors.GRAY },
   balanceValue: { ...Typography.CARD_TITLE, marginTop: Spacing.XS },
+  balanceCardWide: {
+    backgroundColor: Colors.LIGHT_GRAY,
+    borderRadius: Spacing.CARD_RADIUS,
+    padding: Spacing.CARD_PADDING,
+    marginTop: Spacing.M,
+  },
   rateText: { ...Typography.CAPTION, color: Colors.GRAY, textAlign: 'center', marginTop: Spacing.M },
+  qrWrapper: { alignItems: 'center', marginBottom: Spacing.M },
+  depositAddressText: { ...Typography.BODY, color: Colors.DARK, textAlign: 'center', marginBottom: Spacing.M },
+  copyAddressButton: {
+    height: Spacing.BUTTON_HEIGHT_PRIMARY,
+    borderRadius: Spacing.BUTTON_RADIUS,
+    borderWidth: 1,
+    borderColor: Colors.GREEN,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  copyAddressButtonText: { ...Typography.BUTTON_TEXT, color: Colors.GREEN },
 
   tabs: {
     flexDirection: 'row',

@@ -48,6 +48,13 @@ function newIdempotencyKey(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+export interface QuidaxWalletBalance {
+  currency: string;
+  balance: number;
+  locked: number;
+  isCrypto: boolean;
+}
+
 export const cryptoService = {
   /** micro-USDT (6 decimals) -> a plain USDT amount for display/input. */
   microToAmount(micro: number): number {
@@ -62,6 +69,56 @@ export const cryptoService = {
       return Number(data.rate);
     } catch {
       return null;
+    }
+  },
+
+  /**
+   * Ensures the caller has a Quidax sub-account (creating one on first
+   * call) and returns their LIVE wallet balances straight from Quidax —
+   * this is the user's own held balance, not a KaysPay-tracked number.
+   */
+  async getOrCreateAccount(): Promise<{ success: boolean; wallets: QuidaxWalletBalance[]; error?: string }> {
+    try {
+      const { data, error } = await withTimeout(supabase.functions.invoke('crypto-account', { body: {} }));
+      if (error) {
+        let msg = 'Could not load your crypto account.';
+        try {
+          const errBody = await (error as any)?.context?.json?.();
+          if (errBody?.error) msg = errBody.error;
+        } catch {}
+        return { success: false, wallets: [], error: msg };
+      }
+      if (!data?.success) return { success: false, wallets: [], error: data?.error || 'Could not load your crypto account.' };
+      const wallets = (data.wallets ?? []).map((w: any) => ({
+        currency: String(w.currency).toUpperCase(),
+        balance: Number(w.balance) || 0,
+        locked: Number(w.locked) || 0,
+        isCrypto: !!w.is_crypto,
+      }));
+      return { success: true, wallets };
+    } catch {
+      return { success: false, wallets: [], error: 'Network error. Please try again.' };
+    }
+  },
+
+  /** A deposit address on the user's own Quidax sub-account for the given network. */
+  async getDepositAddress(network: CryptoNetwork): Promise<{ success: boolean; address?: string; error?: string }> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('crypto-deposit-address', { body: { network } }),
+      );
+      if (error) {
+        let msg = 'Could not generate a deposit address.';
+        try {
+          const errBody = await (error as any)?.context?.json?.();
+          if (errBody?.error) msg = errBody.error;
+        } catch {}
+        return { success: false, error: msg };
+      }
+      if (!data?.success) return { success: false, error: data?.error || 'Could not generate a deposit address.' };
+      return { success: true, address: data.address };
+    } catch {
+      return { success: false, error: 'Network error. Please try again.' };
     }
   },
 
