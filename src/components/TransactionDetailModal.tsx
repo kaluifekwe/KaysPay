@@ -79,6 +79,20 @@ function extractFailureReason(metadata: Record<string, any> | null | undefined):
   return sanitizeReason(String(raw));
 }
 
+// VTUnaija's numeric exam_name codes (see VTUNAIJA_EXAM_IDS in
+// _shared/vtu-catalog.ts, server-side) — the transaction only ever stores
+// the code itself (metadata.request.exam_name), never a readable name, so
+// this maps it back for display. Kept in sync with that server-side list;
+// names match EXAM_PIN_TYPES' own `name` field exactly.
+const EXAM_ID_NAMES: Record<string, string> = {
+  '1': 'WAEC Exam PIN',
+  '2': 'NECO Exam PIN',
+  '3': 'NABTEB Exam PIN',
+  '4': 'JAMB Exam PIN',
+  '5': 'WAEC Registration PIN',
+  '6': 'NBAIS Exam PIN',
+};
+
 // Only ever show a small, pre-approved, pre-labeled set of fields here —
 // an ALLOWLIST, not a blocklist. A blocklist means anything new/unexpected
 // (a raw provider field, a technical key, a future addition to some edge
@@ -153,9 +167,11 @@ export default function TransactionDetailModal({
   // pin receipt previously showed only the amount and date — never the
   // actual PIN the customer paid for. This embeds it, same reasoning as the
   // electricity token receipt below.
+  const examTypeCode = String((transaction.metadata?.request as { exam_name?: unknown } | undefined)?.exam_name ?? '');
+  const examName = EXAM_ID_NAMES[examTypeCode] || transaction.label;
   const buildExamPinReceipt = () =>
     buildExamPinReceiptHtml({
-      examName: transaction.label,
+      examName,
       amount: transaction.amount,
       pins: examPins!,
       serials: examSerials,
