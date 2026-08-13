@@ -604,10 +604,25 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   const [bvnSlipTiers, setBvnSlipTiers] = useState(DEFAULT_BVN_SLIP_TIERS);
   const [validatePrice, setValidatePrice] = useState(DEFAULT_VALIDATE_PRICE);
   const [modifyPrice, setModifyPrice] = useState(DEFAULT_MODIFY_PRICE);
+  // Whether the "NIN Modification" tab shows at all — driven by the admin's
+  // nin_modification kill switch (migration 113), read fresh on open so
+  // toggling it off hides the whole tab instead of only rejecting the
+  // submit. Defaults true so a network hiccup never hides a working
+  // feature; nin-modify/nin-validate still enforce the switch server-side
+  // regardless of what this shows.
+  const [modificationAvailable, setModificationAvailable] = useState(true);
 
   useEffect(() => {
-    ninService.getServicePricing().then((prices) => {
-      if (!prices) return;
+    ninService.getServicePricing().then((result) => {
+      if (!result) return;
+      const { prices, ninModificationEnabled } = result;
+      setModificationAvailable(ninModificationEnabled);
+      // If the fetch resolves after the user already tapped into a now-hidden
+      // tab (a slow-network race, not the normal case), don't strand them on
+      // a screen whose segmented button just disappeared out from under them.
+      if (!ninModificationEnabled) {
+        setMode((current) => (current === 'modify' ? 'verify' : current));
+      }
       if (prices.nin_verify_regular || prices.nin_verify_card) {
         setSlipTiers([
           { id: 'regular', name: 'Regular Slip', valueKobo: (prices.nin_verify_regular ?? DEFAULT_SLIP_TIERS[0].valueKobo / 100) * 100 },
@@ -1274,12 +1289,14 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
             >
               <Text style={[styles.segmentText, mode === 'bvn' && styles.segmentTextActive]}>BVN Verification</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.segment, mode === 'modify' && styles.segmentActive]}
-              onPress={() => handleSwitchMode('modify')}
-            >
-              <Text style={[styles.segmentText, mode === 'modify' && styles.segmentTextActive]}>NIN Modification</Text>
-            </TouchableOpacity>
+            {modificationAvailable && (
+              <TouchableOpacity
+                style={[styles.segment, mode === 'modify' && styles.segmentActive]}
+                onPress={() => handleSwitchMode('modify')}
+              >
+                <Text style={[styles.segmentText, mode === 'modify' && styles.segmentTextActive]}>NIN Modification</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {mode === 'verify' && verifyState !== 'result' && (

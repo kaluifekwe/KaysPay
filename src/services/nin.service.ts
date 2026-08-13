@@ -237,17 +237,27 @@ export const ninService = {
   },
 
   /**
-   * Current admin-set prices (naira) for NIN/BVN services, read fresh so the
+   * Current admin-set prices (naira) for NIN/BVN services, plus the NIN
+   * Modification kill switch's live state — read together, fresh, so the
    * app never shows a stale price it then charges something different for
-   * (see admin-pricing-controls / migration 112). Returns null on any
-   * failure — callers keep whatever hardcoded default they already have,
-   * same as the server's own fallback behaviour.
+   * (see admin-pricing-controls / migration 112), and hides the whole
+   * Modification tab the moment it's disabled rather than only rejecting
+   * the submit (see migration 113). Returns null on any failure — callers
+   * keep whatever hardcoded default they already have, same as the
+   * server's own fallback behaviour. nin-modify/nin-validate still enforce
+   * the switch server-side regardless of what this reports.
    */
-  async getServicePricing(): Promise<Partial<Record<ServicePricingKey, number>> | null> {
+  async getServicePricing(): Promise<{
+    prices: Partial<Record<ServicePricingKey, number>>;
+    ninModificationEnabled: boolean;
+  } | null> {
     try {
       const { data, error } = await withTimeout(supabase.functions.invoke('service-pricing'));
       if (error || !data?.success) return null;
-      return data.prices ?? null;
+      return {
+        prices: data.prices ?? {},
+        ninModificationEnabled: data.nin_modification_enabled !== false,
+      };
     } catch {
       return null;
     }
