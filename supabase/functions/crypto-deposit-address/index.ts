@@ -63,7 +63,10 @@ serve(async (req: Request) => {
     });
     return json({ success: true, address: address.address, network: body.network, currency: "USDT" });
   } catch (e) {
-    console.error("crypto-deposit-address failed:", e instanceof Error ? e.message : e);
-    return json({ success: false, error: "Could not generate a deposit address. Please try again." }, 500);
+    const detail = e instanceof Error ? e.message : String(e);
+    console.error("crypto-deposit-address failed:", detail);
+    // TEMPORARY: surfacing the real error while diagnosing the first live
+    // failure report — revert to a generic message once resolved.
+    return json({ success: false, error: `Could not generate a deposit address: ${detail}` }, 500);
   }
 });

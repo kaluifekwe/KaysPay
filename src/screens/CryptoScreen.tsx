@@ -38,23 +38,12 @@ interface CryptoScreenProps {
 
 type Tab = 'deposit' | 'buy' | 'sell' | 'withdraw';
 
-// A deliberately darker theme for just this screen — the rest of the app
-// stays on the shared light Colors palette, but a "your investment/crypto
-// balance lives here" section reading as a distinct, premium space is a
-// common, deliberate pattern (Binance, Trust Wallet) rather than an
-// inconsistency. Scoped locally since nothing else in the app reuses it.
-const Dark = {
-  BG: '#0E1712',
-  PANEL: '#131F19',
-  PANEL_BORDER: '#1E2E25',
-  CHIP: '#1B2A22',
-  ACCENT: '#5FCB9A',
-  TEXT: '#FFFFFF',
-  TEXT_MUTED: '#B7CCC1',
-  TEXT_FAINT: '#7FA895',
-  BORDER: '#23342A',
-  ERROR: '#E29A9A',
-};
+// The hero balance card is the one deliberately dark element on an
+// otherwise light, on-brand screen — a raised "this is your crypto
+// balance" moment, same idea as a bank app's card-style balance display.
+const HERO_BG = Colors.GREEN_DARK;
+const HERO_TEXT_MUTED = '#BFE3CE';
+const HERO_ERROR = '#FFC9C9';
 
 const TAB_ICONS: Record<Tab, keyof typeof Ionicons.glyphMap> = {
   deposit: 'arrow-down-circle-outline',
@@ -274,10 +263,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor={Dark.BG} />
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.WHITE} />
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={26} color={Dark.TEXT} />
+          <Ionicons name="chevron-back" size={26} color={Colors.DARK} />
         </TouchableOpacity>
         <Text style={styles.topTitle}>Crypto</Text>
       </View>
@@ -306,7 +295,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             {(['deposit', 'buy', 'sell', 'withdraw'] as Tab[]).map((t) => (
               <TouchableOpacity key={t} style={styles.actionItem} onPress={() => setTab(t)} activeOpacity={0.75}>
                 <View style={[styles.actionIcon, tab === t && styles.actionIconActive]}>
-                  <Ionicons name={TAB_ICONS[t]} size={20} color={Dark.ACCENT} />
+                  <Ionicons name={TAB_ICONS[t]} size={20} color={Colors.GREEN} />
                 </View>
                 <Text style={[styles.actionLabel, tab === t && styles.actionLabelActive]}>{TAB_LABELS[t]}</Text>
               </TouchableOpacity>
@@ -356,7 +345,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                     disabled={depositLoading}
                   >
                     {depositLoading ? (
-                      <ActivityIndicator color={Dark.BG} />
+                      <ActivityIndicator color={Colors.WHITE} />
                     ) : (
                       <Text style={styles.primaryButtonText}>Generate Deposit Address</Text>
                     )}
@@ -374,7 +363,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   value={buyUsd}
                   onChangeText={(t) => setBuyUsd(t.replace(/[^0-9.]/g, ''))}
                   placeholder="e.g. 30"
-                  placeholderTextColor={Dark.TEXT_FAINT}
+                  placeholderTextColor={Colors.GRAY}
                   keyboardType="decimal-pad"
                 />
                 {buyNgnEstimate != null && (
@@ -403,7 +392,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   value={sellUsdt}
                   onChangeText={(t) => setSellUsdt(t.replace(/[^0-9.]/g, ''))}
                   placeholder="e.g. 10"
-                  placeholderTextColor={Dark.TEXT_FAINT}
+                  placeholderTextColor={Colors.GRAY}
                   keyboardType="decimal-pad"
                 />
                 {sellNgnEstimate != null && (
@@ -464,7 +453,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   value={wdAddress}
                   onChangeText={setWdAddress}
                   placeholder={`Paste your ${wdNetwork} address`}
-                  placeholderTextColor={Dark.TEXT_FAINT}
+                  placeholderTextColor={Colors.GRAY}
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
@@ -476,7 +465,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   value={wdAmount}
                   onChangeText={(t) => setWdAmount(t.replace(/[^0-9.]/g, ''))}
                   placeholder="e.g. 20"
-                  placeholderTextColor={Dark.TEXT_FAINT}
+                  placeholderTextColor={Colors.GRAY}
                   keyboardType="decimal-pad"
                 />
                 {usdtBalance != null && numericWdAmount > usdtBalance && (
@@ -518,7 +507,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Dark.BG },
+  container: { flex: 1, backgroundColor: Colors.WHITE },
   flex: { flex: 1 },
   topBar: {
     flexDirection: 'row',
@@ -528,15 +517,21 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.S,
   },
   backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  topTitle: { ...Typography.SECTION_HEADING, color: Dark.TEXT, marginLeft: Spacing.S },
+  topTitle: { ...Typography.SECTION_HEADING, color: Colors.DARK, marginLeft: Spacing.S },
   scrollContent: { paddingHorizontal: Spacing.SCREEN_PADDING, paddingBottom: 60 },
 
-  hero: { paddingTop: Spacing.M, paddingBottom: Spacing.L },
-  heroLabel: { ...Typography.CAPTION, color: Dark.TEXT_FAINT, marginBottom: Spacing.XS },
-  heroValue: { fontSize: 30, fontWeight: '600', color: Dark.TEXT, marginBottom: Spacing.S },
-  heroSub: { ...Typography.CAPTION, color: Dark.TEXT_FAINT },
-  heroError: { ...Typography.CAPTION, color: Dark.ERROR },
-  heroLegacy: { ...Typography.CAPTION, color: Dark.TEXT_MUTED, marginTop: Spacing.XS },
+  hero: {
+    backgroundColor: HERO_BG,
+    borderRadius: Spacing.CARD_RADIUS,
+    padding: Spacing.CARD_PADDING,
+    marginTop: Spacing.S,
+    marginBottom: Spacing.L,
+  },
+  heroLabel: { ...Typography.CAPTION, color: HERO_TEXT_MUTED, marginBottom: Spacing.XS },
+  heroValue: { fontSize: 28, fontWeight: '600', color: Colors.WHITE, marginBottom: Spacing.S },
+  heroSub: { ...Typography.CAPTION, color: HERO_TEXT_MUTED },
+  heroError: { ...Typography.CAPTION, color: HERO_ERROR },
+  heroLegacy: { ...Typography.CAPTION, color: HERO_TEXT_MUTED, marginTop: Spacing.XS },
 
   actionsRow: { flexDirection: 'row', justifyContent: 'space-around', paddingBottom: Spacing.L },
   actionItem: { alignItems: 'center', minWidth: 64 },
@@ -544,40 +539,39 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Dark.CHIP,
+    backgroundColor: Colors.GREEN_10,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Spacing.XS,
   },
-  actionIconActive: { borderWidth: 1.5, borderColor: Dark.ACCENT },
-  actionLabel: { ...Typography.CAPTION, color: Dark.TEXT_MUTED },
-  actionLabelActive: { color: Dark.ACCENT, fontWeight: '700' },
+  actionIconActive: { borderWidth: 1.5, borderColor: Colors.GREEN },
+  actionLabel: { ...Typography.CAPTION, color: Colors.GRAY },
+  actionLabelActive: { color: Colors.GREEN_DARK, fontWeight: '700' },
 
   panel: {
-    backgroundColor: Dark.PANEL,
+    backgroundColor: Colors.WHITE,
     borderRadius: Spacing.CARD_RADIUS,
     borderWidth: 1,
-    borderColor: Dark.PANEL_BORDER,
+    borderColor: Colors.BORDER,
     padding: Spacing.CARD_PADDING,
   },
-  label: { ...Typography.SECTION_HEADING, color: Dark.TEXT, marginTop: Spacing.M, marginBottom: Spacing.M },
+  label: { ...Typography.SECTION_HEADING, color: Colors.DARK, marginTop: Spacing.M, marginBottom: Spacing.M },
   input: {
     height: Spacing.INPUT_HEIGHT,
     borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Dark.BORDER,
+    borderColor: Colors.BORDER,
     borderRadius: Spacing.BUTTON_RADIUS,
     paddingHorizontal: Spacing.L,
     ...Typography.BODY,
-    color: Dark.TEXT,
-    backgroundColor: Dark.BG,
+    color: Colors.DARK,
   },
-  estimateText: { ...Typography.BODY, color: Dark.ACCENT, fontWeight: '700', marginTop: Spacing.S },
-  errorText: { ...Typography.ERROR, color: Dark.ERROR, marginTop: Spacing.S },
-  hintText: { ...Typography.CAPTION, color: Dark.TEXT_FAINT, marginTop: Spacing.M },
+  estimateText: { ...Typography.BODY, color: Colors.GREEN, fontWeight: '700', marginTop: Spacing.S },
+  errorText: { ...Typography.ERROR, marginTop: Spacing.S },
+  hintText: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: Spacing.M },
   notLiveBanner: {
     ...Typography.CAPTION,
-    color: Dark.ACCENT,
-    backgroundColor: Dark.CHIP,
+    color: Colors.GREEN_DARK,
+    backgroundColor: Colors.GREEN_10,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.M,
     marginBottom: Spacing.L,
@@ -585,23 +579,23 @@ const styles = StyleSheet.create({
 
   primaryButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    backgroundColor: Dark.ACCENT,
+    backgroundColor: Colors.GREEN,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: Spacing.L,
   },
   primaryButtonDisabled: { opacity: 0.5 },
-  primaryButtonText: { ...Typography.BUTTON_TEXT, color: Dark.BG },
+  primaryButtonText: { ...Typography.BUTTON_TEXT },
 
   savedRow: {
     borderWidth: 1,
-    borderColor: Dark.BORDER,
+    borderColor: Colors.BORDER,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.M,
     marginBottom: Spacing.S,
   },
-  savedRowText: { ...Typography.BODY, color: Dark.TEXT },
+  savedRowText: { ...Typography.BODY, color: Colors.DARK },
 
   networkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.S },
   networkChip: {
@@ -609,46 +603,52 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.S,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: Dark.BORDER,
+    borderColor: Colors.BORDER,
   },
-  networkChipSelected: { backgroundColor: Dark.CHIP, borderColor: Dark.ACCENT },
-  networkChipText: { ...Typography.CAPTION, color: Dark.TEXT_MUTED, fontWeight: '600' },
-  networkChipTextSelected: { color: Dark.ACCENT },
+  networkChipSelected: { backgroundColor: Colors.GREEN_10, borderColor: Colors.GREEN },
+  networkChipText: { ...Typography.CAPTION, color: Colors.GRAY, fontWeight: '600' },
+  networkChipTextSelected: { color: Colors.GREEN_DARK },
 
-  qrCard: { alignSelf: 'center', backgroundColor: Colors.WHITE, borderRadius: 12, padding: Spacing.M, marginBottom: Spacing.M },
-  depositAddressText: { ...Typography.BODY, color: Dark.TEXT, textAlign: 'center', marginBottom: Spacing.M },
+  qrCard: {
+    alignSelf: 'center',
+    backgroundColor: Colors.WHITE,
+    borderWidth: 1,
+    borderColor: Colors.BORDER,
+    borderRadius: 12,
+    padding: Spacing.M,
+    marginBottom: Spacing.M,
+  },
+  depositAddressText: { ...Typography.BODY, color: Colors.DARK, textAlign: 'center', marginBottom: Spacing.M },
   copyAddressButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
-    borderColor: Dark.ACCENT,
+    borderColor: Colors.GREEN,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  copyAddressButtonText: { ...Typography.BUTTON_TEXT, color: Dark.ACCENT },
+  copyAddressButtonText: { ...Typography.BUTTON_TEXT, color: Colors.GREEN },
 
   confirmBox: {
-    backgroundColor: Dark.BG,
+    backgroundColor: Colors.LIGHT_GRAY,
     borderRadius: Spacing.CARD_RADIUS,
-    borderWidth: 1,
-    borderColor: Dark.BORDER,
     padding: Spacing.CARD_PADDING,
     marginTop: Spacing.L,
   },
-  confirmText: { ...Typography.BODY, color: Dark.TEXT },
-  confirmWarning: { ...Typography.CAPTION, color: Dark.ERROR, marginTop: Spacing.S },
+  confirmText: { ...Typography.BODY, color: Colors.DARK },
+  confirmWarning: { ...Typography.CAPTION, color: Colors.ERROR, marginTop: Spacing.S },
   checkRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.M },
   checkbox: {
     width: 22,
     height: 22,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: Dark.ACCENT,
+    borderColor: Colors.GREEN,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: Spacing.M,
   },
-  checkboxChecked: { backgroundColor: Dark.ACCENT },
-  checkboxMark: { color: Dark.BG, fontSize: 14, fontWeight: '700' },
-  checkLabel: { ...Typography.CAPTION, color: Dark.TEXT, flex: 1 },
+  checkboxChecked: { backgroundColor: Colors.GREEN },
+  checkboxMark: { color: Colors.WHITE, fontSize: 14, fontWeight: '700' },
+  checkLabel: { ...Typography.CAPTION, color: Colors.DARK, flex: 1 },
 });
