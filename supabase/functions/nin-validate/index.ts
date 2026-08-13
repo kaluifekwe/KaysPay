@@ -75,6 +75,13 @@ serve(async (req: Request) => {
         "Identity services are temporarily unavailable. Please try again later.",
     }, 503);
   }
+  if (!(await isServiceEnabled(supabase, "nin_modification"))) {
+    return json({
+      success: false,
+      error:
+        "NIN Validation is temporarily unavailable. Please check back later.",
+    }, 503);
+  }
   if (!(await isDeviceSessionAllowed(req, supabase, user.id))) {
     return json({
       error: "This device session has been revoked. Please log in again.",

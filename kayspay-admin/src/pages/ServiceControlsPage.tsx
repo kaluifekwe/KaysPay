@@ -34,7 +34,8 @@ const LABELS: Record<string, string> = {
   vtu: 'VTU (airtime, data, bills, exam pins)',
   esim: 'eSIM',
   foreign_number: 'Foreign numbers',
-  identity: 'Identity (NIN/BVN)',
+  identity: 'Identity (NIN/BVN Verify)',
+  nin_modification: 'NIN Modification (Name/Phone/Address + Validation)',
 };
 
 const NETWORKS = ['mtn', 'glo', '9mobile', 'airtel'];
