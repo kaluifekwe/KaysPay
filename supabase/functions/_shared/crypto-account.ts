@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createSubAccount } from "./quidax-client.ts";
+import { createSubAccount, getSubAccounts, QuidaxError } from "./quidax-client.ts";
 
 /**
  * Returns the caller's Quidax sub-account, creating one on first use. A
@@ -25,11 +25,29 @@ export async function getOrCreateCryptoAccount(
   const lastName = rest.join(" ") || "User";
   const email = user.email || `${user.id}@kayspay.com.ng`;
 
-  const account = await createSubAccount({
-    email,
-    firstName: firstName.slice(0, 60),
-    lastName: lastName.slice(0, 60),
-  });
+  let account: { id: string; sn: string; email: string };
+  try {
+    account = await createSubAccount({
+      email,
+      firstName: firstName.slice(0, 60),
+      lastName: lastName.slice(0, 60),
+    });
+  } catch (e) {
+    // Recoverable: a prior attempt already created this sub-account on
+    // Quidax's side but the local crypto_accounts row never landed (a
+    // crashed request, a transient DB error, or a retry against an
+    // about-to-be-fixed API key that got further than the others did).
+    // Quidax's email->sub-account mapping is permanent, so the fix is to
+    // find the existing one, not fail forever on every future visit.
+    const alreadyExists = e instanceof QuidaxError
+      && (e.status === 409 || /already exists/i.test(e.message));
+    if (!alreadyExists) throw e;
+
+    const subAccounts = await getSubAccounts();
+    const found = subAccounts.find((s) => s.email.toLowerCase() === email.toLowerCase());
+    if (!found) throw e;
+    account = found;
+  }
 
   const { error } = await supabase.from("crypto_accounts").insert({
     user_id: user.id,

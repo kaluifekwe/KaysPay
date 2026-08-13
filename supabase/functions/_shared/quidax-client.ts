@@ -57,10 +57,13 @@ export interface QuidaxSubAccount {
 
 /**
  * Creates a Quidax sub-account for a KaysPay user. Email must be unique and
- * immutable on Quidax's side — callers must persist the returned id
- * (crypto_accounts.quidax_user_id) rather than re-deriving it, and must
- * treat "already exists" (409) as a caller bug, not a retry case, since the
- * email->sub-account mapping is 1:1 and permanent once created.
+ * immutable on Quidax's side. Quidax's own "already exists" (409) is a real,
+ * recoverable case here — not just a caller bug — since a prior call can
+ * succeed on Quidax's side while the local crypto_accounts insert that was
+ * meant to follow it never lands (a crashed request, a transient DB error,
+ * or — as happened once — several retries against a not-yet-valid API key
+ * where one attempt got further than the others). getOrCreateCryptoAccount
+ * recovers from this via findSubAccountByEmail rather than failing forever.
  */
 export async function createSubAccount(params: {
   email: string;
@@ -76,6 +79,16 @@ export async function createSubAccount(params: {
     throw new QuidaxError(data?.message || "Could not create Quidax sub-account", status);
   }
   return { id: data.data.id, sn: data.data.sn, email: data.data.email };
+}
+
+/** All sub-accounts under this merchant — used only to recover an orphaned
+ * sub-account (see createSubAccount's doc comment), never on the normal path. */
+export async function getSubAccounts(): Promise<QuidaxSubAccount[]> {
+  const { status, data } = await callQuidax("/users", "GET");
+  if (status >= 400 || data?.status !== "success") {
+    throw new QuidaxError(data?.message || "Could not list Quidax sub-accounts", status);
+  }
+  return (data.data as any[]).map((u) => ({ id: String(u.id), sn: String(u.sn), email: String(u.email) }));
 }
 
 export interface QuidaxWallet {
