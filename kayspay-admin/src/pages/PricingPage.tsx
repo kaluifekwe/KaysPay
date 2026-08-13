@@ -50,6 +50,17 @@ function nairaTextToKobo(text: string): number | null {
   return Math.round(naira * 100);
 }
 
+// Same, but for a markup: 0 is a valid markup (sell at provider price with
+// no addition), a negative markup is not — this is "add on top", not a
+// discount tool.
+function nairaTextToMarkupKobo(text: string): number | null {
+  const cleaned = text.replace(/,/g, '').trim();
+  if (!cleaned) return null;
+  const naira = Number(cleaned);
+  if (!Number.isFinite(naira) || naira < 0) return null;
+  return Math.round(naira * 100);
+}
+
 export default function PricingPage() {
   const { role } = useAuth();
   const canEdit = role === 'super_admin';
@@ -99,11 +110,19 @@ export default function PricingPage() {
         setOverrides((current) => current.filter((item) => !(item.network === network && item.plan_id === planId)));
         return;
       }
-      const priceKobo = nairaTextToKobo(text);
-      if (priceKobo === null) {
-        setError('Enter a valid amount, or leave it blank to use the provider price.');
+      const markupKobo = nairaTextToMarkupKobo(text);
+      if (markupKobo === null) {
+        setError('Enter a valid markup (0 or more), or leave it blank to use the provider price.');
         return;
       }
+      const plan = networkPlans.find((item) => item.id === planId);
+      if (!plan) {
+        setError('Could not find this plan — try reloading the page.');
+        return;
+      }
+      // The stored override is always the final price the customer pays —
+      // this is just the provider's price plus the markup entered here.
+      const priceKobo = plan.reseller_kobo + markupKobo;
       await callAdmin('admin-pricing-controls', { method: 'POST', body: { target: 'plan', network, plan_id: planId, price_kobo: priceKobo } });
       setOverrides((current) => [
         ...current.filter((item) => !(item.network === network && item.plan_id === planId)),
@@ -141,7 +160,7 @@ export default function PricingPage() {
     <div>
       <h2>Pricing</h2>
       <p className="muted">
-        Set what customers pay per plan or service. Leave "Your Price" blank to charge the provider's own price with no markup. Changes apply to the very next purchase.
+        Data plans: enter a markup to add on top of the provider's price — leave it blank to charge the provider's price with no markup. NIN &amp; BVN services: enter the full price customers pay. Changes apply to the very next purchase.
       </p>
       {!canEdit && <p className="muted">You have view-only access. Only super admins can change prices.</p>}
       {error && <div className="error-text">{error}</div>}
@@ -160,13 +179,18 @@ export default function PricingPage() {
             {networkPlans.length === 0 ? <p className="muted">No synced plans for this network.</p> : (
               <table>
                 <thead>
-                  <tr><th>Plan</th><th>Status</th><th>Provider Price</th><th>Your Price</th>{canEdit && <th />}</tr>
+                  <tr><th>Plan</th><th>Status</th><th>Provider Price</th><th>Your Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr>
                 </thead>
                 <tbody>
                   {networkPlans.map((plan) => {
                     const key = `plan:${network}:${plan.id}`;
                     const override = overrideFor(plan.id);
-                    const inputValue = planInputs[key] ?? (override ? (override.price_kobo / 100).toFixed(2) : '');
+                    const inputValue = planInputs[key] ?? (override ? ((override.price_kobo - plan.reseller_kobo) / 100).toFixed(2) : '');
+                    const draftText = planInputs[key];
+                    const previewMarkupKobo = draftText === undefined
+                      ? (override ? override.price_kobo - plan.reseller_kobo : 0)
+                      : (draftText.trim() === '' ? 0 : nairaTextToMarkupKobo(draftText));
+                    const customerPaysKobo = previewMarkupKobo === null ? null : plan.reseller_kobo + previewMarkupKobo;
                     return (
                       <tr key={plan.id}>
                         <td>{plan.name} · {plan.validity}</td>
@@ -176,12 +200,13 @@ export default function PricingPage() {
                           <input
                             className="mono"
                             style={{ width: 110, textAlign: 'right', borderColor: override ? 'var(--warning)' : undefined, background: override ? '#fffbeb' : undefined }}
-                            placeholder="—"
+                            placeholder="0"
                             value={inputValue}
                             disabled={!canEdit}
                             onChange={(event) => setPlanInputs((current) => ({ ...current, [key]: event.target.value }))}
                           />
                         </td>
+                        <td className="mono">{customerPaysKobo === null ? '—' : formatNaira(customerPaysKobo)}</td>
                         {canEdit && (
                           <td>
                             <button className="primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === key} onClick={() => void savePlanPrice(plan.id)}>
