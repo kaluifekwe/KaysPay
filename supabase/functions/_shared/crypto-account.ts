@@ -23,7 +23,19 @@ export async function getOrCreateCryptoAccount(
   const fullName = String((user.user_metadata as { full_name?: string } | undefined)?.full_name || "").trim();
   const [firstName, ...rest] = fullName ? fullName.split(/\s+/) : ["KaysPay"];
   const lastName = rest.join(" ") || "User";
-  const email = user.email || `${user.id}@kayspay.com.ng`;
+  // NEVER the customer's own email. Quidax emails are unique across their
+  // WHOLE platform, not just within our sub-accounts — so any customer who
+  // already has a personal Quidax account is permanently un-onboardable,
+  // failing with "a sub account with this email already exists" that no
+  // amount of retrying or lookup can resolve (confirmed live: the owner's
+  // own Quidax account holds their email, so their sub-account could never
+  // be created). Quidax's own integration docs say to "use your company
+  // domain for the email extension" for exactly this reason. Derived from
+  // the immutable auth user id so it's stable across retries and devices,
+  // and it keeps customer emails out of a third party that has no need for
+  // them. The address is a routing-only identifier — no mail is ever sent
+  // to it, and the sub-domain is deliberately not the real mail domain.
+  const email = `${user.id}@users.kayspay.com.ng`;
 
   let account: { id: string; sn: string; email: string };
   try {
