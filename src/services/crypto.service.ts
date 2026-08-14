@@ -68,6 +68,8 @@ export interface CryptoBuyPayment {
   amount: number;
   processorFee: number;
   vat: number;
+  /** Kay's Pay markup itemised by Quidax; already included in amountToPay. */
+  merchantMarkup: number;
 }
 
 export interface CryptoBuyResult {
@@ -224,6 +226,7 @@ export const cryptoService = {
               amount: Number(data.payment.amount) || 0,
               processorFee: Number(data.payment.processor_fee) || 0,
               vat: Number(data.payment.vat) || 0,
+              merchantMarkup: Number(data.payment.merchant_markup) || 0,
             }
           : undefined,
       };

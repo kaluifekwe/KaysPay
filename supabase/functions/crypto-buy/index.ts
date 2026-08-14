@@ -210,6 +210,7 @@ serve(async (req: Request) => {
         amount_expected_ngn: bank.amountExpected,
         processor_fee_ngn: bank.processorFee,
         vat_ngn: bank.vat,
+        merchant_markup_ngn: bank.merchantMarkup,
       },
     });
     if (error) {
@@ -235,6 +236,7 @@ serve(async (req: Request) => {
         amount: bank.amount,
         processor_fee: bank.processorFee,
         vat: bank.vat,
+        merchant_markup: bank.merchantMarkup,
       },
     });
   } catch (e) {

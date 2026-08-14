@@ -360,6 +360,12 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
               <Text style={styles.feeLabel}>VAT</Text>
               <Text style={styles.feeLabel}>{formatNaira(payment.vat)}</Text>
             </View>
+            {payment.merchantMarkup > 0 && (
+              <View style={styles.payDetailRow}>
+                <Text style={styles.feeLabel}>Service fee</Text>
+                <Text style={styles.feeLabel}>{formatNaira(payment.merchantMarkup)}</Text>
+              </View>
+            )}
           </View>
 
           <Text style={styles.hintText}>

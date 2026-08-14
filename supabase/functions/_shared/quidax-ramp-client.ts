@@ -10,7 +10,9 @@ import { redactSecrets } from "./redact.ts";
 // alternative design where KaysPay debits the in-app wallet and pushes
 // Naira from its own Quidax balance — that would require KaysPay to hold
 // Naira float at Quidax, which the owner ruled out.
-const QUIDAX_RAMP_PRIVATE_KEY = Deno.env.get("QUIDAX_RAMP_PRIVATE_KEY")?.trim();
+// Quidax confirmed that Ramp and Exchange use the same merchant secret. The
+// Ramp host still requires its documented x-private-key header.
+const QUIDAX_SECRET_KEY = Deno.env.get("QUIDAX_SECRET_KEY")?.trim();
 const RAMP_BASE_URL = "https://ramp-be.quidax.io/api/v1/merchants";
 
 export class QuidaxRampError extends Error {
@@ -20,7 +22,7 @@ export class QuidaxRampError extends Error {
 }
 
 export function isQuidaxRampConfigured(): boolean {
-  return !!QUIDAX_RAMP_PRIVATE_KEY;
+  return !!QUIDAX_SECRET_KEY;
 }
 
 async function callRamp(
@@ -28,12 +30,12 @@ async function callRamp(
   method = "GET",
   body?: Record<string, unknown>,
 ): Promise<{ status: number; data: any }> {
-  if (!QUIDAX_RAMP_PRIVATE_KEY) throw new QuidaxRampError("Quidax Ramp not configured");
+  if (!QUIDAX_SECRET_KEY) throw new QuidaxRampError("Quidax Ramp not configured");
 
   const response = await fetchWithTimeout(`${RAMP_BASE_URL}${path}`, {
     method,
     headers: {
-      "x-private-key": QUIDAX_RAMP_PRIVATE_KEY,
+      "x-private-key": QUIDAX_SECRET_KEY,
       "Content-Type": "application/json",
       Accept: "application/json",
     },
@@ -119,6 +121,16 @@ export interface OnRampBankAccount {
   amount: number;
   processorFee: number;
   vat: number;
+  /** Merchant markup configured and settled by Quidax, when itemised. */
+  merchantMarkup: number;
+}
+
+function readMoney(payload: Record<string, unknown>, ...keys: string[]): number {
+  for (const key of keys) {
+    const value = Number(payload[key]);
+    if (Number.isFinite(value) && value >= 0) return value;
+  }
+  return 0;
 }
 
 /**
@@ -141,8 +153,11 @@ export async function confirmOnRamp(merchantReference: string): Promise<OnRampBa
     bankName: String(payload.bank_name ?? ""),
     amountExpected: Number(payload.amount_expected) || 0,
     amount: Number(payload.amount) || 0,
-    processorFee: Number(payload.processor_fee) || 0,
-    vat: Number(payload.vat) || 0,
+    processorFee: readMoney(payload, "processor_fee", "processing_fee"),
+    vat: readMoney(payload, "vat", "vat_amount"),
+    // Quidax includes this in amount_expected and settles it to the merchant
+    // markup wallet. Do not calculate or add it again inside Kay's Pay.
+    merchantMarkup: readMoney(payload, "merchant_markup", "markup", "markup_amount", "merchant_fee"),
   };
 }
 
