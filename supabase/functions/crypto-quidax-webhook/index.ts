@@ -12,8 +12,9 @@ import {
 // credit the user's Naira wallet), and withdrawals. Deposit on-hold/failed/
 // rejected variants are logged rather than acted on, since Quidax's own
 // compliance layer can hold a deposit and there is nothing to reconcile
-// until that resolves. Buy still runs on the legacy internal ledger and has
-// no webhook until Phase 3 moves it onto Quidax.
+// until that resolves. Buy settles here too (Phase 3): the customer pays a
+// Quidax-issued one-time bank account and Quidax delivers the USDT, so
+// there is no local credit — only the order's status to move.
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -145,6 +146,50 @@ serve(async (req: Request) => {
       console.error("crypto-quidax-webhook: settle_crypto_withdrawal failed:", error.message);
       return json({ error: "Could not settle withdrawal" }, 500);
     }
+    return json({ received: true });
+  }
+
+  // Buy settled: the customer's bank transfer cleared and Quidax delivered
+  // the USDT into their own sub-account. Nothing is credited locally — the
+  // coin is real and the balance is read live from Quidax — so this only
+  // moves the order out of "pending" and records what actually arrived.
+  if (event === "buy_transaction.successful") {
+    const merchantReference = String(data?.merchant_reference || "");
+    const received = Number(data?.crypto_payout?.amount ?? data?.to_amount);
+    if (!merchantReference || !Number.isFinite(received) || received <= 0) {
+      console.error("crypto-quidax-webhook: unexpected buy_transaction.successful", JSON.stringify(payload).slice(0, 300));
+      return json({ received: true });
+    }
+    const { data: txId, error } = await supabase.rpc("complete_crypto_buy", {
+      p_merchant_reference: merchantReference,
+      p_crypto_micro: Math.round(received * 1_000_000),
+      p_tx_hash: data?.crypto_payout?.transaction_hash
+        ? String(data.crypto_payout.transaction_hash)
+        : null,
+    });
+    if (error) {
+      console.error("crypto-quidax-webhook: complete_crypto_buy failed:", error.message);
+      return json({ error: "Could not settle purchase" }, 500);
+    }
+    if (!txId) console.warn(`crypto-quidax-webhook: no pending buy for ${merchantReference}`);
+    return json({ received: true });
+  }
+
+  if (event === "buy_transaction.failed") {
+    const merchantReference = String(data?.merchant_reference || "");
+    if (merchantReference) {
+      // Nothing to refund: the money never left the customer's own bank.
+      await supabase.rpc("fail_crypto_buy", {
+        p_merchant_reference: merchantReference,
+        p_reason: String(data?.status || "failed"),
+      });
+    }
+    return json({ received: true });
+  }
+
+  // The customer's transfer landed but Quidax hasn't delivered the crypto
+  // yet — the order is already 'pending' here, so there is nothing to change.
+  if (event === "buy_transaction.processing") {
     return json({ received: true });
   }
 
