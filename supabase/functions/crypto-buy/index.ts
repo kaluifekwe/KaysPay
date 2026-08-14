@@ -44,6 +44,23 @@ const FALLBACK_MAX_NGN = 2_000_000;
 // even when the destination is a Quidax-hosted address.
 const DELIVERY_NETWORK = "trc20";
 
+// Same format rules as crypto.service.ts's client-side check and
+// crypto-withdraw's server-side check — never trust the client's own
+// validation for what's ultimately an irreversible on-chain send. A wrong
+// address here is WORSE than a wrong withdrawal address: there is no
+// KaysPay-side balance to recover it from, since Quidax delivers straight
+// out of the purchase.
+const EXTERNAL_ADDRESS_PATTERNS: Record<string, RegExp> = {
+  TRC20: /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
+  ERC20: /^0x[a-fA-F0-9]{40}$/,
+  BEP20: /^0x[a-fA-F0-9]{40}$/,
+};
+const EXTERNAL_NETWORK_MAP: Record<string, string> = {
+  TRC20: "trc20",
+  ERC20: "erc20",
+  BEP20: "bep20",
+};
+
 serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
@@ -85,6 +102,26 @@ serve(async (req: Request) => {
     return json({ success: false, error: "Unsupported asset" }, 400);
   }
 
+  // Optional: send the purchased USDT straight to an external wallet instead
+  // of the customer's own KaysPay crypto account. Validated the same way a
+  // withdrawal address is, and rejected outright rather than silently
+  // falling back to the KaysPay account — a customer who typed an address
+  // must never have it quietly ignored.
+  const externalNetworkKey = String(body.destination_network || "").trim();
+  const externalAddress = String(body.destination_address || "").trim();
+  let external: { network: string; quidaxNetwork: string; address: string } | null = null;
+  if (externalNetworkKey || externalAddress) {
+    const pattern = EXTERNAL_ADDRESS_PATTERNS[externalNetworkKey];
+    const quidaxNetwork = EXTERNAL_NETWORK_MAP[externalNetworkKey];
+    if (!pattern || !quidaxNetwork) {
+      return json({ success: false, error: "Unsupported network" }, 400);
+    }
+    if (!pattern.test(externalAddress)) {
+      return json({ success: false, error: `This doesn't look like a valid ${externalNetworkKey} address.` }, 400);
+    }
+    external = { network: externalNetworkKey, quidaxNetwork, address: externalAddress };
+  }
+
   // Live market price — also converts a USD-denominated request from the
   // existing screen into the Naira amount Quidax actually charges in.
   let askRate: number;
@@ -123,15 +160,22 @@ serve(async (req: Request) => {
     || `kspbuy_${user.id.replace(/-/g, "").slice(0, 12)}_${Date.now()}`;
 
   try {
-    const account = await getOrCreateCryptoAccount(supabase, user);
-
-    // Delivery target is the customer's OWN sub-account address, so the
-    // purchase lands in the balance Sell and Withdraw already read.
-    const destination = await createDepositAddress({
-      quidaxUserId: account.quidaxUserId,
-      currency: "usdt",
-      network: DELIVERY_NETWORK,
-    });
+    // Delivery target: an external wallet the customer supplied, or — by
+    // default — their own KaysPay crypto account, so the purchase lands in
+    // the same balance Sell and Withdraw already read.
+    const deliveryNetwork = external?.quidaxNetwork ?? DELIVERY_NETWORK;
+    let deliveryAddress: string;
+    if (external) {
+      deliveryAddress = external.address;
+    } else {
+      const account = await getOrCreateCryptoAccount(supabase, user);
+      const destination = await createDepositAddress({
+        quidaxUserId: account.quidaxUserId,
+        currency: "usdt",
+        network: DELIVERY_NETWORK,
+      });
+      deliveryAddress = destination.address;
+    }
 
     // Quidax name-matches this against the bank account the money arrives
     // from, so it must be the customer's real name, not a KaysPay label.
@@ -145,8 +189,8 @@ serve(async (req: Request) => {
       email: `${user.id}@users.kayspay.com.ng`,
       firstName: firstName.slice(0, 60),
       lastName: lastName.slice(0, 60),
-      address: destination.address,
-      network: DELIVERY_NETWORK,
+      address: deliveryAddress,
+      network: deliveryNetwork,
     });
 
     const bank = await confirmOnRamp(merchantReference);
@@ -160,8 +204,9 @@ serve(async (req: Request) => {
       p_metadata: {
         quidax_public_id: initiated.publicId,
         quidax_reference: initiated.reference,
-        crypto_network: DELIVERY_NETWORK,
-        destination_address: destination.address,
+        crypto_network: deliveryNetwork,
+        destination_address: deliveryAddress,
+        destination_type: external ? "external_wallet" : "kayspay_account",
         amount_expected_ngn: bank.amountExpected,
         processor_fee_ngn: bank.processorFee,
         vat_ngn: bank.vat,
@@ -178,6 +223,9 @@ serve(async (req: Request) => {
       asset: "USDT",
       estimated_crypto: initiated.toAmount,
       rate: askRate,
+      destination_type: external ? "external_wallet" : "kayspay_account",
+      destination_address: deliveryAddress,
+      destination_network: external?.network ?? "TRC20",
       // What the customer must transfer, and exactly where.
       payment: {
         account_name: bank.accountName,

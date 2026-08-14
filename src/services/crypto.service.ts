@@ -59,6 +59,27 @@ export interface QuidaxWalletBalance {
   isCrypto: boolean;
 }
 
+export interface CryptoBuyPayment {
+  accountName: string;
+  accountNumber: string;
+  bankName: string;
+  /** Total to transfer, including processor fee and VAT. */
+  amountToPay: number;
+  amount: number;
+  processorFee: number;
+  vat: number;
+}
+
+export interface CryptoBuyResult {
+  success: boolean;
+  error?: string;
+  transactionId?: string;
+  estimatedCrypto?: number;
+  destinationType?: 'kayspay_account' | 'external_wallet';
+  destinationAddress?: string;
+  payment?: CryptoBuyPayment;
+}
+
 export const cryptoService = {
   /** micro-USDT (6 decimals) -> a plain USDT amount for display/input. */
   microToAmount(micro: number): number {
@@ -148,13 +169,33 @@ export const cryptoService = {
     return data ? cryptoService.microToAmount(Number(data.balance_micro)) : 0;
   },
 
-  async buy(usdAmount: number, authToken: string): Promise<CryptoActionResult> {
+  /**
+   * Starts a purchase: Quidax issues a single-use bank account for the
+   * customer to transfer Naira into, and delivers the USDT either to their
+   * own KaysPay crypto account (default) or a `destination` wallet they
+   * supply. Doesn't complete synchronously — the caller shows the returned
+   * bank details and waits for the transfer + webhook, same as any
+   * bank-transfer funding flow already in the app.
+   */
+  async buy(
+    ngnAmount: number,
+    authToken: string,
+    destination?: { network: CryptoNetwork; address: string },
+  ): Promise<CryptoBuyResult> {
     try {
       const idempotencyKey = newIdempotencyKey('crypto_buy');
       const { data, error } = await invokeWithRetry<any>(
         () => withTimeout(
           supabase.functions.invoke('crypto-buy', {
-            body: { asset: 'USDT', usd_amount: usdAmount, auth_token: authToken, idempotency_key: idempotencyKey },
+            body: {
+              asset: 'USDT',
+              ngn_amount: ngnAmount,
+              auth_token: authToken,
+              idempotency_key: idempotencyKey,
+              ...(destination
+                ? { destination_network: destination.network, destination_address: destination.address }
+                : {}),
+            },
           }),
         ),
         idempotencyKey,
@@ -168,7 +209,24 @@ export const cryptoService = {
         return { success: false, error: msg };
       }
       if (!data?.success) return { success: false, error: data?.error || 'Purchase failed' };
-      return { success: true, transactionId: data.transaction_id };
+      return {
+        success: true,
+        transactionId: data.transaction_id,
+        estimatedCrypto: Number(data.estimated_crypto) || 0,
+        destinationType: data.destination_type === 'external_wallet' ? 'external_wallet' : 'kayspay_account',
+        destinationAddress: data.destination_address,
+        payment: data.payment
+          ? {
+              accountName: data.payment.account_name,
+              accountNumber: data.payment.account_number,
+              bankName: data.payment.bank_name,
+              amountToPay: Number(data.payment.amount_to_pay) || 0,
+              amount: Number(data.payment.amount) || 0,
+              processorFee: Number(data.payment.processor_fee) || 0,
+              vat: Number(data.payment.vat) || 0,
+            }
+          : undefined,
+      };
     } catch {
       return { success: false, error: 'Network error. Please try again.' };
     }

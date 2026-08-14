@@ -27,6 +27,7 @@ import {
   type CryptoNetwork,
   type SavedCryptoAddress,
   type QuidaxWalletBalance,
+  type CryptoBuyPayment,
 } from '../services/crypto.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import ResultStatusView, { type ResultStatus } from '../components/ResultStatusView';
@@ -96,7 +97,25 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionAmountNgn, setActionAmountNgn] = useState<number | null>(null);
 
-  const [buyUsd, setBuyUsd] = useState('');
+  const [buyNgn, setBuyNgn] = useState('');
+  // Where a purchase should be delivered: the customer's own KaysPay crypto
+  // account (default), or an external wallet they supply — same address/
+  // network validation as Withdraw, since a wrong entry here is even less
+  // recoverable (Quidax delivers straight out of the purchase, with no
+  // KaysPay-side balance to recover it from).
+  const [buyToExternal, setBuyToExternal] = useState(false);
+  const [buyDestNetwork, setBuyDestNetwork] = useState<CryptoNetwork>('TRC20');
+  const [buyDestAddress, setBuyDestAddress] = useState('');
+  const [buyDestVerified, setBuyDestVerified] = useState(false);
+  const [buyLoading, setBuyLoading] = useState(false);
+  // A started purchase isn't complete — Quidax hands back a one-time bank
+  // account and the app waits for the transfer, same as any other
+  // bank-transfer funding flow already in the app.
+  const [pendingBuyPayment, setPendingBuyPayment] = useState<{
+    payment: CryptoBuyPayment;
+    estimatedCrypto: number;
+    destinationType: 'kayspay_account' | 'external_wallet';
+  } | null>(null);
   const [sellUsdt, setSellUsdt] = useState('');
 
   const [wdNetwork, setWdNetwork] = useState<CryptoNetwork>('TRC20');
@@ -175,11 +194,15 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     setWdVerified(false);
   }, [wdAddress, wdNetwork]);
 
-  const numericBuyUsd = parseFloat(buyUsd);
+  useEffect(() => {
+    setBuyDestVerified(false);
+  }, [buyDestAddress, buyDestNetwork]);
+
+  const numericBuyNgn = parseFloat(buyNgn);
   const numericSellUsdt = parseFloat(sellUsdt);
   const numericWdAmount = parseFloat(wdAmount);
 
-  const buyNgnEstimate = buyRate && numericBuyUsd > 0 ? numericBuyUsd * buyRate : null;
+  const buyUsdtEstimate = buyRate && numericBuyNgn > 0 ? numericBuyNgn / buyRate : null;
   const sellNgnEstimate = sellRate && numericSellUsdt > 0 ? numericSellUsdt * sellRate : null;
 
   const wdAddressValid = wdAddress.trim().length > 0 && isValidCryptoAddress(wdNetwork, wdAddress);
@@ -187,8 +210,13 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     ? `This doesn't look like a valid ${wdNetwork} address.`
     : null;
 
-  const canBuy = Number.isFinite(numericBuyUsd) && numericBuyUsd >= 1 && numericBuyUsd <= 2000
-    && ngnBalance != null && buyNgnEstimate != null && buyNgnEstimate <= ngnBalance;
+  const buyDestAddressValid = buyDestAddress.trim().length > 0 && isValidCryptoAddress(buyDestNetwork, buyDestAddress);
+  const buyDestAddressError = buyDestAddress.trim().length > 0 && !buyDestAddressValid
+    ? `This doesn't look like a valid ${buyDestNetwork} address.`
+    : null;
+
+  const canBuy = Number.isFinite(numericBuyNgn) && numericBuyNgn > 0
+    && (!buyToExternal || (buyDestAddressValid && buyDestVerified));
   const canSell = Number.isFinite(numericSellUsdt) && numericSellUsdt >= 1 && numericSellUsdt <= 2000
     && quidaxUsdtBalance != null && numericSellUsdt <= quidaxUsdtBalance;
   const canWithdraw = Number.isFinite(numericWdAmount) && numericWdAmount >= 5 && numericWdAmount <= 2000
@@ -196,20 +224,33 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
   const handleBuy = useCallback(async () => {
     if (!canBuy) return;
-    const authResult = await authorize({ title: 'Confirm Crypto Purchase', amount: buyNgnEstimate ?? undefined });
+    const subtitle = buyToExternal
+      ? `To ${buyDestNetwork} wallet ${buyDestAddress.trim()}`
+      : 'To your KaysPay crypto account';
+    const authResult = await authorize({ title: 'Confirm Crypto Purchase', amount: numericBuyNgn, subtitle });
     if (!authResult) return;
-    setActionAmountNgn(buyNgnEstimate);
-    setActionState('processing');
-    const result = await cryptoService.buy(numericBuyUsd, authResult.token);
-    if (result.success) {
-      setActionState('success');
-      setBuyUsd('');
+    setBuyLoading(true);
+    const result = await cryptoService.buy(
+      numericBuyNgn,
+      authResult.token,
+      buyToExternal ? { network: buyDestNetwork, address: buyDestAddress.trim() } : undefined,
+    );
+    setBuyLoading(false);
+    if (result.success && result.payment) {
+      setPendingBuyPayment({
+        payment: result.payment,
+        estimatedCrypto: result.estimatedCrypto ?? 0,
+        destinationType: result.destinationType ?? 'kayspay_account',
+      });
+      setBuyNgn('');
+      setBuyDestAddress('');
+      setBuyDestVerified(false);
       loadAll();
     } else {
       setActionError(result.error || 'Purchase failed. Please try again.');
       setActionState('failed');
     }
-  }, [canBuy, buyNgnEstimate, numericBuyUsd, authorize, loadAll]);
+  }, [canBuy, numericBuyNgn, buyToExternal, buyDestNetwork, buyDestAddress, authorize, loadAll]);
 
   const handleSell = useCallback(async () => {
     if (!canSell) return;
@@ -263,6 +304,84 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     setWdVerified(false);
     cryptoService.touchAddress(addr.id);
   }, []);
+
+  const handleCopyBuyAccount = useCallback(async () => {
+    if (!pendingBuyPayment) return;
+    try {
+      await Clipboard.setStringAsync(pendingBuyPayment.payment.accountNumber);
+      Alert.alert('Copied', 'Account number copied.');
+    } catch {
+      Alert.alert('Copy account number', 'Could not copy the account number. Please try again.');
+    }
+  }, [pendingBuyPayment]);
+
+  if (pendingBuyPayment) {
+    const { payment, estimatedCrypto, destinationType } = pendingBuyPayment;
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.WHITE} />
+        <View style={styles.topBar}>
+          <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => setPendingBuyPayment(null)}>
+            <Ionicons name="chevron-back" size={26} color={Colors.DARK} />
+          </TouchableOpacity>
+          <Text style={styles.topTitle}>Complete your purchase</Text>
+        </View>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.confirmBox}>
+            <Text style={styles.hintText}>Transfer exactly</Text>
+            <Text style={styles.heroValue2}>{formatNaira(payment.amountToPay)}</Text>
+            <View style={styles.payDetailRow}>
+              <Text style={styles.payDetailLabel}>Bank</Text>
+              <Text style={styles.payDetailValue}>{payment.bankName}</Text>
+            </View>
+            <View style={styles.payDetailRow}>
+              <Text style={styles.payDetailLabel}>Account</Text>
+              <Text style={styles.payDetailAccount}>{payment.accountNumber}</Text>
+            </View>
+            <View style={styles.payDetailRow}>
+              <Text style={styles.payDetailLabel}>Name</Text>
+              <Text style={styles.payDetailValue}>{payment.accountName}</Text>
+            </View>
+            <TouchableOpacity style={styles.copyAddressButton} onPress={handleCopyBuyAccount}>
+              <Text style={styles.copyAddressButtonText}>Copy Account Number</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.feeBreakdown}>
+            <View style={styles.payDetailRow}>
+              <Text style={styles.feeLabel}>Purchase</Text>
+              <Text style={styles.feeLabel}>{formatNaira(payment.amount)}</Text>
+            </View>
+            <View style={styles.payDetailRow}>
+              <Text style={styles.feeLabel}>Processor fee</Text>
+              <Text style={styles.feeLabel}>{formatNaira(payment.processorFee)}</Text>
+            </View>
+            <View style={styles.payDetailRow}>
+              <Text style={styles.feeLabel}>VAT</Text>
+              <Text style={styles.feeLabel}>{formatNaira(payment.vat)}</Text>
+            </View>
+          </View>
+
+          <Text style={styles.hintText}>
+            You'll receive about {formatUsdt(estimatedCrypto)} into{' '}
+            {destinationType === 'external_wallet' ? 'your external wallet' : 'your KaysPay crypto account'} once the
+            transfer clears.
+          </Text>
+
+          <View style={styles.confirmWarningBox}>
+            <Text style={styles.confirmWarning}>
+              Transfer from a bank account in your own name — Quidax rejects payments from a different name, and
+              sending a different amount will delay it.
+            </Text>
+          </View>
+
+          <TouchableOpacity style={styles.doneButtonOutline} onPress={() => setPendingBuyPayment(null)}>
+            <Text style={styles.copyAddressButtonText}>Done — I'll transfer now</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   if (actionState !== 'idle') {
     return (
@@ -372,29 +491,90 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
             {tab === 'buy' && (
               <View>
-                <Text style={styles.label}>Amount (USD)</Text>
+                <Text style={styles.hintText}>
+                  Transfer Naira from your own bank — Quidax delivers the USDT once it clears.
+                </Text>
+
+                <Text style={styles.label}>Amount (Naira)</Text>
                 <TextInput
                   style={styles.input}
-                  value={buyUsd}
-                  onChangeText={(t) => setBuyUsd(t.replace(/[^0-9.]/g, ''))}
-                  placeholder="e.g. 30"
+                  value={buyNgn}
+                  onChangeText={(t) => setBuyNgn(t.replace(/[^0-9.]/g, ''))}
+                  placeholder="e.g. 50000"
                   placeholderTextColor={Colors.GRAY}
                   keyboardType="decimal-pad"
                 />
-                {buyNgnEstimate != null && (
-                  <Text style={styles.estimateText}>
-                    ≈ {numericBuyUsd.toFixed(2)} USDT · {formatNaira(buyNgnEstimate)}
-                  </Text>
+                {buyUsdtEstimate != null && (
+                  <Text style={styles.estimateText}>≈ {formatUsdt(buyUsdtEstimate)}</Text>
                 )}
-                {ngnBalance != null && buyNgnEstimate != null && buyNgnEstimate > ngnBalance && (
-                  <Text style={styles.errorText}>Insufficient wallet balance.</Text>
-                )}
+
                 <TouchableOpacity
-                  style={[styles.primaryButton, !canBuy && styles.primaryButtonDisabled]}
-                  onPress={handleBuy}
-                  disabled={!canBuy}
+                  style={styles.destinationToggleRow}
+                  onPress={() => setBuyToExternal((v) => !v)}
+                  activeOpacity={0.75}
                 >
-                  <Text style={styles.primaryButtonText}>Buy USDT</Text>
+                  <View style={[styles.checkbox, buyToExternal && styles.checkboxChecked]}>
+                    {buyToExternal && <Text style={styles.checkboxMark}>✓</Text>}
+                  </View>
+                  <Text style={styles.checkLabel}>Send to a different wallet instead of my crypto account</Text>
+                </TouchableOpacity>
+
+                {buyToExternal && (
+                  <View>
+                    <Text style={styles.label}>Network</Text>
+                    <View style={styles.networkRow}>
+                      {CRYPTO_NETWORKS.map((n) => (
+                        <TouchableOpacity
+                          key={n.key}
+                          style={[styles.networkChip, buyDestNetwork === n.key && styles.networkChipSelected]}
+                          onPress={() => setBuyDestNetwork(n.key)}
+                        >
+                          <Text style={[styles.networkChipText, buyDestNetwork === n.key && styles.networkChipTextSelected]}>
+                            {n.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <Text style={styles.label}>Wallet Address</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={buyDestAddress}
+                      onChangeText={setBuyDestAddress}
+                      placeholder={`Paste your ${buyDestNetwork} address`}
+                      placeholderTextColor={Colors.GRAY}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    {buyDestAddressError && <Text style={styles.errorText}>{buyDestAddressError}</Text>}
+
+                    {buyDestAddressValid && (
+                      <View style={styles.confirmBox}>
+                        <Text style={styles.confirmWarning}>
+                          This is riskier than a withdrawal: the USDT is delivered straight out of this purchase, with
+                          no KaysPay balance to recover it from if the address or network is wrong.
+                        </Text>
+                        <TouchableOpacity style={styles.checkRow} onPress={() => setBuyDestVerified((v) => !v)}>
+                          <View style={[styles.checkbox, buyDestVerified && styles.checkboxChecked]}>
+                            {buyDestVerified && <Text style={styles.checkboxMark}>✓</Text>}
+                          </View>
+                          <Text style={styles.checkLabel}>I've checked this address and network are correct</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.primaryButton, (!canBuy || buyLoading) && styles.primaryButtonDisabled]}
+                  onPress={handleBuy}
+                  disabled={!canBuy || buyLoading}
+                >
+                  {buyLoading ? (
+                    <ActivityIndicator color={Colors.WHITE} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Buy USDT</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             )}
@@ -666,4 +846,30 @@ const styles = StyleSheet.create({
   checkboxChecked: { backgroundColor: Colors.GREEN },
   checkboxMark: { color: Colors.WHITE, fontSize: 14, fontWeight: '700' },
   checkLabel: { ...Typography.CAPTION, color: Colors.DARK, flex: 1 },
+
+  destinationToggleRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.L },
+
+  heroValue2: { fontSize: 26, fontWeight: '600', color: Colors.DARK, marginTop: Spacing.XS, marginBottom: Spacing.M },
+  payDetailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: Spacing.XS },
+  payDetailLabel: { ...Typography.CAPTION, color: Colors.GRAY },
+  payDetailValue: { ...Typography.BODY, color: Colors.DARK, fontWeight: '600' },
+  payDetailAccount: { ...Typography.BODY, color: Colors.GREEN, fontWeight: '700', letterSpacing: 1 },
+  feeBreakdown: { marginTop: Spacing.M, paddingHorizontal: Spacing.XS },
+  feeLabel: { ...Typography.CAPTION, color: Colors.GRAY },
+  confirmWarningBox: {
+    backgroundColor: '#FCEBEB',
+    borderRadius: Spacing.CARD_RADIUS,
+    padding: Spacing.M,
+    marginTop: Spacing.L,
+  },
+  doneButtonOutline: {
+    height: Spacing.BUTTON_HEIGHT_PRIMARY,
+    borderRadius: Spacing.BUTTON_RADIUS,
+    borderWidth: 1,
+    borderColor: Colors.GREEN,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: Spacing.L,
+    marginBottom: Spacing.XL,
+  },
 });
