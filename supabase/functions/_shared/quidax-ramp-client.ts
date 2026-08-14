@@ -10,9 +10,10 @@ import { redactSecrets } from "./redact.ts";
 // alternative design where KaysPay debits the in-app wallet and pushes
 // Naira from its own Quidax balance — that would require KaysPay to hold
 // Naira float at Quidax, which the owner ruled out.
-// Quidax confirmed that Ramp and Exchange use the same merchant secret. The
-// Ramp host still requires its documented x-private-key header.
-const QUIDAX_SECRET_KEY = Deno.env.get("QUIDAX_SECRET_KEY")?.trim();
+// Ramp uses the private SecretKey from the merchant API record. Keep it
+// separate from the Exchange APIKey used by quidax-client.ts: the two
+// credentials have different scopes and authentication headers.
+const QUIDAX_RAMP_PRIVATE_KEY = Deno.env.get("QUIDAX_RAMP_PRIVATE_KEY")?.trim();
 const RAMP_BASE_URL = "https://ramp-be.quidax.io/api/v1/merchants";
 
 export class QuidaxRampError extends Error {
@@ -22,7 +23,7 @@ export class QuidaxRampError extends Error {
 }
 
 export function isQuidaxRampConfigured(): boolean {
-  return !!QUIDAX_SECRET_KEY;
+  return !!QUIDAX_RAMP_PRIVATE_KEY;
 }
 
 async function callRamp(
@@ -30,12 +31,12 @@ async function callRamp(
   method = "GET",
   body?: Record<string, unknown>,
 ): Promise<{ status: number; data: any }> {
-  if (!QUIDAX_SECRET_KEY) throw new QuidaxRampError("Quidax Ramp not configured");
+  if (!QUIDAX_RAMP_PRIVATE_KEY) throw new QuidaxRampError("Quidax Ramp not configured");
 
   const response = await fetchWithTimeout(`${RAMP_BASE_URL}${path}`, {
     method,
     headers: {
-      "x-private-key": QUIDAX_SECRET_KEY,
+      "x-private-key": QUIDAX_RAMP_PRIVATE_KEY,
       "Content-Type": "application/json",
       Accept: "application/json",
     },
