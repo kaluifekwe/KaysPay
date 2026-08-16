@@ -55,6 +55,7 @@ export const walletService = {
             balance: 0,
             locked_amount: 0,
             available_balance: 0,
+            cashback_balance: 0,
             updated_at: new Date().toISOString(),
           },
         };
@@ -66,6 +67,7 @@ export const walletService = {
         balance: koboToNaira(data.balance),
         locked_amount: koboToNaira(data.locked_amount),
         available_balance: koboToNaira(data.available_balance),
+        cashback_balance: koboToNaira(data.cashback_balance_kobo ?? 0),
       };
       return { success: true, wallet };
     } catch (error: any) {

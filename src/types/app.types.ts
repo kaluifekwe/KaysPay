@@ -15,6 +15,8 @@ export interface Wallet {
   balance: number;
   locked_amount: number;
   available_balance: number;
+  /** Redeemable cashback balance — no minimum, spendable on any purchase. */
+  cashback_balance: number;
   updated_at: string;
 }
 

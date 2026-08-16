@@ -274,7 +274,7 @@ serve(async (req: Request) => {
   const network = String(body.network ?? "").toLowerCase();
   if (!NETWORKS.includes(network as typeof NETWORKS[number])) return json({ error: "Invalid network" }, 400);
 
-  const SELECT_FIELDS = "id, network, name, validity, family_key, family_name, reseller_kobo, computed_price_kobo, computed_list_price_kobo, provider_seen_at";
+  const SELECT_FIELDS = "id, network, name, validity, family_key, family_name, reseller_kobo, computed_price_kobo, computed_list_price_kobo, computed_cashback_kobo, provider_seen_at";
   let { data, error } = await supabase
     .from("vtunaija_data_catalog")
     .select(SELECT_FIELDS)
@@ -344,6 +344,10 @@ serve(async (req: Request) => {
         // an auto-computed price, never a manual override (which has no
         // discount concept, it's just a flat final price the admin chose).
         list_amount: !hasOverride && row.computed_list_price_kobo ? row.computed_list_price_kobo / 100 : null,
+        // Whether this plan earns cashback — deliberately no amount here
+        // (migration 124/Phase 3 design): the exact figure is only shown
+        // once it's actually been credited, never promised up front.
+        has_cashback: !hasOverride && !!row.computed_cashback_kobo && row.computed_cashback_kobo > 0,
       };
     }),
     updated_at: data?.[0]?.provider_seen_at ?? null,

@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Switch,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,6 +30,7 @@ import {
   type DataBundle,
   type NetworkProvider,
 } from '../services/vtu.service';
+import { walletService } from '../services/wallet.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import ContactPickerModal from '../components/ContactPickerModal';
 import ProviderLogo from '../components/ProviderLogo';
@@ -72,6 +74,29 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   const [bundles, setBundles] = useState<DataBundle[]>([]);
   const [bundlesNetwork, setBundlesNetwork] = useState<NetworkProvider | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [cashbackBalance, setCashbackBalance] = useState(0);
+  // Defaults on: if there's cashback sitting there, most people expect it to
+  // just get used automatically rather than remembering to flip a switch
+  // every time — same reasoning as OPay/PalmPay's auto-apply behavior.
+  const [useCashback, setUseCashback] = useState(true);
+
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    walletService.getWallet().then((result) => {
+      if (!cancelled && result.success && result.wallet) {
+        setCashbackBalance(result.wallet.cashback_balance);
+      }
+    });
+    return () => { cancelled = true; };
+  }, []));
+
+  // Preview only — the server always computes the real split from the
+  // actual stored balance (never trusts this), same discipline as every
+  // other amount shown before payment in this app.
+  const cashbackApplied = useCashback && selectedBundle
+    ? Math.min(cashbackBalance, selectedBundle.amount)
+    : 0;
+  const walletAmount = selectedBundle ? selectedBundle.amount - cashbackApplied : 0;
 
   const detectedNetwork = useMemo(() => {
     const digits = phoneNumber.replace(/\D/g, '');
@@ -226,7 +251,10 @@ export default function DataScreen({ navigation }: DataScreenProps) {
       return;
     }
 
-    const authResult = await authorize({ title: 'Confirm Data Purchase', amount: selectedBundle.amount });
+    // The balance pre-check only needs to cover the wallet-funded portion —
+    // cashback covers the rest, so checking against the full price would
+    // wrongly reject a purchase the user can actually afford.
+    const authResult = await authorize({ title: 'Confirm Data Purchase', amount: walletAmount });
     if (!authResult) return;
 
     setErrorMessage('');
@@ -243,9 +271,10 @@ export default function DataScreen({ navigation }: DataScreenProps) {
         network: effectiveNetwork,
         bundle: selectedBundle,
         authToken: authResult.token,
+        useCashback: cashbackApplied > 0,
       },
     });
-  }, [phoneNumber, effectiveNetwork, selectedBundle, authorize, navigation]);
+  }, [phoneNumber, effectiveNetwork, selectedBundle, authorize, navigation, cashbackApplied]);
 
   const handleDismissResult = useCallback(() => {
     setBuyState('idle');
@@ -441,6 +470,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
               ) : null}
               {displayedBundles.map((bundle) => {
                 const isSelected = selectedBundle?.id === bundle.id;
+                const hasDiscount = !!bundle.list_amount && bundle.list_amount > bundle.amount;
                 return (
                   <TouchableOpacity
                     key={bundle.id}
@@ -453,10 +483,26 @@ export default function DataScreen({ navigation }: DataScreenProps) {
                     <View style={styles.bundleInfo}>
                       <Text style={styles.bundleName}>{bundle.name}</Text>
                       <Text style={styles.bundleValidity}>{bundle.validity}</Text>
+                      {(hasDiscount || bundle.has_cashback) && (
+                        <View style={styles.badgeRow}>
+                          {hasDiscount && (
+                            <View style={styles.discountBadge}>
+                              <Text style={styles.discountBadgeText}>
+                                Discount {formatNaira((bundle.list_amount as number) - bundle.amount)}
+                              </Text>
+                            </View>
+                          )}
+                          {bundle.has_cashback && (
+                            <View style={styles.cashbackBadge}>
+                              <Text style={styles.cashbackBadgeText}>+ Cashback</Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
                     </View>
                     <View style={styles.bundleAmountColumn}>
-                      {!!bundle.list_amount && bundle.list_amount > bundle.amount && (
-                        <Text style={styles.bundleListAmount}>{formatNaira(bundle.list_amount)}</Text>
+                      {hasDiscount && (
+                        <Text style={styles.bundleListAmount}>{formatNaira(bundle.list_amount as number)}</Text>
                       )}
                       <Text
                         style={[
@@ -514,6 +560,28 @@ export default function DataScreen({ navigation }: DataScreenProps) {
               </View>
             </View>
           )}
+
+          {selectedBundle && cashbackBalance > 0 && (
+            <View style={styles.cashbackToggleRow}>
+              <View style={styles.cashbackToggleLabel}>
+                <Ionicons name="cash-outline" size={17} color={Colors.AMBER} />
+                <View>
+                  <Text style={styles.cashbackToggleTitle}>Use cashback</Text>
+                  <Text style={styles.cashbackToggleSubtitle}>
+                    {formatNaira(cashbackBalance)} available
+                    {useCashback && cashbackApplied > 0 ? ` • ${formatNaira(cashbackApplied)} applied` : ''}
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={useCashback}
+                onValueChange={setUseCashback}
+                trackColor={{ false: Colors.LIGHT_GRAY, true: Colors.GREEN }}
+                thumbColor={Colors.WHITE}
+              />
+            </View>
+          )}
+
           {payHint && (
             <View style={styles.payHintRow}>
               <Text style={styles.payHintText}>{payHint}</Text>
@@ -531,7 +599,14 @@ export default function DataScreen({ navigation }: DataScreenProps) {
             {buyState === 'processing' ? (
               <ActivityIndicator color={Colors.WHITE} />
             ) : (
-              <Text style={styles.primaryButtonText}>Pay</Text>
+              <View style={styles.payButtonTextColumn}>
+                <Text style={styles.primaryButtonText}>
+                  {cashbackApplied > 0 ? `Pay ${formatNaira(walletAmount)} with cashback` : 'Pay'}
+                </Text>
+                {cashbackApplied > 0 && walletAmount === 0 && (
+                  <Text style={styles.payButtonSubtext}>No new cashback earned on a cashback-funded order</Text>
+                )}
+              </View>
             )}
           </TouchableOpacity>
         </View>
@@ -728,6 +803,33 @@ const styles = StyleSheet.create({
   bundleValidity: {
     ...Typography.CAPTION,
   },
+  badgeRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4,
+  },
+  discountBadge: {
+    backgroundColor: Colors.GREEN_LIGHT,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  discountBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.GREEN,
+  },
+  cashbackBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  cashbackBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.AMBER,
+  },
   bundleAmountColumn: {
     alignItems: 'flex-end',
   },
@@ -785,6 +887,40 @@ const styles = StyleSheet.create({
   },
   summaryAmount: {
     ...Typography.AMOUNT_SMALL,
+  },
+  cashbackToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFBEB',
+    borderRadius: Spacing.BUTTON_RADIUS,
+    paddingHorizontal: Spacing.M,
+    paddingVertical: Spacing.S,
+    marginBottom: Spacing.M,
+  },
+  cashbackToggleLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.S,
+    flex: 1,
+  },
+  cashbackToggleTitle: {
+    ...Typography.CARD_TITLE,
+    color: Colors.DARK,
+  },
+  cashbackToggleSubtitle: {
+    ...Typography.CAPTION,
+    color: Colors.GRAY,
+    marginTop: 1,
+  },
+  payButtonTextColumn: {
+    alignItems: 'center',
+  },
+  payButtonSubtext: {
+    fontSize: 11,
+    color: Colors.WHITE,
+    opacity: 0.8,
+    marginTop: 1,
   },
   payHintRow: {
     marginBottom: Spacing.M,

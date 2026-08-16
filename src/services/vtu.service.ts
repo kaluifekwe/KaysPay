@@ -13,6 +13,9 @@ export interface DataBundle {
    * on an auto-priced plan (never a manually-overridden one), and only
    * when it's actually higher than `amount`. */
   list_amount?: number | null;
+  /** Whether this plan earns cashback — deliberately no amount here, only
+   * shown once actually credited after a purchase. */
+  has_cashback?: boolean;
   validity: string;
   network: NetworkProvider;
 }
@@ -548,13 +551,21 @@ export const vtuService = {
     return purchase({ service: 'airtime', phone, network, amount: nairaToKobo(amount) }, authToken, idempotencyKey);
   },
 
-  buyData(phone: string, network: NetworkProvider, bundle: DataBundle, authToken: string, idempotencyKey?: string): Promise<VTUResult> {
+  buyData(
+    phone: string,
+    network: NetworkProvider,
+    bundle: DataBundle,
+    authToken: string,
+    idempotencyKey?: string,
+    useCashback?: boolean,
+  ): Promise<VTUResult> {
     return purchase({
       service: 'data',
       phone,
       network,
       bundle_id: bundle.id,
       quoted_amount_kobo: nairaToKobo(bundle.amount),
+      use_cashback: useCashback === true,
     }, authToken, idempotencyKey);
   },
 
