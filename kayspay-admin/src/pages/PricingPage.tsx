@@ -670,61 +670,86 @@ export default function PricingPage() {
                 {NETWORKS.map((item) => <option key={item} value={item}>{item.toUpperCase()}</option>)}
               </select>
             </div>
-            {networkPlans.length === 0 ? <p className="muted">No synced plans for this network.</p> : (
-              <table>
-                <thead>
-                  <tr><th>Plan</th><th>Status</th><th>Provider Price</th><th>Auto Price</th><th title="Admin visibility only — not shown to customers yet">Discount / Cashback</th><th>Your Manual Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr>
-                </thead>
-                <tbody>
-                  {networkPlans.map((plan) => {
-                    const key = `plan:${network}:${plan.id}`;
-                    const override = overrideFor(plan.id);
-                    const inputValue = planInputs[key] ?? (override ? ((override.price_kobo - plan.reseller_kobo) / 100).toFixed(2) : '');
-                    const draftText = planInputs[key];
-                    const previewMarkupKobo = draftText === undefined
-                      ? (override ? override.price_kobo - plan.reseller_kobo : 0)
-                      : (draftText.trim() === '' ? 0 : nairaTextToMarkupKobo(draftText));
-                    // What the customer actually pays if this row is left
-                    // blank: the manual override if set, else the auto-engine's
-                    // computed price, else raw provider cost — same order the
-                    // server resolves it in.
-                    const customerPaysKobo = previewMarkupKobo === null
-                      ? null
-                      : (draftText?.trim() ? plan.reseller_kobo + previewMarkupKobo
-                        : (override ? override.price_kobo : (plan.computed_price_kobo ?? plan.reseller_kobo)));
-                    return (
-                      <tr key={plan.id}>
-                        <td>{plan.name} · {plan.validity}</td>
-                        <td><span className={`badge ${plan.available ? 'enabled' : 'disabled'}`}>{plan.available ? 'Available' : 'Unavailable'}</span></td>
-                        <td className="mono muted">{formatNaira(plan.reseller_kobo)}</td>
-                        <td className="mono muted">{plan.computed_price_kobo === null ? '—' : formatNaira(plan.computed_price_kobo)}</td>
-                        <td className="mono muted">
-                          {plan.computed_discount_kobo === null ? '—' : `${formatNaira(plan.computed_discount_kobo)} / ${formatNaira(plan.computed_cashback_kobo ?? 0)}`}
-                        </td>
-                        <td>
-                          <input
-                            className="mono"
-                            style={{ width: 110, textAlign: 'right', borderColor: override ? 'var(--warning)' : undefined, background: override ? '#fffbeb' : undefined }}
-                            placeholder="0"
-                            value={inputValue}
-                            disabled={!canEdit}
-                            onChange={(event) => setPlanInputs((current) => ({ ...current, [key]: event.target.value }))}
-                          />
-                        </td>
-                        <td className="mono">{customerPaysKobo === null ? '—' : formatNaira(customerPaysKobo)}</td>
-                        {canEdit && (
-                          <td>
-                            <button className="primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === key} onClick={() => void savePlanPrice(plan.id)}>
-                              Save
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
+            {networkPlans.length === 0 ? <p className="muted">No synced plans for this network.</p> : (() => {
+              // Manual override: keep is just override price minus provider
+              // cost — discount/cashback are engine-only concepts, they don't
+              // apply once an admin has hand-set a final price. Auto-priced:
+              // keep is markup minus discount minus cashback — the true net
+              // margin AS IF cashback were already being paid out (it isn't
+              // credited to anyone yet), so this is the honest full-rollout
+              // number, not what's actually pocketed today.
+              const keepFor = (plan: DataPlan): number | null => {
+                const override = overrideFor(plan.id);
+                if (override) return override.price_kobo - plan.reseller_kobo;
+                if (plan.computed_markup_kobo === null) return null;
+                return plan.computed_markup_kobo - (plan.computed_discount_kobo ?? 0) - (plan.computed_cashback_kobo ?? 0);
+              };
+              const keepValues = networkPlans.map(keepFor).filter((v): v is number => v !== null);
+              const avgKeepKobo = keepValues.length > 0 ? Math.round(keepValues.reduce((a, b) => a + b, 0) / keepValues.length) : null;
+
+              return (
+                <>
+                  <p className="muted">
+                    {networkPlans.length} plans shown{avgKeepKobo !== null && <> · average you keep per sale: <strong>{formatNaira(avgKeepKobo)}</strong> (after discount + cashback)</>}
+                  </p>
+                  <table>
+                    <thead>
+                      <tr><th>Plan</th><th>Status</th><th>Provider Price</th><th>Auto Price</th><th title="Admin visibility only — not shown to customers yet">Discount / Cashback</th><th title="Markup minus discount minus cashback — net margin as if cashback were already being paid out">You Keep</th><th>Your Manual Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr>
+                    </thead>
+                    <tbody>
+                      {networkPlans.map((plan) => {
+                        const key = `plan:${network}:${plan.id}`;
+                        const override = overrideFor(plan.id);
+                        const inputValue = planInputs[key] ?? (override ? ((override.price_kobo - plan.reseller_kobo) / 100).toFixed(2) : '');
+                        const draftText = planInputs[key];
+                        const previewMarkupKobo = draftText === undefined
+                          ? (override ? override.price_kobo - plan.reseller_kobo : 0)
+                          : (draftText.trim() === '' ? 0 : nairaTextToMarkupKobo(draftText));
+                        // What the customer actually pays if this row is left
+                        // blank: the manual override if set, else the auto-engine's
+                        // computed price, else raw provider cost — same order the
+                        // server resolves it in.
+                        const customerPaysKobo = previewMarkupKobo === null
+                          ? null
+                          : (draftText?.trim() ? plan.reseller_kobo + previewMarkupKobo
+                            : (override ? override.price_kobo : (plan.computed_price_kobo ?? plan.reseller_kobo)));
+                        const keepKobo = keepFor(plan);
+                        return (
+                          <tr key={plan.id}>
+                            <td>{plan.name} · {plan.validity}</td>
+                            <td><span className={`badge ${plan.available ? 'enabled' : 'disabled'}`}>{plan.available ? 'Available' : 'Unavailable'}</span></td>
+                            <td className="mono muted">{formatNaira(plan.reseller_kobo)}</td>
+                            <td className="mono muted">{plan.computed_price_kobo === null ? '—' : formatNaira(plan.computed_price_kobo)}</td>
+                            <td className="mono muted">
+                              {plan.computed_discount_kobo === null ? '—' : `${formatNaira(plan.computed_discount_kobo)} / ${formatNaira(plan.computed_cashback_kobo ?? 0)}`}
+                            </td>
+                            <td className="mono">{keepKobo === null ? '—' : formatNaira(keepKobo)}</td>
+                            <td>
+                              <input
+                                className="mono"
+                                style={{ width: 110, textAlign: 'right', borderColor: override ? 'var(--warning)' : undefined, background: override ? '#fffbeb' : undefined }}
+                                placeholder="0"
+                                value={inputValue}
+                                disabled={!canEdit}
+                                onChange={(event) => setPlanInputs((current) => ({ ...current, [key]: event.target.value }))}
+                              />
+                            </td>
+                            <td className="mono">{customerPaysKobo === null ? '—' : formatNaira(customerPaysKobo)}</td>
+                            {canEdit && (
+                              <td>
+                                <button className="primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === key} onClick={() => void savePlanPrice(plan.id)}>
+                                  Save
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </>
+              );
+            })()}
           </div>
 
           <div className="card">
