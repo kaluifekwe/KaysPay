@@ -122,6 +122,7 @@ function AdvertCarousel({ navigation }: { navigation: any }) {
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [balance, setBalance] = useState(0);
+  const [cashbackBalance, setCashbackBalance] = useState(0);
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -199,6 +200,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     const walletResult = await walletService.getWallet();
     if (walletResult.success && walletResult.wallet) {
       setBalance(walletResult.wallet.balance);
+      setCashbackBalance(walletResult.wallet.cashback_balance || 0);
     }
 
     const txResult = await walletService.getRecentTransactions(5);
@@ -307,6 +309,25 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             </TouchableOpacity>
           </View>
         </View>
+
+        {cashbackBalance > 0 && (
+          <TouchableOpacity
+            style={styles.cashbackPill}
+            activeOpacity={0.85}
+            onPress={() =>
+              Alert.alert(
+                'Cashback',
+                `You've earned ${formatNaira(cashbackBalance)} in cashback from your purchases. It's applied automatically at checkout on your next data purchase — look for the cashback toggle on the Data screen.`,
+              )
+            }
+          >
+            <Text style={styles.cashbackPillIcon}>🎁</Text>
+            <Text style={styles.cashbackPillText}>
+              <Text style={styles.cashbackPillAmount}>{formatNaira(cashbackBalance)}</Text> cashback available
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color="#B8860A" />
+          </TouchableOpacity>
+        )}
 
         <DataPromoBanner navigation={navigation} />
 
@@ -475,7 +496,29 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 18,
     paddingVertical: 16,
+    marginBottom: 8,
+  },
+  cashbackPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
     marginBottom: 16,
+    gap: 8,
+  },
+  cashbackPillIcon: {
+    fontSize: 15,
+  },
+  cashbackPillText: {
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#92640A',
+  },
+  cashbackPillAmount: {
+    fontWeight: '800',
   },
   walletLabel: {
     ...Typography.CAPTION,
