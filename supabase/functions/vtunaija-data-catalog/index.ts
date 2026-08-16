@@ -135,6 +135,45 @@ async function loadMarkupEngineInputs(
   };
 }
 
+// Plans that vanish from the provider's live feed only get their
+// availability flag flipped (see the "disappeared" handling below) — their
+// computed price is never touched again, so anything that predates the
+// pricing engine, or was already gone the first time it ran, stays
+// permanently blank ("—" in the admin panel) even though the Pricing page
+// explicitly promises pricing works independently of availability. This
+// backfills those on every sync so an admin can always see what a plan
+// would cost, whether or not it's currently sellable. Computed
+// independently of the live batch (no value-density comparison against
+// plans that aren't actually for sale) — good enough for admin visibility,
+// and never applied to a customer-facing charge either way.
+async function backfillMissingComputedPrices(
+  supabase: ReturnType<typeof adminClient>,
+  brackets: MarkupBracket[],
+  config: PricingEngineConfig,
+) {
+  const { data: stale } = await supabase
+    .from("vtunaija_data_catalog")
+    .select("id, network, name, reseller_kobo")
+    .is("computed_price_kobo", null)
+    .limit(200);
+  if (!stale || stale.length === 0) return;
+
+  const computed = computeCatalogMarkup(stale, brackets, config);
+  const now = new Date().toISOString();
+  for (const row of stale) {
+    const values = computed.get(row.id);
+    if (!values) continue; // no matching bracket for this price — leave it blank rather than guess
+    await supabase.from("vtunaija_data_catalog").update({
+      computed_markup_kobo: values.computed_markup_kobo,
+      computed_list_price_kobo: values.computed_list_price_kobo,
+      computed_discount_kobo: values.computed_discount_kobo,
+      computed_cashback_kobo: values.computed_cashback_kobo,
+      computed_price_kobo: values.computed_price_kobo,
+      updated_at: now,
+    }).eq("id", row.id);
+  }
+}
+
 async function refreshCatalog(supabase: ReturnType<typeof adminClient>) {
   const tier = await getDataPricingTier(supabase);
   const rows = await fetchCatalog(tier); // already logs + throws CatalogSyncError itself
@@ -174,6 +213,8 @@ async function refreshCatalog(supabase: ReturnType<typeof adminClient>) {
   if (disappeared.length > 0) {
     await supabase.from("vtunaija_data_catalog").update({ available: false, updated_at: now }).in("id", disappeared);
   }
+
+  await backfillMissingComputedPrices(supabase, brackets, config);
 
   return { stored: rows.length, available: rows.filter((row) => row.available).length };
 }
