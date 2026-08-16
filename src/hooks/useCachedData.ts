@@ -53,9 +53,14 @@ export function useCachedData<T>(
     // timeout-protected and degrades to an unscoped fetch instead of hanging.
     let userId: string | undefined;
     try {
+      // getSession() reads from local storage (no network round trip unless
+      // the token's actually expired) — getUser() always hits the Auth
+      // server, which used to make even the CACHED view wait on a slow
+      // connection before this fix. Only need an id to scope the cache key,
+      // not server-verified identity, so the fast local read is correct here.
       userId = scope === 'global'
         ? 'global'
-        : (await withTimeout(supabase.auth.getUser())).data.user?.id;
+        : (await withTimeout(supabase.auth.getSession())).data.session?.user?.id;
     } catch {
       userId = undefined;
     }
@@ -81,7 +86,7 @@ export function useCachedData<T>(
         try {
           const currentUserId = scope === 'global'
             ? 'global'
-            : (await withTimeout(supabase.auth.getUser())).data.user?.id;
+            : (await withTimeout(supabase.auth.getSession())).data.session?.user?.id;
           if (currentUserId === userId) writeCache(scopedKey, fresh, userId);
         } catch {
           // skip caching this round
