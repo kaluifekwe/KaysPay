@@ -564,12 +564,16 @@ export default function DataScreen({ navigation }: DataScreenProps) {
           {selectedBundle && cashbackBalance > 0 && (
             <View style={styles.cashbackToggleRow}>
               <View style={styles.cashbackToggleLabel}>
-                <Ionicons name="cash-outline" size={17} color={Colors.AMBER} />
-                <View>
-                  <Text style={styles.cashbackToggleTitle}>Use cashback</Text>
+                <View style={styles.cashbackToggleBadge}>
+                  <Ionicons name="gift" size={18} color={Colors.WHITE} />
+                </View>
+                <View style={styles.cashbackToggleTextCol}>
+                  <Text style={styles.cashbackToggleTitle}>Use your cashback</Text>
                   <Text style={styles.cashbackToggleSubtitle}>
                     {formatNaira(cashbackBalance)} available
-                    {useCashback && cashbackApplied > 0 ? ` • ${formatNaira(cashbackApplied)} applied` : ''}
+                    {useCashback && cashbackApplied > 0 ? (
+                      <Text style={styles.cashbackToggleApplied}> • {formatNaira(cashbackApplied)} applied</Text>
+                    ) : ''}
                   </Text>
                 </View>
               </View>
@@ -892,26 +896,49 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FFFBEB',
-    borderRadius: Spacing.BUTTON_RADIUS,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1.5,
+    borderColor: 'rgba(245, 158, 11, 0.45)',
+    borderRadius: 14,
     paddingHorizontal: Spacing.M,
-    paddingVertical: Spacing.S,
+    paddingVertical: Spacing.S + 2,
     marginBottom: Spacing.M,
+    shadowColor: Colors.AMBER,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 3,
   },
   cashbackToggleLabel: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.S,
+    gap: Spacing.S + 3,
+    flex: 1,
+  },
+  cashbackToggleBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: Colors.AMBER,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cashbackToggleTextCol: {
     flex: 1,
   },
   cashbackToggleTitle: {
     ...Typography.CARD_TITLE,
-    color: Colors.DARK,
+    fontWeight: '800',
+    color: '#78350F',
   },
   cashbackToggleSubtitle: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: '#92640A',
     marginTop: 1,
+  },
+  cashbackToggleApplied: {
+    color: Colors.GREEN,
+    fontWeight: '700',
   },
   payButtonTextColumn: {
     alignItems: 'center',
