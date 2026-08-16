@@ -75,10 +75,11 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   const [bundlesNetwork, setBundlesNetwork] = useState<NetworkProvider | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [cashbackBalance, setCashbackBalance] = useState(0);
-  // Defaults on: if there's cashback sitting there, most people expect it to
-  // just get used automatically rather than remembering to flip a switch
-  // every time — same reasoning as OPay/PalmPay's auto-apply behavior.
-  const [useCashback, setUseCashback] = useState(true);
+  // Defaults off (owner-approved, 2026-08-16): auto-applying let cashback
+  // earn on one purchase and get silently spent on the very next one before
+  // it ever felt like it accumulated. Now it only spends when the user
+  // explicitly opts in on this screen.
+  const [useCashback, setUseCashback] = useState(false);
 
   useFocusEffect(useCallback(() => {
     let cancelled = false;
