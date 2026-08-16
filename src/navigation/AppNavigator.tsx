@@ -97,6 +97,13 @@ export default function AppNavigator() {
   // through below once the check actually succeeds.
   const [hasPin, setHasPin] = useState(true);
 
+  // One-time, best-effort: purge any leftover PIN stashed under the old
+  // device-global key (pre-account-scoping). Never read/consumed — only
+  // deleted, since there's no safe way to know which account it belonged to.
+  useEffect(() => {
+    authService.purgeLegacyPendingPin();
+  }, []);
+
   useEffect(() => {
     checkAuth();
 

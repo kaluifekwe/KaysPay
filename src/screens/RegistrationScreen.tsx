@@ -307,8 +307,11 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
       // verification even if every immediate attempt below fails — this is the
       // guarantee that the user is never asked to create a PIN again (see
       // authService.ensurePinSaved, called from AppNavigator once the session
-      // is fully established).
-      await authService.stashSignupPin(pinString);
+      // is fully established). Keyed to this account's own user id so it can
+      // never be picked up by a different account signed in later on this
+      // device.
+      const newUserId = result.userId;
+      if (newUserId) await authService.stashSignupPin(newUserId, pinString);
 
       // Best-effort immediate save so the PIN is usually persisted before email
       // verify even completes. Root cause of the redundant PIN gate: right after
@@ -335,6 +338,11 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
         // Surfaces the true reason in logs if it ever still fails, instead of
         // silently dropping the user onto the PIN gate.
         console.warn('Signup: PIN save failed after retries:', lastPinError);
+      } else if (newUserId) {
+        // Saved immediately — clear the stash now rather than leaving it on
+        // the device for ensurePinSaved to find later (it won't run again
+        // once hasPin is true, so this is the only cleanup this account gets).
+        await authService.clearStashedPin(newUserId);
       }
 
       // No manual navigation — AppNavigator's root-level auth listener

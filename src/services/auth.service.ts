@@ -12,8 +12,16 @@ export interface AuthResult {
 
 // SecureStore key holding the PIN captured during signup until it can be
 // persisted server-side once the session is fully established (see
-// stashSignupPin / ensurePinSaved).
-const PENDING_PIN_KEY = 'pending_signup_pin';
+// stashSignupPin / ensurePinSaved). Scoped per-account (user id suffix) so a
+// PIN stashed for one account can never be read back and silently adopted by
+// a different account signed in later on the same device.
+const pendingPinKey = (userId: string) => `pending_signup_pin:${userId}`;
+
+// Pre-scoping key name used before this fix. No longer written, but a stray
+// value may still exist on devices that signed up under the old code — purged
+// (never consumed) via purgeLegacyPendingPin() so it can't be inherited by
+// whichever account happens to check next.
+const LEGACY_PENDING_PIN_KEY = 'pending_signup_pin';
 
 export interface PINVerifyResult {
   valid: boolean;
@@ -205,7 +213,7 @@ export const authService = {
     email: string,
     password: string,
     metadata: Record<string, unknown>,
-  ): Promise<AuthResult & { needsEmailConfirmation?: boolean }> {
+  ): Promise<AuthResult & { needsEmailConfirmation?: boolean; userId?: string }> {
     try {
       const passwordError = passwordValidationError(password);
       if (passwordError) return { success: false, error: passwordError };
@@ -216,9 +224,9 @@ export const authService = {
       });
       if (error) throw error;
       if (!data.session) {
-        return { success: true, needsEmailConfirmation: true };
+        return { success: true, needsEmailConfirmation: true, userId: data.user?.id };
       }
-      return { success: true };
+      return { success: true, userId: data.session.user.id };
     } catch (error: any) {
       return { success: false, error: error.message };
     }
@@ -301,14 +309,36 @@ export const authService = {
    * session is fully established. Right after supabase.auth.signUp() the new
    * access token often isn't attached to RPC calls yet, so set_user_pin runs
    * unauthenticated and fails — which strands users on a redundant "Create PIN"
-   * gate. Encrypted at rest (SecureStore / Keychain-Keystore).
+   * gate. Encrypted at rest (SecureStore / Keychain-Keystore). Keyed by the
+   * new account's own user id — never a device-global key — so a different
+   * account signing in later on the same device can't read it back.
    */
-  async stashSignupPin(pin: string): Promise<void> {
+  async stashSignupPin(userId: string, pin: string): Promise<void> {
     try {
-      if (/^\d{4}$/.test(pin)) await SecureStore.setItemAsync(PENDING_PIN_KEY, pin);
+      if (userId && /^\d{4}$/.test(pin)) await SecureStore.setItemAsync(pendingPinKey(userId), pin);
     } catch {
       // best-effort — the immediate savePIN attempt may still succeed
     }
+  },
+
+  /**
+   * Clears this account's stashed signup PIN, if any. Called right after an
+   * immediate savePIN() succeeds (so a successfully-saved PIN never lingers
+   * on the device) and on sign-out (defense in depth, in case the immediate
+   * save never ran).
+   */
+  async clearStashedPin(userId: string): Promise<void> {
+    if (!userId) return;
+    try { await SecureStore.deleteItemAsync(pendingPinKey(userId)); } catch {}
+  },
+
+  /**
+   * Best-effort one-time cleanup of the pre-scoping global stash key. Never
+   * read/consumed — only deleted, since there's no safe way to know which
+   * account it belonged to. Call unconditionally on app startup.
+   */
+  async purgeLegacyPendingPin(): Promise<void> {
+    try { await SecureStore.deleteItemAsync(LEGACY_PENDING_PIN_KEY); } catch {}
   },
 
   /**
@@ -317,19 +347,24 @@ export const authService = {
    * established (after email verification) — the same condition under which
    * PINSetupScreen's save reliably works. Returns whether a PIN now exists,
    * and clears the stash once saved so the PIN is never left on the device.
+   * Only ever reads the CURRENT session's own stash entry.
    */
   async ensurePinSaved(): Promise<boolean> {
     try {
+      const session = await authService.getCurrentSession();
+      const userId = session?.user?.id;
+      if (!userId) return false;
+
       if (await authService.hasPIN()) {
-        try { await SecureStore.deleteItemAsync(PENDING_PIN_KEY); } catch {}
+        await authService.clearStashedPin(userId);
         return true;
       }
       let pending: string | null = null;
-      try { pending = await SecureStore.getItemAsync(PENDING_PIN_KEY); } catch {}
+      try { pending = await SecureStore.getItemAsync(pendingPinKey(userId)); } catch {}
       if (!pending) return false;
       const res = await authService.savePIN(pending);
       if (res.success) {
-        try { await SecureStore.deleteItemAsync(PENDING_PIN_KEY); } catch {}
+        await authService.clearStashedPin(userId);
         return true;
       }
       return false;
@@ -502,6 +537,16 @@ export const authService = {
   },
 
   async signOut() {
+    // Captured before signOut() tears down the session — this is the last
+    // point the outgoing account's own id is available, to clear any
+    // leftover stashed signup PIN before the device is handed to whoever
+    // signs in next.
+    let outgoingUserId: string | undefined;
+    try {
+      outgoingUserId = (await authService.getCurrentSession())?.user?.id;
+    } catch {
+      // best-effort — a failed lookup here shouldn't block sign-out
+    }
     try {
       // 'local' scope clears the session on this device immediately without
       // first waiting on a network call to invalidate it server-side — the
@@ -514,6 +559,7 @@ export const authService = {
       // one to 'local' doesn't weaken that.
       await supabase.auth.signOut({ scope: 'local' });
     } finally {
+      if (outgoingUserId) await authService.clearStashedPin(outgoingUserId);
       await storageHelpers.clearAll();
       clearAllCache();
     }
