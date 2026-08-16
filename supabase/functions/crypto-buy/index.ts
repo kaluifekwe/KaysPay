@@ -68,7 +68,14 @@ serve(async (req: Request) => {
   const user = await getAuthUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
 
-  if (!isQuidaxConfigured() || !isQuidaxRampConfigured()) {
+  const exchangeConfigured = isQuidaxConfigured();
+  const rampConfigured = isQuidaxRampConfigured();
+  console.info("crypto-buy configuration", {
+    exchange_configured: exchangeConfigured,
+    ramp_configured: rampConfigured,
+  });
+
+  if (!exchangeConfigured || !rampConfigured) {
     return json({
       success: false,
       error: "Buying crypto isn't available yet. We'll notify you the moment it is.",
