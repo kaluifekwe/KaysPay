@@ -158,6 +158,9 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
   endpoint: string;
   providerPayload: Record<string, unknown>;
   availability?: { network: string; familyKey: string; planId: string };
+  /** Cashback to credit once the purchase completes (data only, migration
+   * 124) — only set for an auto-priced plan, never a manual override. */
+  cashbackKobo?: number;
 }> {
   const service = String(body?.service || "");
 
@@ -205,7 +208,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
       const bundleQuery = () =>
         supabase
           .from("vtunaija_data_catalog")
-          .select("id, network, data_plan_id, family_key, reseller_kobo, computed_price_kobo, available, provider_seen_at")
+          .select("id, network, data_plan_id, family_key, reseller_kobo, computed_price_kobo, computed_cashback_kobo, available, provider_seen_at")
           .eq("id", bundleId)
           .eq("network", network)
           .eq("available", true)
@@ -261,6 +264,12 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
           // Ported_number comment in the airtime case above.
           Ported_number: "true",
         },
+        // Only for an auto-priced plan (no manual override) — an override
+        // replaces the engine's price entirely, so its cashback concept
+        // doesn't apply either.
+        cashbackKobo: !priceOverride && bundle.computed_cashback_kobo
+          ? Number(bundle.computed_cashback_kobo)
+          : undefined,
       };
     }
 
@@ -799,6 +808,17 @@ serve(async (req: Request) => {
           { p_tx_id: txId, p_order_id: normalized.id ?? normalized.ident ?? null },
         );
         if (completeError) throw completeError;
+
+        // Cashback (migration 124, stage 1 — crediting only, no redemption
+        // yet). Best-effort and never allowed to fail the purchase itself:
+        // the purchase already succeeded, cashback is a bonus on top, not a
+        // condition of it.
+        if (body.service === "data" && plan.cashbackKobo && plan.cashbackKobo > 0) {
+          const { error: cashbackError } = await supabase.rpc("credit_cashback", {
+            p_tx_id: txId, p_amount_kobo: plan.cashbackKobo,
+          });
+          if (cashbackError) console.error("vtu-purchase: cashback credit failed:", cashbackError.message);
+        }
 
         // Electricity's success response carries a one-time prepaid meter
         // token 鈥?never returned again after this response, so persist it
