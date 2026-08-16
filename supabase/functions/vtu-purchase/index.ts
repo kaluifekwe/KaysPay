@@ -753,7 +753,10 @@ serve(async (req: Request) => {
     }
   }
 
-  // 4. Atomically debit + create the pending transaction.
+  // 4. Atomically debit + create the pending transaction. use_cashback is
+  // only ever a boolean toggle from the client — debit_for_service computes
+  // the actual amount applied from the real stored balance server-side
+  // (migration 125), never trusting a client-supplied kobo figure.
   const { data: txId, error: debitError } = await supabase.rpc(
     "debit_for_service",
     {
@@ -769,6 +772,7 @@ serve(async (req: Request) => {
         provider_reference: requestId.replace(/[^a-zA-Z0-9]/g, ""),
       },
       p_idempotency_key: requestId,
+      p_use_cashback: body.use_cashback === true,
     },
   );
 
