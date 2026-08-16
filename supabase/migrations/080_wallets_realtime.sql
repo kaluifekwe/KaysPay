@@ -1,0 +1,19 @@
+-- The Home screen (wallet.service.ts's subscribeToBalance) has always
+-- subscribed to postgres_changes on `wallets`, expecting the balance to
+-- update live the moment a funding webhook credits it. That subscription
+-- has been silently doing nothing: NO table in this project — wallets
+-- included — was ever added to the supabase_realtime publication, which is
+-- required for postgres_changes to deliver anything at all. Confirmed via
+-- `SELECT * FROM pg_publication_tables WHERE pubname = 'supabase_realtime'`
+-- returning zero rows.
+--
+-- Root-caused a real tester report: a Flutterwave transfer credited the
+-- wallet correctly (confirmed in `wallets.balance`/`updated_at`), but the
+-- Home screen balance stayed stale until the user navigated away and back
+-- or pulled to refresh — because the live-update path was never actually
+-- live.
+--
+-- `wallets` already has RLS with a "Users can view own wallet" policy
+-- (migration 001, `user_id = auth.uid()`), so once published, Realtime only
+-- ever delivers a user their own row.
+ALTER PUBLICATION supabase_realtime ADD TABLE public.wallets;
