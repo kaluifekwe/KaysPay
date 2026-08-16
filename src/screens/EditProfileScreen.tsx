@@ -224,12 +224,18 @@ export default function EditProfileScreen({ navigation }: any) {
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView
+      <KeyboardAvoidingView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+        >
         <View style={styles.fieldCard}>
           <Text style={styles.fieldLabel}>Full Name</Text>
           {nameLocked ? (
@@ -363,12 +369,13 @@ export default function EditProfileScreen({ navigation }: any) {
             </View>
           )}
         </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <Modal visible={otpVisible} transparent animationType="fade" onRequestClose={closeOtp}>
         <KeyboardAvoidingView
           style={styles.otpOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <View style={styles.otpCard}>
             <Text style={styles.otpTitle}>Enter Verification Code</Text>

@@ -13,6 +13,7 @@ import {
   Linking,
   Platform,
   BackHandler,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
@@ -490,6 +491,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
         <Text style={styles.topTitle}>eSIM Store</Text>
       </View>
 
+      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       {tab === 'browse' ? (
         <FlatList
           data={browseData}
@@ -521,6 +523,8 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
           }
           contentContainerStyle={styles.listContent}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
           showsVerticalScrollIndicator={false}
         />
       ) : (
@@ -546,6 +550,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
           showsVerticalScrollIndicator={false}
         />
       )}
+      </KeyboardAvoidingView>
 
       <Modal visible={!!viewingEsim} transparent animationType="slide" onRequestClose={() => setViewingEsim(null)}>
         <View style={styles.modalOverlay}>
@@ -582,6 +587,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
 }
 
 const styles = StyleSheet.create({
+  keyboardView: { flex: 1 },
   container: { flex: 1, backgroundColor: Colors.WHITE },
   topBar: {
     flexDirection: 'row',

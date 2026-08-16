@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Alert,
   BackHandler,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
@@ -372,12 +374,15 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
+      <KeyboardAvoidingView style={styles.scrollView} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+        >
         <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={handleBack}>
           <Text style={styles.backText}>{'<'}</Text>
         </TouchableOpacity>
@@ -584,7 +589,8 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
             ) : null}
           </View>
         )}
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {step === 'confirm' && priceKobo !== null && (
         <View style={[styles.bottomBar, { paddingBottom: insets.bottom + Spacing.L }]}>

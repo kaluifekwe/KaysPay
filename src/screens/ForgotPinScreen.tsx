@@ -87,7 +87,7 @@ export default function ForgotPinScreen({ navigation }: { navigation: any }) {
   const currentPin = step === 'confirm' ? confirmPin : newPin;
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.back} onPress={() => navigation.goBack()}><Text style={styles.backText}>{'<'}</Text></TouchableOpacity>
           <Text style={styles.headerTitle}>Forgot transaction PIN</Text><View style={styles.back} />

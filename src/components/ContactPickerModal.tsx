@@ -9,6 +9,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Linking,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
@@ -152,7 +154,8 @@ export default function ContactPickerModal({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
+        <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <View style={styles.header}>
           <Text style={styles.title}>{multiSelect ? 'Select Contacts' : 'Choose Contact'}</Text>
           <TouchableOpacity onPress={handleClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Text style={styles.close}>✕</Text>
@@ -172,10 +175,10 @@ export default function ContactPickerModal({
           />
         </View>
 
-        {renderBody()}
+          {renderBody()}
 
-        {multiSelect && (
-          <View style={styles.footer}>
+          {multiSelect && (
+            <View style={styles.footer}>
             <TouchableOpacity
               style={[styles.doneBtn, selected.size === 0 && styles.doneBtnDisabled]}
               onPress={handleDone}
@@ -186,8 +189,9 @@ export default function ContactPickerModal({
                 Done{selected.size > 0 ? ` (${selected.size} selected)` : ''}
               </Text>
             </TouchableOpacity>
-          </View>
-        )}
+            </View>
+          )}
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );

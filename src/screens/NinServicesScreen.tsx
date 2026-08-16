@@ -1263,11 +1263,13 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={[styles.scrollContent, showModifySubmitFooter && styles.scrollContentWithFooter]}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
           showsVerticalScrollIndicator={false}
         >
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
