@@ -113,6 +113,76 @@ export function passwordResetEmail(code: string): { subject: string; html: strin
   };
 }
 
+/** Transaction-PIN reset code. */
+export function pinResetEmail(code: string): { subject: string; html: string; text: string } {
+  const title = "Reset your transaction PIN";
+  const lead = "Enter this code in the Kay's Pay app to create a new transaction PIN.";
+  const note = "This code expires in <b>10 minutes</b>. If you didn't request this, do not share the code and contact support immediately.";
+  return {
+    subject: "Reset your Kay's Pay transaction PIN",
+    html: shell(codeBlock(title, lead, code, note), "Reset your Kay's Pay transaction PIN"),
+    text: codeText(title, lead, code, note),
+  };
+}
+
+/** After-the-fact security alert following a successful PIN reset. */
+export function pinResetNoticeEmail(): { subject: string; html: string; text: string } {
+  const title = "Your transaction PIN was changed";
+  const lead = "Your Kay's Pay transaction PIN was reset successfully.";
+  const note = `If this wasn't you, contact ${SUPPORT_EMAIL} immediately.`;
+  const inner = `
+    <tr><td style="padding:30px 28px;">
+      <h1 style="margin:0 0 10px;font-size:20px;color:${INK};font-weight:800;">${title}</h1>
+      <p style="margin:0 0 14px;font-size:15px;color:${MUTED};line-height:1.6;">${lead}</p>
+      <p style="margin:0;font-size:15px;color:${MUTED};line-height:1.6;">${note}</p>
+    </td></tr>`;
+  return {
+    subject: "Your Kay's Pay transaction PIN was changed",
+    html: shell(inner, title),
+    text: textShell([title, "", lead, "", note]),
+  };
+}
+
+/** Confirms a phone/email change requested from Edit Profile. */
+export function profileChangeCodeEmail(
+  fieldLabel: string,
+  pendingValue: string,
+  code: string,
+): { subject: string; html: string; text: string } {
+  const title = `Confirm your ${fieldLabel} change`;
+  const safePendingValue = esc(pendingValue);
+  const lead = `Enter this code in the app to confirm you want to change your account's ${fieldLabel} to <b>${safePendingValue}</b>. If you didn't request this exact change, do not share this code — someone else may have access to your account.`;
+  const textLead = `Enter this code in the app to confirm you want to change your account's ${fieldLabel} to ${pendingValue}. If you didn't request this exact change, do not share this code — someone else may have access to your account.`;
+  const note = "This code expires in <b>10 minutes</b>.";
+  return {
+    subject: `Confirm your Kay's Pay ${fieldLabel} change`,
+    html: shell(codeBlock(title, lead, code, note), `Confirm your Kay's Pay ${fieldLabel} change`),
+    text: codeText(title, textLead, code, note),
+  };
+}
+
+/** After-the-fact alert sent to the OLD email once a phone/email change is applied. */
+export function profileChangedNoticeEmail(fieldLabel: string): { subject: string; html: string; text: string } {
+  const title = `Your ${fieldLabel} was changed`;
+  const inner = `
+    <tr><td style="padding:30px 28px 6px;">
+      <h1 style="margin:0 0 10px;font-size:20px;color:${INK};font-weight:800;">${title}</h1>
+      <p style="margin:0 0 14px;font-size:15px;color:${MUTED};line-height:1.6;">Your Kay's Pay account's ${fieldLabel} was just changed.</p>
+      <p style="margin:0;font-size:15px;color:${MUTED};line-height:1.6;">If this wasn't you, contact <a href="mailto:${SUPPORT_EMAIL}" style="color:${ACCENT};text-decoration:none;">${SUPPORT_EMAIL}</a> immediately.</p>
+    </td></tr>`;
+  return {
+    subject: `Your Kay's Pay ${fieldLabel} was changed`,
+    html: shell(inner, `Your Kay's Pay ${fieldLabel} was changed`),
+    text: textShell([
+      title,
+      "",
+      `Your Kay's Pay account's ${fieldLabel} was just changed.`,
+      "",
+      `If this wasn't you, contact ${SUPPORT_EMAIL} immediately.`,
+    ]),
+  };
+}
+
 const WELCOME_STEPS: [string, string][] = [
   ["Fund your wallet", "Add money instantly by bank transfer or card. It powers everything below."],
   ["Buy airtime or data", "Any network, any amount. We auto-detect MTN, Airtel, Glo &amp; 9mobile for you."],

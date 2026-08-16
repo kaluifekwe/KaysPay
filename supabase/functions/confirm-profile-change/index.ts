@@ -4,6 +4,7 @@ import {
   adminClient,
   enforceRateLimit,
   getAuthUser,
+  isDeviceSessionAllowed,
   readJsonBody,
   RequestBodyError,
 } from "../_shared/auth.ts";
@@ -29,6 +30,12 @@ serve(async (req: Request) => {
   if (!user) return json({ success: false, error: "Unauthorized" }, 401);
   if (!user.email) return json({ success: false, error: "No email on this account" }, 400);
 
+  const supabase = adminClient();
+
+  if (!(await isDeviceSessionAllowed(req, supabase, user.id))) {
+    return json({ success: false, error: "This device session has been revoked. Please log in again." }, 401);
+  }
+
   let body: { field?: string; code?: string };
   try {
     body = await readJsonBody(req, 512);
@@ -43,18 +50,14 @@ serve(async (req: Request) => {
   const code = String(body.code || "").trim();
   if (!/^\d{6}$/.test(code)) return json({ success: false, error: "Enter the 6-digit code" }, 400);
 
-  const supabase = adminClient();
-
   const rate = await enforceRateLimit(supabase, "confirm_profile_change", user.id, 10, 600, user.id);
   if (!rate.allowed) {
     return json({ success: false, error: "Too many attempts. Please wait and try again." }, 429);
   }
 
-  const purpose = field === "email" ? "change_email" : "change_phone";
-  const { data: result, error: verifyError } = await supabase.rpc("verify_email_verification_code", {
+  const { data: result, error: verifyError } = await supabase.rpc("verify_and_consume_profile_change", {
     p_user_id: user.id,
-    p_purpose: purpose,
-    p_target: user.email,
+    p_field: field,
     p_code: code,
   });
   if (verifyError) return json({ success: false, error: "Could not verify code. Please try again." }, 500);
@@ -70,13 +73,8 @@ serve(async (req: Request) => {
     });
   }
 
-  const { data: newValue, error: pendingError } = await supabase.rpc("consume_pending_profile_change", {
-    p_user_id: user.id,
-    p_field: field,
-  });
-  if (pendingError || !newValue) {
-    return json({ success: false, error: "This request has expired. Please start again." }, 400);
-  }
+  const newValue = typeof result?.new_value === "string" ? result.new_value : null;
+  if (!newValue) return json({ success: false, error: "This request has expired. Please start again." }, 400);
 
   const oldEmail = user.email;
 
