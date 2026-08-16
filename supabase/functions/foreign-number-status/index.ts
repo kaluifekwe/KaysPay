@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient } from "../_shared/auth.ts";
+import { confirmServiceRefund } from "../_shared/service-refund.ts";
 import { getSms, isSmspvaConfigured } from "../_shared/smspva-client.ts";
 
 function json(body: unknown, status = 200) {
@@ -70,9 +71,7 @@ serve(async (req: Request) => {
     // arrive — auto-refund now (idempotent RPC; SMSPVA charged us nothing).
     const ageMs = Date.now() - new Date(tx.created_at as string).getTime();
     if (ageMs > LIFESPAN_MS) {
-      await supabase
-        .rpc("refund_completed_service_transaction", { p_tx_id: tx.id, p_reason: "expired_no_code" })
-        .catch(() => {});
+      await confirmServiceRefund(supabase, tx.id, "expired_no_code", "automatic", true);
       return json({ success: true, done: true, cancelled: true, refunded: true });
     }
 

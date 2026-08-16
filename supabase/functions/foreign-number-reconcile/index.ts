@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient, verifyCronSecret, withJobLock } from "../_shared/auth.ts";
+import { confirmServiceRefund } from "../_shared/service-refund.ts";
 import { getSms, isSmspvaConfigured } from "../_shared/smspva-client.ts";
 
 // Scheduled sweep (pg_cron, migration 053) that refunds Foreign Number
@@ -62,7 +63,7 @@ serve(async (req: Request) => {
           hadCode++;
         } else {
           // Expired with no code — SMSPVA charged nothing; refund the user.
-          await supabase.rpc("refund_completed_service_transaction", { p_tx_id: tx.id, p_reason: "expired_no_code_reconcile" });
+          await confirmServiceRefund(supabase, tx.id, "expired_no_code_reconcile", "reconcile", true);
           refunded++;
         }
       } catch {

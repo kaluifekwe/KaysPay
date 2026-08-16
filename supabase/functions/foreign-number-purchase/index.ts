@@ -10,6 +10,7 @@ import {
   readJsonBody,
   RequestBodyError,
 } from "../_shared/auth.ts";
+import { confirmServiceRefund } from "../_shared/service-refund.ts";
 import {
   getNumber,
   getServicePriceUSD,
@@ -188,10 +189,7 @@ serve(async (req: Request) => {
     const result = await getNumber(service, country);
 
     if ("error" in result) {
-      await supabase.rpc("refund_service_transaction", {
-        p_tx_id: txId,
-        p_reason: result.error,
-      });
+      await confirmServiceRefund(supabase, txId, result.error, "automatic");
       return json({ success: false, error: humanizeSmspvaError(result.error) });
     }
 
@@ -210,12 +208,12 @@ serve(async (req: Request) => {
     });
   } catch (e) {
     const isAuthError = e instanceof SmspvaError;
-    await supabase.rpc("refund_service_transaction", {
-      p_tx_id: txId,
-      p_reason: isAuthError
-        ? `smspva_config: ${e.message}`
-        : "provider_unreachable",
-    });
+    await confirmServiceRefund(
+      supabase,
+      txId,
+      isAuthError ? `smspva_config: ${e.message}` : "provider_unreachable",
+      "automatic",
+    );
     return json({
       success: false,
       error: isAuthError

@@ -10,6 +10,7 @@ import {
   readJsonBody,
   RequestBodyError,
 } from "../_shared/auth.ts";
+import { confirmServiceRefund } from "../_shared/service-refund.ts";
 import {
   AiraloAuthError,
   browseAiraloPackages,
@@ -204,10 +205,7 @@ serve(async (req: Request) => {
     const orderData = result?.data;
     const sim = orderData?.sims?.[0];
     if (!sim?.qrcode) {
-      await supabase.rpc("refund_service_transaction", {
-        p_tx_id: txId,
-        p_reason: result?.meta?.message || "provider_rejected",
-      });
+      await confirmServiceRefund(supabase, txId, result?.meta?.message || "provider_rejected", "automatic");
       return json({
         success: false,
         error: result?.meta?.message ||
@@ -268,12 +266,12 @@ serve(async (req: Request) => {
     });
   } catch (e) {
     const isAuthError = e instanceof AiraloAuthError;
-    await supabase.rpc("refund_service_transaction", {
-      p_tx_id: txId,
-      p_reason: isAuthError
-        ? `airalo_auth_failed: ${e.message}`
-        : "provider_unreachable",
-    });
+    await confirmServiceRefund(
+      supabase,
+      txId,
+      isAuthError ? `airalo_auth_failed: ${e.message}` : "provider_unreachable",
+      "automatic",
+    );
     return json({
       success: false,
       error: isAuthError

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient } from "../_shared/auth.ts";
+import { confirmServiceRefund } from "../_shared/service-refund.ts";
 import { cancel as smspvaCancel, isSmspvaConfigured } from "../_shared/smspva-client.ts";
 
 function json(body: unknown, status = 200) {
@@ -44,7 +45,7 @@ serve(async (req: Request) => {
 
   if (!tx) return json({ success: false, error: "Activation not found" }, 404);
   if (tx.status !== "completed") {
-    return json({ success: true, refunded: tx.status === "failed", message: "This purchase was already settled." });
+    return json({ success: true, refunded: tx.status === "failed" || tx.status === "refunded", message: "This purchase was already settled." });
   }
 
   const service = String((tx.metadata as any)?.service || "");
@@ -53,7 +54,7 @@ serve(async (req: Request) => {
   try {
     // Release the number on SMSPVA's side (best-effort), then refund.
     await smspvaCancel(service, country, activationId).catch(() => {});
-    await supabase.rpc("refund_completed_service_transaction", { p_tx_id: tx.id, p_reason: "user_cancelled_no_code" });
+    await confirmServiceRefund(supabase, tx.id, "user_cancelled_no_code", "automatic", true);
     return json({ success: true, refunded: true, message: "Cancelled and refunded." });
   } catch {
     return json({ success: false, error: "Could not process cancellation. Please try again." });
