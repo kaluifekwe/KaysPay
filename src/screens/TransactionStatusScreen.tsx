@@ -79,6 +79,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [priceChanged, setPriceChanged] = useState(false);
   const [currentAmount, setCurrentAmount] = useState<number | undefined>();
+  const [cashbackEarned, setCashbackEarned] = useState<number | undefined>();
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedRef = useRef(Date.now());
@@ -99,7 +100,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
     }
   }, []);
 
-  const settleSuccess = useCallback((m?: { token?: string; pins?: string[]; serials?: string[]; order_id?: string; units?: string }) => {
+  const settleSuccess = useCallback((m?: { token?: string; pins?: string[]; serials?: string[]; order_id?: string; units?: string; cashback_earned_kobo?: number }) => {
     if (settledRef.current || !mountedRef.current) return;
     settledRef.current = true;
     stopPolling();
@@ -108,6 +109,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
     if (m?.order_id) setOrderId(m.order_id);
     if (m?.pins && m.pins.length) setPins(m.pins);
     if (m?.serials && m.serials.length) setSerials(m.serials);
+    if (m?.cashback_earned_kobo) setCashbackEarned(m.cashback_earned_kobo / 100);
     setStatus('success');
   }, [stopPolling]);
 
@@ -149,6 +151,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
           if (result.order_id) setOrderId(result.order_id);
           if (result.pins && result.pins.length) setPins(result.pins);
           if (result.serials && result.serials.length) setSerials(result.serials);
+          if (result.cashbackEarned) setCashbackEarned(result.cashbackEarned);
           if (result.transaction_id) setTxId(result.transaction_id);
           if (!result.pending) settleSuccess();
         } else {
@@ -207,7 +210,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
         if (!data) return; // order not recorded yet — keep watching
 
         const s = data.status;
-        const m = (data.metadata ?? {}) as { token?: string; pins?: string[]; serials?: string[]; order_id?: string };
+        const m = (data.metadata ?? {}) as { token?: string; pins?: string[]; serials?: string[]; order_id?: string; cashback_earned_kobo?: number };
 
         if (s === 'completed') {
           settleSuccess(m);
@@ -307,6 +310,15 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
         </View>
         <Text style={styles.statusLabel}>{visual.label}</Text>
         <Text style={styles.amount}>{formatNaira(currentAmount ?? p.amount ?? 0)}</Text>
+
+        {status === 'success' && cashbackEarned ? (
+          <View style={styles.cashbackEarnedRow}>
+            <Ionicons name="gift" size={16} color={Colors.AMBER} />
+            <Text style={styles.cashbackEarnedText}>
+              You earned {formatNaira(cashbackEarned)} cashback
+            </Text>
+          </View>
+        ) : null}
 
         {status === 'processing' ? (
           <View style={styles.spinnerRow}>
@@ -441,6 +453,18 @@ const styles = StyleSheet.create({
   },
   statusLabel: { fontSize: 24, fontWeight: '700', color: Colors.DARK, marginBottom: 8 },
   amount: { fontSize: 40, fontWeight: '800', color: Colors.DARK, marginBottom: 18 },
+  cashbackEarnedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    marginTop: -8,
+    marginBottom: 18,
+  },
+  cashbackEarnedText: { fontSize: 13, fontWeight: '700', color: '#92640A' },
   spinnerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
   processingHint: { marginLeft: 8, color: Colors.GRAY, fontSize: 14 },
   detailBlock: { width: '100%', marginTop: 8 },

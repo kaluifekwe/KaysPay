@@ -66,6 +66,9 @@ export interface VTUResult {
   current_amount?: number;
   pins?: string[];
   serials?: string[];
+  // Naira, set only when this purchase actually credited cashback — never
+  // an estimate, always what the server confirmed was added to the balance.
+  cashbackEarned?: number;
 }
 
 export interface BatchAirtimeRecipient {
@@ -340,6 +343,7 @@ async function purchase(
       pins: data.pins,
       serials: data.serials,
       units: data.units,
+      cashbackEarned: data.cashback_earned_kobo ? data.cashback_earned_kobo / 100 : undefined,
     };
   } catch {
     return { success: false, error: 'Network error. Please try again.' };

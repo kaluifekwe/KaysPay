@@ -571,6 +571,7 @@ serve(async (req: Request) => {
         token: md.token,
         pins: md.pins,
         amount: existingTx.amount_ngn,
+        cashback_earned_kobo: md.cashback_earned_kobo,
       });
     }
     if (existingTx.status === "failed" || existingTx.status === "refunded") {
@@ -816,12 +817,20 @@ serve(async (req: Request) => {
         // Cashback (migration 124, stage 1 — crediting only, no redemption
         // yet). Best-effort and never allowed to fail the purchase itself:
         // the purchase already succeeded, cashback is a bonus on top, not a
-        // condition of it.
+        // condition of it. cashbackEarnedKobo is only set when credit_cashback
+        // actually credited it (not on error, and not on the anti-compounding
+        // / already-credited FALSE case) so the client only ever confirms a
+        // real credit, never a bonus that silently didn't happen.
+        let cashbackEarnedKobo: number | undefined;
         if (body.service === "data" && plan.cashbackKobo && plan.cashbackKobo > 0) {
-          const { error: cashbackError } = await supabase.rpc("credit_cashback", {
+          const { data: credited, error: cashbackError } = await supabase.rpc("credit_cashback", {
             p_tx_id: txId, p_amount_kobo: plan.cashbackKobo,
           });
-          if (cashbackError) console.error("vtu-purchase: cashback credit failed:", cashbackError.message);
+          if (cashbackError) {
+            console.error("vtu-purchase: cashback credit failed:", cashbackError.message);
+          } else if (credited === true) {
+            cashbackEarnedKobo = plan.cashbackKobo;
+          }
         }
 
         // Electricity's success response carries a one-time prepaid meter
@@ -878,7 +887,7 @@ serve(async (req: Request) => {
           ? safeDisplayString(verifiedElectricityCustomerAddress)
           : undefined;
 
-        if (electricityToken || pins || serials || body.service === "electricity" || body.service === "tv") {
+        if (electricityToken || pins || serials || cashbackEarnedKobo || body.service === "electricity" || body.service === "tv") {
           await supabase
             .from("transactions")
             .update({
@@ -891,6 +900,7 @@ serve(async (req: Request) => {
                 ...(electricityToken ? { token: electricityToken } : {}),
                 ...(pins ? { pins } : {}),
                 ...(serials ? { serials } : {}),
+                ...(cashbackEarnedKobo ? { cashback_earned_kobo: cashbackEarnedKobo } : {}),
                 ...(body.service === "electricity" ? { provider_id: String(body.provider_id || "") } : {}),
                 ...(customerName ? { customer_name: customerName } : {}),
                 ...(customerAddress ? { customer_address: customerAddress } : {}),
@@ -913,6 +923,7 @@ serve(async (req: Request) => {
           pins,
           serials,
           amount: plan.amount,
+          cashback_earned_kobo: cashbackEarnedKobo,
         });
       }
 
