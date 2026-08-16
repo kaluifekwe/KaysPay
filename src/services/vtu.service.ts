@@ -9,6 +9,10 @@ export interface DataBundle {
   id: string;
   name: string;
   amount: number;
+  /** Pre-discount reference price for a "was/now" display — only present
+   * on an auto-priced plan (never a manually-overridden one), and only
+   * when it's actually higher than `amount`. */
+  list_amount?: number | null;
   validity: string;
   network: NetworkProvider;
 }

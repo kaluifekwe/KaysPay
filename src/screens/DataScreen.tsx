@@ -454,14 +454,19 @@ export default function DataScreen({ navigation }: DataScreenProps) {
                       <Text style={styles.bundleName}>{bundle.name}</Text>
                       <Text style={styles.bundleValidity}>{bundle.validity}</Text>
                     </View>
-                    <Text
-                      style={[
-                        styles.bundleAmount,
-                        isSelected && styles.bundleAmountSelected,
-                      ]}
-                    >
-                      {formatNaira(bundle.amount)}
-                    </Text>
+                    <View style={styles.bundleAmountColumn}>
+                      {!!bundle.list_amount && bundle.list_amount > bundle.amount && (
+                        <Text style={styles.bundleListAmount}>{formatNaira(bundle.list_amount)}</Text>
+                      )}
+                      <Text
+                        style={[
+                          styles.bundleAmount,
+                          isSelected && styles.bundleAmountSelected,
+                        ]}
+                      >
+                        {formatNaira(bundle.amount)}
+                      </Text>
+                    </View>
                   </TouchableOpacity>
                 );
               })}
@@ -499,9 +504,14 @@ export default function DataScreen({ navigation }: DataScreenProps) {
                 {effectiveNetwork ? networkLabel(effectiveNetwork) : ''}{' • '}
                 {selectedBundle.validity}
               </Text>
-              <Text style={styles.summaryAmount}>
-                {formatNaira(selectedBundle.amount)}
-              </Text>
+              <View style={styles.bundleAmountColumn}>
+                {!!selectedBundle.list_amount && selectedBundle.list_amount > selectedBundle.amount && (
+                  <Text style={styles.bundleListAmount}>{formatNaira(selectedBundle.list_amount)}</Text>
+                )}
+                <Text style={styles.summaryAmount}>
+                  {formatNaira(selectedBundle.amount)}
+                </Text>
+              </View>
             </View>
           )}
           {payHint && (
@@ -717,6 +727,14 @@ const styles = StyleSheet.create({
   },
   bundleValidity: {
     ...Typography.CAPTION,
+  },
+  bundleAmountColumn: {
+    alignItems: 'flex-end',
+  },
+  bundleListAmount: {
+    ...Typography.CAPTION,
+    color: Colors.GRAY,
+    textDecorationLine: 'line-through',
   },
   bundleAmount: {
     ...Typography.AMOUNT_SMALL,
