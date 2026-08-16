@@ -16,6 +16,15 @@ export interface PricingEngineConfig {
   value_density_max_adjust_percent: number;
   value_density_price_window_percent: number;
   min_markup_floor_kobo: number;
+  /** Percent of THIS plan's own markup taken off the charged price. Capped
+   * at 100 by the database, so the charge can reach cost but never go below
+   * it — never a percent of price, which could push below cost on a plan
+   * with a large markup. */
+  discount_percent_of_markup: number;
+  /** Percent of THIS plan's own markup computed as a cashback amount.
+   * Stored for admin visibility only — there is no balance to credit it
+   * into yet, so it must not be surfaced to customers until that exists. */
+  cashback_percent_of_markup: number;
 }
 
 export interface CatalogPricingInput {
@@ -29,6 +38,12 @@ export interface CatalogPricingInput {
 export interface ComputedPlanMarkup {
   id: string;
   computed_markup_kobo: number;
+  /** Reseller cost + markup, before any discount — the "was" price. */
+  computed_list_price_kobo: number;
+  computed_discount_kobo: number;
+  /** Not yet creditable to any balance — see PricingEngineConfig note. */
+  computed_cashback_kobo: number;
+  /** What's actually charged: list price minus discount. */
   computed_price_kobo: number;
 }
 
@@ -66,6 +81,13 @@ function baseMarkupKobo(bracket: MarkupBracket, priceKobo: number): number {
  *    Bounded to +/- `value_density_max_adjust_percent` of the base markup,
  *    and never allowed below `min_markup_floor_kobo` overall — the
  *    adjustment can only ever shrink margin, never erase or invert it.
+ *
+ * On top of that, a discount and a cashback amount are each taken as a
+ * percentage of THIS plan's own final markup (never of price, and never a
+ * flat naira figure) — so neither can scale wrong on an unusually cheap or
+ * expensive plan. The discount is subtracted from the charged price; the
+ * cashback amount is computed but not applied anywhere yet (see
+ * PricingEngineConfig).
  *
  * Returns a map keyed by plan id; a plan with no matching bracket or an
  * unparseable size (for the density step only) is simply left out rather
@@ -117,10 +139,16 @@ export function computeCatalogMarkup(
       }
 
       markup = Math.max(markup, config.min_markup_floor_kobo);
+      const listPrice = entry.row.reseller_kobo + markup;
+      const discount = Math.round(markup * (config.discount_percent_of_markup / 100));
+      const cashback = Math.round(markup * (config.cashback_percent_of_markup / 100));
       result.set(entry.row.id, {
         id: entry.row.id,
         computed_markup_kobo: markup,
-        computed_price_kobo: entry.row.reseller_kobo + markup,
+        computed_list_price_kobo: listPrice,
+        computed_discount_kobo: discount,
+        computed_cashback_kobo: cashback,
+        computed_price_kobo: listPrice - discount,
       });
     }
   }

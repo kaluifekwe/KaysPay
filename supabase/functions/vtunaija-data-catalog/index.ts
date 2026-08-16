@@ -122,7 +122,7 @@ async function loadMarkupEngineInputs(
     supabase.from("data_markup_brackets")
       .select("min_price_kobo, max_price_kobo, markup_type, markup_value"),
     supabase.from("data_pricing_engine_config")
-      .select("enabled, value_density_enabled, value_density_max_adjust_percent, value_density_price_window_percent, min_markup_floor_kobo")
+      .select("enabled, value_density_enabled, value_density_max_adjust_percent, value_density_price_window_percent, min_markup_floor_kobo, discount_percent_of_markup, cashback_percent_of_markup")
       .eq("id", true).maybeSingle(),
   ]);
   return {
@@ -130,7 +130,7 @@ async function loadMarkupEngineInputs(
     config: (config as PricingEngineConfig | null) ?? {
       enabled: false, value_density_enabled: false,
       value_density_max_adjust_percent: 0, value_density_price_window_percent: 10,
-      min_markup_floor_kobo: 0,
+      min_markup_floor_kobo: 0, discount_percent_of_markup: 0, cashback_percent_of_markup: 0,
     },
   };
 }
@@ -152,6 +152,9 @@ async function refreshCatalog(supabase: ReturnType<typeof adminClient>) {
   const storedRows = rows.map((row) => ({
     ...row,
     computed_markup_kobo: computed.get(row.id)?.computed_markup_kobo ?? null,
+    computed_list_price_kobo: computed.get(row.id)?.computed_list_price_kobo ?? null,
+    computed_discount_kobo: computed.get(row.id)?.computed_discount_kobo ?? null,
+    computed_cashback_kobo: computed.get(row.id)?.computed_cashback_kobo ?? null,
     computed_price_kobo: computed.get(row.id)?.computed_price_kobo ?? null,
     provider_seen_at: now,
     updated_at: now,
@@ -230,7 +233,7 @@ serve(async (req: Request) => {
   const network = String(body.network ?? "").toLowerCase();
   if (!NETWORKS.includes(network as typeof NETWORKS[number])) return json({ error: "Invalid network" }, 400);
 
-  const SELECT_FIELDS = "id, network, name, validity, family_key, family_name, reseller_kobo, computed_price_kobo, provider_seen_at";
+  const SELECT_FIELDS = "id, network, name, validity, family_key, family_name, reseller_kobo, computed_price_kobo, computed_list_price_kobo, provider_seen_at";
   let { data, error } = await supabase
     .from("vtunaija_data_catalog")
     .select(SELECT_FIELDS)
@@ -286,15 +289,22 @@ serve(async (req: Request) => {
   // computed_price_kobo) — never below cost either way.
   return json({
     success: true,
-    plans: visible.map((row) => ({
-      id: row.id,
-      network: row.network,
-      name: row.name,
-      validity: row.validity,
-      family_key: row.family_key,
-      family_name: row.family_name,
-      amount: (priceByPlan.get(row.id) ?? row.computed_price_kobo ?? Number(row.reseller_kobo)) / 100,
-    })),
+    plans: visible.map((row) => {
+      const hasOverride = priceByPlan.has(row.id);
+      return {
+        id: row.id,
+        network: row.network,
+        name: row.name,
+        validity: row.validity,
+        family_key: row.family_key,
+        family_name: row.family_name,
+        amount: (priceByPlan.get(row.id) ?? row.computed_price_kobo ?? Number(row.reseller_kobo)) / 100,
+        // "Was" price for a strikethrough display (migration 123) — only for
+        // an auto-computed price, never a manual override (which has no
+        // discount concept, it's just a flat final price the admin chose).
+        list_amount: !hasOverride && row.computed_list_price_kobo ? row.computed_list_price_kobo / 100 : null,
+      };
+    }),
     updated_at: data?.[0]?.provider_seen_at ?? null,
   });
 });

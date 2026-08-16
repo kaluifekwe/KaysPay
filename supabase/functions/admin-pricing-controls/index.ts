@@ -41,7 +41,7 @@ serve(async (req) => {
       { data: pricingEngineConfig, error: pricingEngineConfigError },
     ] = await Promise.all([
       db.from("vtunaija_data_catalog")
-        .select("id, network, family_key, family_name, name, validity, available, reseller_kobo, computed_markup_kobo, computed_price_kobo")
+        .select("id, network, family_key, family_name, name, validity, available, reseller_kobo, computed_markup_kobo, computed_list_price_kobo, computed_discount_kobo, computed_cashback_kobo, computed_price_kobo")
         .order("network").order("family_name").order("name"),
       db.from("vtu_plan_price_overrides")
         .select("provider, network, plan_id, price_kobo, updated_at")
@@ -64,7 +64,7 @@ serve(async (req) => {
         .select("id, min_price_kobo, max_price_kobo, markup_type, markup_value, updated_at")
         .order("min_price_kobo"),
       db.from("data_pricing_engine_config")
-        .select("enabled, value_density_enabled, value_density_max_adjust_percent, value_density_price_window_percent, min_markup_floor_kobo, updated_at")
+        .select("enabled, value_density_enabled, value_density_max_adjust_percent, value_density_price_window_percent, min_markup_floor_kobo, discount_percent_of_markup, cashback_percent_of_markup, updated_at")
         .eq("id", true).maybeSingle(),
     ]);
     if (
@@ -253,10 +253,14 @@ serve(async (req) => {
     const maxAdjustPercent = Number(body.value_density_max_adjust_percent);
     const priceWindowPercent = Number(body.value_density_price_window_percent);
     const minMarkupFloorKobo = Math.round(Number(body.min_markup_floor_kobo));
+    const discountPercentOfMarkup = Number(body.discount_percent_of_markup);
+    const cashbackPercentOfMarkup = Number(body.cashback_percent_of_markup);
     if (
       !Number.isFinite(maxAdjustPercent) || maxAdjustPercent < 0 || maxAdjustPercent > 100 ||
       !Number.isFinite(priceWindowPercent) || priceWindowPercent <= 0 || priceWindowPercent > 50 ||
-      !Number.isFinite(minMarkupFloorKobo) || minMarkupFloorKobo < 0
+      !Number.isFinite(minMarkupFloorKobo) || minMarkupFloorKobo < 0 ||
+      !Number.isFinite(discountPercentOfMarkup) || discountPercentOfMarkup < 0 || discountPercentOfMarkup > 100 ||
+      !Number.isFinite(cashbackPercentOfMarkup) || cashbackPercentOfMarkup < 0 || cashbackPercentOfMarkup > 100
     ) {
       return json({ error: "Enter valid pricing engine settings" }, 400);
     }
@@ -266,6 +270,8 @@ serve(async (req) => {
       p_value_density_max_adjust_percent: maxAdjustPercent,
       p_value_density_price_window_percent: priceWindowPercent,
       p_min_markup_floor_kobo: minMarkupFloorKobo,
+      p_discount_percent_of_markup: discountPercentOfMarkup,
+      p_cashback_percent_of_markup: cashbackPercentOfMarkup,
     });
     if (error) return json({ error: "Could not save the pricing engine settings" }, 500);
     return json({ success: true });

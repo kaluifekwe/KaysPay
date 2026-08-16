@@ -13,6 +13,8 @@ const CONFIG = {
   value_density_max_adjust_percent: 30,
   value_density_price_window_percent: 10,
   min_markup_floor_kobo: 100,
+  discount_percent_of_markup: 30,
+  cashback_percent_of_markup: 10,
 };
 
 Deno.test("parseDataSizeToMb reads GB and MB tokens", () => {
@@ -25,8 +27,24 @@ Deno.test("parseDataSizeToMb reads GB and MB tokens", () => {
 Deno.test("applies the matching bracket's flat markup with no siblings nearby", () => {
   const rows = [{ id: "a", network: "mtn", name: "1GB (AwoofData)", reseller_kobo: 21500 }];
   const result = computeCatalogMarkup(rows, BRACKETS, { ...CONFIG, value_density_enabled: false });
-  assertEquals(result.get("a")?.computed_markup_kobo, 2000);
-  assertEquals(result.get("a")?.computed_price_kobo, 23500);
+  const plan = result.get("a")!;
+  assertEquals(plan.computed_markup_kobo, 2000);
+  assertEquals(plan.computed_list_price_kobo, 23500);
+  // 30% of 2000 markup = 600 discount, charged price = list - discount
+  assertEquals(plan.computed_discount_kobo, 600);
+  assertEquals(plan.computed_price_kobo, 22900);
+  // 10% of 2000 markup = 200 cashback (computed, not credited anywhere yet)
+  assertEquals(plan.computed_cashback_kobo, 200);
+});
+
+Deno.test("a 100 percent discount charges exactly provider cost, never below it", () => {
+  const rows = [{ id: "a", network: "mtn", name: "1GB (AwoofData)", reseller_kobo: 21500 }];
+  const result = computeCatalogMarkup(rows, BRACKETS, {
+    ...CONFIG, value_density_enabled: false, discount_percent_of_markup: 100,
+  });
+  const plan = result.get("a")!;
+  assertEquals(plan.computed_discount_kobo, plan.computed_markup_kobo);
+  assertEquals(plan.computed_price_kobo, 21500);
 });
 
 Deno.test("applies percentage brackets on the provider price", () => {

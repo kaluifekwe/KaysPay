@@ -13,6 +13,9 @@ interface DataPlan {
   available: boolean;
   reseller_kobo: number;
   computed_markup_kobo: number | null;
+  computed_list_price_kobo: number | null;
+  computed_discount_kobo: number | null;
+  computed_cashback_kobo: number | null;
   computed_price_kobo: number | null;
 }
 
@@ -31,6 +34,8 @@ interface PricingEngineConfig {
   value_density_max_adjust_percent: number;
   value_density_price_window_percent: number;
   min_markup_floor_kobo: number;
+  discount_percent_of_markup: number;
+  cashback_percent_of_markup: number;
   updated_at: string;
 }
 
@@ -164,9 +169,11 @@ export default function PricingPage() {
   const [examInputs, setExamInputs] = useState<Record<string, string>>({});
   const [electricityFeeInput, setElectricityFeeInput] = useState<string | undefined>(undefined);
   const [bracketDrafts, setBracketDrafts] = useState<Record<string, BracketDraft>>({});
-  const [configDraft, setConfigDraft] = useState<{
+  type ConfigDraft = {
     enabled: boolean; value_density_enabled: boolean; max_adjust: string; price_window: string; floor: string;
-  } | undefined>(undefined);
+    discount: string; cashback: string;
+  };
+  const [configDraft, setConfigDraft] = useState<ConfigDraft | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
 
   type PricingData = {
@@ -448,18 +455,34 @@ export default function PricingPage() {
     }
   };
 
-  const saveEngineConfig = async () => {
-    if (!engineConfig) return;
-    const draft = configDraft ?? {
+  const resolvedConfigDraft = (): ConfigDraft | null => {
+    if (configDraft) return configDraft;
+    if (!engineConfig) return null;
+    return {
       enabled: engineConfig.enabled, value_density_enabled: engineConfig.value_density_enabled,
       max_adjust: engineConfig.value_density_max_adjust_percent.toString(),
       price_window: engineConfig.value_density_price_window_percent.toString(),
       floor: (engineConfig.min_markup_floor_kobo / 100).toFixed(2),
+      discount: engineConfig.discount_percent_of_markup.toString(),
+      cashback: engineConfig.cashback_percent_of_markup.toString(),
     };
+  };
+
+  const setConfigField = <K extends keyof ConfigDraft>(field: K, value: ConfigDraft[K]) => {
+    const base = resolvedConfigDraft();
+    if (!base) return;
+    setConfigDraft({ ...base, [field]: value });
+  };
+
+  const saveEngineConfig = async () => {
+    const draft = resolvedConfigDraft();
+    if (!draft) return;
     setError(null);
     const maxAdjust = Number(draft.max_adjust);
     const priceWindow = Number(draft.price_window);
     const floorKobo = nairaTextToMarkupKobo(draft.floor);
+    const discountPercent = Number(draft.discount);
+    const cashbackPercent = Number(draft.cashback);
     if (!Number.isFinite(maxAdjust) || maxAdjust < 0 || maxAdjust > 100) {
       setError('Max adjust must be between 0 and 100.');
       return;
@@ -472,6 +495,14 @@ export default function PricingPage() {
       setError('Enter a valid markup floor.');
       return;
     }
+    if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
+      setError('Discount % of markup must be between 0 and 100.');
+      return;
+    }
+    if (!Number.isFinite(cashbackPercent) || cashbackPercent < 0 || cashbackPercent > 100) {
+      setError('Cashback % of markup must be between 0 and 100.');
+      return;
+    }
     setBusy('engine_config');
     try {
       await callAdmin('admin-pricing-controls', {
@@ -480,12 +511,15 @@ export default function PricingPage() {
           target: 'data_pricing_engine_config', enabled: draft.enabled, value_density_enabled: draft.value_density_enabled,
           value_density_max_adjust_percent: maxAdjust, value_density_price_window_percent: priceWindow,
           min_markup_floor_kobo: floorKobo,
+          discount_percent_of_markup: discountPercent, cashback_percent_of_markup: cashbackPercent,
         },
       });
       setEngineConfig({
         enabled: draft.enabled, value_density_enabled: draft.value_density_enabled,
         value_density_max_adjust_percent: maxAdjust, value_density_price_window_percent: priceWindow,
-        min_markup_floor_kobo: floorKobo, updated_at: new Date().toISOString(),
+        min_markup_floor_kobo: floorKobo,
+        discount_percent_of_markup: discountPercent, cashback_percent_of_markup: cashbackPercent,
+        updated_at: new Date().toISOString(),
       });
       setConfigDraft(undefined);
     } catch (e) {
@@ -511,87 +545,75 @@ export default function PricingPage() {
             <p className="muted">
               Runs on every catalogue sync (every 5 minutes), across mtn, glo, 9mobile and airtel at once — a new plan the provider adds gets priced automatically, no manual entry needed. A manual markup set below in Data Plan Pricing still overrides this for that one plan. Value-density lowers markup on the best-value plan among similarly-priced siblings and raises it on the weaker one.
             </p>
-            {engineConfig && (
-              <div className="row" style={{ gap: 16, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
-                <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <input
-                    type="checkbox"
-                    checked={configDraft?.enabled ?? engineConfig.enabled}
-                    disabled={!canEdit}
-                    onChange={(event) => setConfigDraft({
-                      enabled: event.target.checked,
-                      value_density_enabled: configDraft?.value_density_enabled ?? engineConfig.value_density_enabled,
-                      max_adjust: configDraft?.max_adjust ?? engineConfig.value_density_max_adjust_percent.toString(),
-                      price_window: configDraft?.price_window ?? engineConfig.value_density_price_window_percent.toString(),
-                      floor: configDraft?.floor ?? (engineConfig.min_markup_floor_kobo / 100).toFixed(2),
-                    })}
-                  />
-                  Engine enabled
-                </label>
-                <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <input
-                    type="checkbox"
-                    checked={configDraft?.value_density_enabled ?? engineConfig.value_density_enabled}
-                    disabled={!canEdit}
-                    onChange={(event) => setConfigDraft({
-                      enabled: configDraft?.enabled ?? engineConfig.enabled,
-                      value_density_enabled: event.target.checked,
-                      max_adjust: configDraft?.max_adjust ?? engineConfig.value_density_max_adjust_percent.toString(),
-                      price_window: configDraft?.price_window ?? engineConfig.value_density_price_window_percent.toString(),
-                      floor: configDraft?.floor ?? (engineConfig.min_markup_floor_kobo / 100).toFixed(2),
-                    })}
-                  />
-                  Value-density adjustment
-                </label>
-                <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  Max adjust %
-                  <input
-                    className="mono" style={{ width: 60, textAlign: 'right' }} disabled={!canEdit}
-                    value={configDraft?.max_adjust ?? engineConfig.value_density_max_adjust_percent.toString()}
-                    onChange={(event) => setConfigDraft({
-                      enabled: configDraft?.enabled ?? engineConfig.enabled,
-                      value_density_enabled: configDraft?.value_density_enabled ?? engineConfig.value_density_enabled,
-                      max_adjust: event.target.value,
-                      price_window: configDraft?.price_window ?? engineConfig.value_density_price_window_percent.toString(),
-                      floor: configDraft?.floor ?? (engineConfig.min_markup_floor_kobo / 100).toFixed(2),
-                    })}
-                  />
-                </label>
-                <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  Sibling price window %
-                  <input
-                    className="mono" style={{ width: 60, textAlign: 'right' }} disabled={!canEdit}
-                    value={configDraft?.price_window ?? engineConfig.value_density_price_window_percent.toString()}
-                    onChange={(event) => setConfigDraft({
-                      enabled: configDraft?.enabled ?? engineConfig.enabled,
-                      value_density_enabled: configDraft?.value_density_enabled ?? engineConfig.value_density_enabled,
-                      max_adjust: configDraft?.max_adjust ?? engineConfig.value_density_max_adjust_percent.toString(),
-                      price_window: event.target.value,
-                      floor: configDraft?.floor ?? (engineConfig.min_markup_floor_kobo / 100).toFixed(2),
-                    })}
-                  />
-                </label>
-                <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  Markup floor (₦)
-                  <input
-                    className="mono" style={{ width: 80, textAlign: 'right' }} disabled={!canEdit}
-                    value={configDraft?.floor ?? (engineConfig.min_markup_floor_kobo / 100).toFixed(2)}
-                    onChange={(event) => setConfigDraft({
-                      enabled: configDraft?.enabled ?? engineConfig.enabled,
-                      value_density_enabled: configDraft?.value_density_enabled ?? engineConfig.value_density_enabled,
-                      max_adjust: configDraft?.max_adjust ?? engineConfig.value_density_max_adjust_percent.toString(),
-                      price_window: configDraft?.price_window ?? engineConfig.value_density_price_window_percent.toString(),
-                      floor: event.target.value,
-                    })}
-                  />
-                </label>
-                {canEdit && (
-                  <button className="primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === 'engine_config'} onClick={() => void saveEngineConfig()}>
-                    Save settings
-                  </button>
-                )}
-              </div>
-            )}
+            {engineConfig && (() => {
+              const draft = resolvedConfigDraft()!;
+              return (
+                <div className="row" style={{ gap: 16, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
+                  <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input
+                      type="checkbox" checked={draft.enabled} disabled={!canEdit}
+                      onChange={(event) => setConfigField('enabled', event.target.checked)}
+                    />
+                    Engine enabled
+                  </label>
+                  <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input
+                      type="checkbox" checked={draft.value_density_enabled} disabled={!canEdit}
+                      onChange={(event) => setConfigField('value_density_enabled', event.target.checked)}
+                    />
+                    Value-density adjustment
+                  </label>
+                  <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    Max adjust %
+                    <input
+                      className="mono" style={{ width: 60, textAlign: 'right' }} disabled={!canEdit}
+                      value={draft.max_adjust}
+                      onChange={(event) => setConfigField('max_adjust', event.target.value)}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    Sibling price window %
+                    <input
+                      className="mono" style={{ width: 60, textAlign: 'right' }} disabled={!canEdit}
+                      value={draft.price_window}
+                      onChange={(event) => setConfigField('price_window', event.target.value)}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    Markup floor (₦)
+                    <input
+                      className="mono" style={{ width: 80, textAlign: 'right' }} disabled={!canEdit}
+                      value={draft.floor}
+                      onChange={(event) => setConfigField('floor', event.target.value)}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    Discount % of markup
+                    <input
+                      className="mono" style={{ width: 60, textAlign: 'right' }} disabled={!canEdit}
+                      value={draft.discount}
+                      onChange={(event) => setConfigField('discount', event.target.value)}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    Cashback % of markup
+                    <input
+                      className="mono" style={{ width: 60, textAlign: 'right' }} disabled={!canEdit}
+                      value={draft.cashback}
+                      onChange={(event) => setConfigField('cashback', event.target.value)}
+                    />
+                  </label>
+                  {canEdit && (
+                    <button className="primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === 'engine_config'} onClick={() => void saveEngineConfig()}>
+                      Save settings
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+            <p className="muted" style={{ marginTop: -4, marginBottom: 16 }}>
+              Discount is applied to the real charged price shown below. Cashback is computed and shown for your visibility only — there's no customer-facing cashback balance yet, so it is not shown to customers or promised anywhere in the app.
+            </p>
 
             <table>
               <thead><tr><th>Price from</th><th>Price to</th><th>Type</th><th>Value</th>{canEdit && <th />}</tr></thead>
@@ -651,7 +673,7 @@ export default function PricingPage() {
             {networkPlans.length === 0 ? <p className="muted">No synced plans for this network.</p> : (
               <table>
                 <thead>
-                  <tr><th>Plan</th><th>Status</th><th>Provider Price</th><th>Auto Price</th><th>Your Manual Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr>
+                  <tr><th>Plan</th><th>Status</th><th>Provider Price</th><th>Auto Price</th><th title="Admin visibility only — not shown to customers yet">Discount / Cashback</th><th>Your Manual Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr>
                 </thead>
                 <tbody>
                   {networkPlans.map((plan) => {
@@ -676,6 +698,9 @@ export default function PricingPage() {
                         <td><span className={`badge ${plan.available ? 'enabled' : 'disabled'}`}>{plan.available ? 'Available' : 'Unavailable'}</span></td>
                         <td className="mono muted">{formatNaira(plan.reseller_kobo)}</td>
                         <td className="mono muted">{plan.computed_price_kobo === null ? '—' : formatNaira(plan.computed_price_kobo)}</td>
+                        <td className="mono muted">
+                          {plan.computed_discount_kobo === null ? '—' : `${formatNaira(plan.computed_discount_kobo)} / ${formatNaira(plan.computed_cashback_kobo ?? 0)}`}
+                        </td>
                         <td>
                           <input
                             className="mono"
