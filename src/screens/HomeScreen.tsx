@@ -12,6 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import DataPromoBanner from '../components/DataPromoBanner';
 import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -306,6 +307,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             </TouchableOpacity>
           </View>
         </View>
+
+        <DataPromoBanner navigation={navigation} />
 
         <AdvertCarousel navigation={navigation} />
 
