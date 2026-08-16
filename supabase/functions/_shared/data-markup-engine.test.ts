@@ -4,6 +4,7 @@ import { computeCatalogMarkup, parseDataSizeToMb } from "./data-markup-engine.ts
 const BRACKETS = [
   { min_price_kobo: 0, max_price_kobo: 15000, markup_type: "flat" as const, markup_value: 1200 },
   { min_price_kobo: 15000, max_price_kobo: 40000, markup_type: "flat" as const, markup_value: 2000 },
+  { min_price_kobo: 40000, max_price_kobo: 100000, markup_type: "flat" as const, markup_value: 3500 },
   { min_price_kobo: 100000, max_price_kobo: 300000, markup_type: "percent" as const, markup_value: 350 },
 ];
 
@@ -35,6 +36,27 @@ Deno.test("applies the matching bracket's flat markup with no siblings nearby", 
   assertEquals(plan.computed_price_kobo, 22900);
   // 10% of 2000 markup = 200 cashback (computed, not credited anywhere yet)
   assertEquals(plan.computed_cashback_kobo, 200);
+});
+
+Deno.test("never quotes or charges a fractional-naira price, even when the discount leaves an odd kobo remainder", () => {
+  // The real bug: MTN 2GB (AwoofData) at N420 (42000 kobo), N35 markup, 30%
+  // discount of markup = N10.50 (1050 kobo) — an odd remainder that used to
+  // surface as "N444.5" on the customer-facing price before this fix.
+  const rows = [{ id: "a", network: "mtn", name: "2GB (AwoofData)", reseller_kobo: 42000 }];
+  const result = computeCatalogMarkup(rows, BRACKETS, { ...CONFIG, value_density_enabled: false });
+  const plan = result.get("a")!;
+  assertEquals(plan.computed_list_price_kobo % 100, 0);
+  assertEquals(plan.computed_price_kobo % 100, 0);
+  assertEquals(plan.computed_discount_kobo % 100, 0);
+  assertEquals(plan.computed_cashback_kobo % 100, 0);
+  // Rounds UP to the next whole naira, never down — keeps the charged price
+  // from ever dipping below list price minus the true discount.
+  assertEquals(plan.computed_list_price_kobo, 45500);
+  assertEquals(plan.computed_price_kobo, 44500);
+  assertEquals(plan.computed_discount_kobo, 1000);
+  // "was" minus "now" always exactly equals the discount shown, since
+  // discount is derived from the two already-rounded numbers.
+  assertEquals(plan.computed_list_price_kobo - plan.computed_price_kobo, plan.computed_discount_kobo);
 });
 
 Deno.test("a 100 percent discount charges exactly provider cost, never below it", () => {

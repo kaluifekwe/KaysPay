@@ -139,16 +139,35 @@ export function computeCatalogMarkup(
       }
 
       markup = Math.max(markup, config.min_markup_floor_kobo);
-      const listPrice = entry.row.reseller_kobo + markup;
-      const discount = Math.round(markup * (config.discount_percent_of_markup / 100));
-      const cashback = Math.round(markup * (config.cashback_percent_of_markup / 100));
+      const rawListPrice = entry.row.reseller_kobo + markup;
+      const rawDiscount = markup * (config.discount_percent_of_markup / 100);
+      const rawPrice = rawListPrice - rawDiscount;
+      const rawCashback = markup * (config.cashback_percent_of_markup / 100);
+
+      // Round the customer-facing numbers to the nearest whole naira — a
+      // discount subtracted from a markup often leaves an odd kobo remainder
+      // (e.g. 30% of an N35 markup is N10.50), and nobody should be quoted
+      // or charged a fractional-naira price for airtime/data. Both list
+      // price and charged price round UP (never down), which is what keeps
+      // the "never below provider cost" guarantee intact through rounding —
+      // rounding either of them down could, in a rare edge case (a small
+      // markup near the floor combined with a large discount percent),
+      // shave the charge below cost by a few kobo. Discount is then derived
+      // as the difference between the two ALREADY-rounded numbers, rather
+      // than rounded on its own, so "was minus now" always exactly equals
+      // the discount shown — no separate rounding to drift out of sync.
+      const listPrice = Math.ceil(rawListPrice / 100) * 100;
+      const price = Math.ceil(rawPrice / 100) * 100;
+      const discount = listPrice - price;
+      const cashback = Math.round(rawCashback / 100) * 100;
+
       result.set(entry.row.id, {
         id: entry.row.id,
         computed_markup_kobo: markup,
         computed_list_price_kobo: listPrice,
         computed_discount_kobo: discount,
         computed_cashback_kobo: cashback,
-        computed_price_kobo: listPrice - discount,
+        computed_price_kobo: price,
       });
     }
   }
