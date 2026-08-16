@@ -1,4 +1,8 @@
-import { normalizeVTUNaijaResult, vtunaijaOutcome } from "./vtunaija-client.ts";
+import {
+  normalizeVTUNaijaQueryResult,
+  normalizeVTUNaijaResult,
+  vtunaijaOutcome,
+} from "./vtunaija-client.ts";
 
 function assertEquals(actual: unknown, expected: unknown, label: string): void {
   if (actual !== expected) {
@@ -21,6 +25,23 @@ Deno.test("classifies documented successful response as success", () => {
   assertEquals(normalized.statusOk, true, "normalized statusOk");
   assertEquals(normalized.id, "78977865523", "normalized id");
   assertEquals(normalized.planAmount, "500", "normalized plan_amount");
+});
+
+// Real Exam PIN success envelope supplied by the provider. PIN and serial are
+// one-time values and must survive normalization intact.
+Deno.test("preserves documented exam PIN and serial fields", () => {
+  const normalized = normalizeVTUNaijaResult({
+    Status: "successful",
+    status: "success",
+    api_response: "Transaction Successful",
+    id: "78977865523",
+    ident: "78977865523",
+    plan_amount: "4500",
+    pin: "12345678901234567",
+    serial: "98765432101234567",
+  });
+  assertEquals(normalized.pin, "12345678901234567", "normalized PIN");
+  assertEquals(normalized.serial, "98765432101234567", "normalized serial");
 });
 
 // Real failure example from the same docs.
@@ -58,4 +79,57 @@ Deno.test("treats malformed or empty response as unknown, not success or failure
   assertEquals(vtunaijaOutcome(null), "unknown", "null response");
   assertEquals(vtunaijaOutcome({}), "unknown", "empty object");
   assertEquals(vtunaijaOutcome({ Status: "weird-unrecognized-word" }), "unknown", "unrecognized status word");
+});
+
+Deno.test("uses nested transaction status for a successful query lookup", () => {
+  const result = {
+    status: "success",
+    Status: "successful",
+    message: "Transaction retrieved successfully.",
+    data: {
+      transaction_id: "209129180089",
+      transaction_type: "DataShare3",
+      size: "2GB Datashare",
+      network: "MTN",
+      status: "successful",
+      api_response: "Y'ello! You have gifted 2GB.",
+    },
+  };
+  const normalized = normalizeVTUNaijaQueryResult(result);
+  assertEquals(normalized.outcome, "success", "nested successful transaction");
+  assertEquals(normalized.transactionId, "209129180089", "nested transaction id");
+  assertEquals(normalized.transactionType, "DataShare3", "nested transaction type");
+  assertEquals(normalized.network, "MTN", "nested network");
+});
+
+Deno.test("does not mistake a successful lookup for a successful failed transaction", () => {
+  const result = {
+    status: "success",
+    Status: "successful",
+    message: "Transaction retrieved successfully.",
+    data: {
+      transaction_id: "209129180090",
+      transaction_type: "DataShare3",
+      size: "2GB Datashare",
+      network: "MTN",
+      status: "failed",
+      api_response: "Failed Failed Failed. Something went wrong",
+    },
+  };
+  const normalized = normalizeVTUNaijaQueryResult(result);
+  assertEquals(normalized.outcome, "failed", "nested failed transaction");
+  assertEquals(normalized.message, "Failed Failed Failed. Something went wrong", "nested failure message");
+});
+
+Deno.test("treats query auth errors and malformed successful lookups as unknown", () => {
+  assertEquals(
+    normalizeVTUNaijaQueryResult({ Status: "failed", status: "fail", message: "Invalid API key" }).outcome,
+    "unknown",
+    "query auth failure is not a customer transaction failure",
+  );
+  assertEquals(
+    normalizeVTUNaijaQueryResult({ Status: "successful", status: "success", data: {} }).outcome,
+    "unknown",
+    "missing nested transaction status",
+  );
 });
