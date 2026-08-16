@@ -205,7 +205,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
       const bundleQuery = () =>
         supabase
           .from("vtunaija_data_catalog")
-          .select("id, network, data_plan_id, family_key, reseller_kobo, available, provider_seen_at")
+          .select("id, network, data_plan_id, family_key, reseller_kobo, computed_price_kobo, available, provider_seen_at")
           .eq("id", bundleId)
           .eq("network", network)
           .eq("available", true)
@@ -223,6 +223,8 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
       // Admin-settable per-plan price (see migration 112) — same lookup
       // vtunaija-data-catalog uses to quote this plan to the client, so the
       // two always agree and the quoted_amount_kobo check below still works.
+      // Resolution order (migration 122): manual override, else the
+      // automatic markup engine's computed price, else raw provider cost.
       const { data: priceOverride } = await supabase
         .from("vtu_plan_price_overrides")
         .select("price_kobo")
@@ -230,7 +232,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
         .eq("network", network)
         .eq("plan_id", bundle.id)
         .maybeSingle();
-      const amount = Number(priceOverride?.price_kobo ?? bundle.reseller_kobo);
+      const amount = Number(priceOverride?.price_kobo ?? bundle.computed_price_kobo ?? bundle.reseller_kobo);
       const quotedAmount = Number(body.quoted_amount_kobo);
       if (Number.isFinite(quotedAmount) && quotedAmount > 0 && quotedAmount !== amount) {
         throw new PriceChangedError(amount);

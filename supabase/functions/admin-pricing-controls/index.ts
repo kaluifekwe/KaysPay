@@ -37,9 +37,11 @@ serve(async (req) => {
       { data: electricityFee, error: electricityFeeError },
       { data: examPlans, error: examPlanError },
       { data: examOverrides, error: examOverrideError },
+      { data: markupBrackets, error: markupBracketsError },
+      { data: pricingEngineConfig, error: pricingEngineConfigError },
     ] = await Promise.all([
       db.from("vtunaija_data_catalog")
-        .select("id, network, family_key, family_name, name, validity, available, reseller_kobo")
+        .select("id, network, family_key, family_name, name, validity, available, reseller_kobo, computed_markup_kobo, computed_price_kobo")
         .order("network").order("family_name").order("name"),
       db.from("vtu_plan_price_overrides")
         .select("provider, network, plan_id, price_kobo, updated_at")
@@ -58,10 +60,17 @@ serve(async (req) => {
         .select("id, name, customer_kobo, available, requires_review")
         .order("exam_code"),
       db.from("vtu_exam_price_overrides").select("exam_id, price_kobo, updated_at"),
+      db.from("data_markup_brackets")
+        .select("id, min_price_kobo, max_price_kobo, markup_type, markup_value, updated_at")
+        .order("min_price_kobo"),
+      db.from("data_pricing_engine_config")
+        .select("enabled, value_density_enabled, value_density_max_adjust_percent, value_density_price_window_percent, min_markup_floor_kobo, updated_at")
+        .eq("id", true).maybeSingle(),
     ]);
     if (
       planError || overrideError || serviceError || cabletvPlanError || cabletvOverrideError ||
-      electricityFeeError || examPlanError || examOverrideError
+      electricityFeeError || examPlanError || examOverrideError ||
+      markupBracketsError || pricingEngineConfigError
     ) {
       return json({ error: "Could not load pricing" }, 500);
     }
@@ -75,6 +84,8 @@ serve(async (req) => {
       electricity_fee: electricityFee,
       exam_plans: examPlans,
       exam_price_overrides: examOverrides,
+      data_markup_brackets: markupBrackets,
+      data_pricing_engine_config: pricingEngineConfig,
     });
   }
 
@@ -193,6 +204,71 @@ serve(async (req) => {
     });
     if (error) return json({ error: "Could not save the custom price" }, 500);
     return json({ success: true, price_kobo: priceKobo });
+  }
+
+  if (target === "data_markup_bracket") {
+    const clear = body.clear === true;
+    if (clear) {
+      const bracketId = Number(body.bracket_id);
+      if (!Number.isFinite(bracketId)) return json({ error: "Invalid bracket" }, 400);
+      const { error } = await db.rpc("delete_data_markup_bracket", {
+        p_admin_user_id: admin.userId, p_bracket_id: bracketId,
+      });
+      if (error) return json({ error: "Could not delete the bracket" }, 500);
+      return json({ success: true, cleared: true });
+    }
+
+    const bracketId = body.bracket_id === undefined || body.bracket_id === null ? null : Number(body.bracket_id);
+    const minPriceKobo = Math.round(Number(body.min_price_kobo));
+    const maxPriceKobo = Math.round(Number(body.max_price_kobo));
+    const markupType = String(body.markup_type || "");
+    const markupValue = Math.round(Number(body.markup_value));
+    if (
+      (bracketId !== null && !Number.isFinite(bracketId)) ||
+      !Number.isFinite(minPriceKobo) || minPriceKobo < 0 ||
+      !Number.isFinite(maxPriceKobo) || maxPriceKobo <= minPriceKobo ||
+      !["flat", "percent"].includes(markupType) ||
+      !Number.isFinite(markupValue) || markupValue <= 0
+    ) {
+      return json({ error: "Enter a valid bracket" }, 400);
+    }
+
+    const { data, error } = await db.rpc("upsert_data_markup_bracket", {
+      p_admin_user_id: admin.userId, p_bracket_id: bracketId,
+      p_min_price_kobo: minPriceKobo, p_max_price_kobo: maxPriceKobo,
+      p_markup_type: markupType, p_markup_value: markupValue,
+    });
+    if (error) {
+      const message = error.message?.includes("data_markup_brackets_no_overlap")
+        ? "That price range overlaps an existing bracket."
+        : "Could not save the bracket";
+      return json({ error: message }, 500);
+    }
+    return json({ success: true, bracket_id: data });
+  }
+
+  if (target === "data_pricing_engine_config") {
+    const enabled = body.enabled !== false;
+    const valueDensityEnabled = body.value_density_enabled !== false;
+    const maxAdjustPercent = Number(body.value_density_max_adjust_percent);
+    const priceWindowPercent = Number(body.value_density_price_window_percent);
+    const minMarkupFloorKobo = Math.round(Number(body.min_markup_floor_kobo));
+    if (
+      !Number.isFinite(maxAdjustPercent) || maxAdjustPercent < 0 || maxAdjustPercent > 100 ||
+      !Number.isFinite(priceWindowPercent) || priceWindowPercent <= 0 || priceWindowPercent > 50 ||
+      !Number.isFinite(minMarkupFloorKobo) || minMarkupFloorKobo < 0
+    ) {
+      return json({ error: "Enter valid pricing engine settings" }, 400);
+    }
+
+    const { error } = await db.rpc("set_data_pricing_engine_config", {
+      p_admin_user_id: admin.userId, p_enabled: enabled, p_value_density_enabled: valueDensityEnabled,
+      p_value_density_max_adjust_percent: maxAdjustPercent,
+      p_value_density_price_window_percent: priceWindowPercent,
+      p_min_markup_floor_kobo: minMarkupFloorKobo,
+    });
+    if (error) return json({ error: "Could not save the pricing engine settings" }, 500);
+    return json({ success: true });
   }
 
   if (target === "electricity_fee") {

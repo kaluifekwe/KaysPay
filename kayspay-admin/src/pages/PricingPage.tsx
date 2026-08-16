@@ -12,6 +12,26 @@ interface DataPlan {
   validity: string;
   available: boolean;
   reseller_kobo: number;
+  computed_markup_kobo: number | null;
+  computed_price_kobo: number | null;
+}
+
+interface MarkupBracket {
+  id: number;
+  min_price_kobo: number;
+  max_price_kobo: number;
+  markup_type: 'flat' | 'percent';
+  markup_value: number;
+  updated_at: string;
+}
+
+interface PricingEngineConfig {
+  enabled: boolean;
+  value_density_enabled: boolean;
+  value_density_max_adjust_percent: number;
+  value_density_price_window_percent: number;
+  min_markup_floor_kobo: number;
+  updated_at: string;
 }
 
 interface PriceOverride {
@@ -89,6 +109,37 @@ function nairaTextToMarkupKobo(text: string): number | null {
   return Math.round(naira * 100);
 }
 
+// "3.5" -> 350 basis points (1 basis point = 0.01%). Must be positive — a
+// bracket's markup can never be zero-or-negative, unlike a per-plan markup
+// which can legitimately be "no markup" (blank input clears it).
+function percentTextToBasisPoints(text: string): number | null {
+  const cleaned = text.replace(/,/g, '').trim();
+  if (!cleaned) return null;
+  const percent = Number(cleaned);
+  if (!Number.isFinite(percent) || percent <= 0) return null;
+  return Math.round(percent * 100);
+}
+
+interface BracketDraft {
+  min: string;
+  max: string;
+  type: 'flat' | 'percent';
+  value: string;
+}
+
+const EMPTY_BRACKET_DRAFT: BracketDraft = { min: '', max: '', type: 'flat', value: '' };
+
+function bracketToDraft(bracket: MarkupBracket): BracketDraft {
+  return {
+    min: (bracket.min_price_kobo / 100).toString(),
+    max: (bracket.max_price_kobo / 100).toString(),
+    type: bracket.markup_type,
+    value: bracket.markup_type === 'flat'
+      ? (bracket.markup_value / 100).toFixed(2)
+      : (bracket.markup_value / 100).toFixed(2),
+  };
+}
+
 export default function PricingPage() {
   const { role } = useAuth();
   const canEdit = role === 'super_admin';
@@ -100,6 +151,8 @@ export default function PricingPage() {
   const [examPlans, setExamPlans] = useState<ExamPlan[]>([]);
   const [examOverrides, setExamOverrides] = useState<ExamOverride[]>([]);
   const [electricityFee, setElectricityFee] = useState<ElectricityFee | null>(null);
+  const [markupBrackets, setMarkupBrackets] = useState<MarkupBracket[]>([]);
+  const [engineConfig, setEngineConfig] = useState<PricingEngineConfig | null>(null);
   const [network, setNetwork] = useState('mtn');
   const [cabletvProvider, setCabletvProvider] = useState('gotv');
   const [error, setError] = useState<string | null>(null);
@@ -110,12 +163,17 @@ export default function PricingPage() {
   const [cabletvInputs, setCabletvInputs] = useState<Record<string, string>>({});
   const [examInputs, setExamInputs] = useState<Record<string, string>>({});
   const [electricityFeeInput, setElectricityFeeInput] = useState<string | undefined>(undefined);
+  const [bracketDrafts, setBracketDrafts] = useState<Record<string, BracketDraft>>({});
+  const [configDraft, setConfigDraft] = useState<{
+    enabled: boolean; value_density_enabled: boolean; max_adjust: string; price_window: string; floor: string;
+  } | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
 
   type PricingData = {
     plans: DataPlan[]; price_overrides: PriceOverride[]; service_pricing: ServicePrice[];
     cabletv_plans: CableTVPlan[]; cabletv_price_overrides: CableTVOverride[]; electricity_fee: ElectricityFee | null;
     exam_plans: ExamPlan[]; exam_price_overrides: ExamOverride[];
+    data_markup_brackets: MarkupBracket[]; data_pricing_engine_config: PricingEngineConfig | null;
   };
 
   const fetchPricingData = () => callAdmin<PricingData>('admin-pricing-controls');
@@ -129,6 +187,8 @@ export default function PricingPage() {
     setElectricityFee(result.electricity_fee);
     setExamPlans(result.exam_plans);
     setExamOverrides(result.exam_price_overrides);
+    setMarkupBrackets(result.data_markup_brackets);
+    setEngineConfig(result.data_pricing_engine_config);
   };
 
   const load = async () => {
@@ -331,6 +391,110 @@ export default function PricingPage() {
     }
   };
 
+  const draftFor = (key: string, bracket?: MarkupBracket): BracketDraft =>
+    bracketDrafts[key] ?? (bracket ? bracketToDraft(bracket) : EMPTY_BRACKET_DRAFT);
+
+  const setDraftField = (key: string, bracket: MarkupBracket | undefined, field: keyof BracketDraft, value: string) => {
+    setBracketDrafts((current) => ({ ...current, [key]: { ...draftFor(key, bracket), [field]: value } }));
+  };
+
+  const saveBracket = async (bracketId: number | null) => {
+    const key = bracketId === null ? 'bracket:new' : `bracket:${bracketId}`;
+    const bracket = markupBrackets.find((item) => item.id === bracketId);
+    const draft = draftFor(key, bracket);
+    setError(null);
+
+    const minKobo = nairaTextToMarkupKobo(draft.min);
+    const maxKobo = nairaTextToMarkupKobo(draft.max);
+    const value = draft.type === 'flat' ? nairaTextToMarkupKobo(draft.value) : percentTextToBasisPoints(draft.value);
+    if (minKobo === null || maxKobo === null || maxKobo <= minKobo || value === null || value <= 0) {
+      setError('Enter a valid price range and a markup greater than zero.');
+      return;
+    }
+
+    setBusy(key);
+    try {
+      const result = await callAdmin<{ bracket_id: number }>('admin-pricing-controls', {
+        method: 'POST',
+        body: {
+          target: 'data_markup_bracket', bracket_id: bracketId,
+          min_price_kobo: minKobo, max_price_kobo: maxKobo, markup_type: draft.type, markup_value: value,
+        },
+      });
+      const saved: MarkupBracket = {
+        id: bracketId ?? result.bracket_id, min_price_kobo: minKobo, max_price_kobo: maxKobo,
+        markup_type: draft.type, markup_value: value, updated_at: new Date().toISOString(),
+      };
+      setMarkupBrackets((current) => [...current.filter((item) => item.id !== saved.id), saved].sort((a, b) => a.min_price_kobo - b.min_price_kobo));
+      setBracketDrafts((current) => { const next = { ...current }; delete next[key]; return next; });
+    } catch (e) {
+      setError(e instanceof AdminApiError ? e.message : 'Could not save the bracket');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const deleteBracket = async (bracketId: number) => {
+    const key = `bracket:${bracketId}`;
+    setError(null);
+    setBusy(key);
+    try {
+      await callAdmin('admin-pricing-controls', { method: 'POST', body: { target: 'data_markup_bracket', bracket_id: bracketId, clear: true } });
+      setMarkupBrackets((current) => current.filter((item) => item.id !== bracketId));
+    } catch (e) {
+      setError(e instanceof AdminApiError ? e.message : 'Could not delete the bracket');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const saveEngineConfig = async () => {
+    if (!engineConfig) return;
+    const draft = configDraft ?? {
+      enabled: engineConfig.enabled, value_density_enabled: engineConfig.value_density_enabled,
+      max_adjust: engineConfig.value_density_max_adjust_percent.toString(),
+      price_window: engineConfig.value_density_price_window_percent.toString(),
+      floor: (engineConfig.min_markup_floor_kobo / 100).toFixed(2),
+    };
+    setError(null);
+    const maxAdjust = Number(draft.max_adjust);
+    const priceWindow = Number(draft.price_window);
+    const floorKobo = nairaTextToMarkupKobo(draft.floor);
+    if (!Number.isFinite(maxAdjust) || maxAdjust < 0 || maxAdjust > 100) {
+      setError('Max adjust must be between 0 and 100.');
+      return;
+    }
+    if (!Number.isFinite(priceWindow) || priceWindow <= 0 || priceWindow > 50) {
+      setError('Price window must be between 0 and 50.');
+      return;
+    }
+    if (floorKobo === null) {
+      setError('Enter a valid markup floor.');
+      return;
+    }
+    setBusy('engine_config');
+    try {
+      await callAdmin('admin-pricing-controls', {
+        method: 'POST',
+        body: {
+          target: 'data_pricing_engine_config', enabled: draft.enabled, value_density_enabled: draft.value_density_enabled,
+          value_density_max_adjust_percent: maxAdjust, value_density_price_window_percent: priceWindow,
+          min_markup_floor_kobo: floorKobo,
+        },
+      });
+      setEngineConfig({
+        enabled: draft.enabled, value_density_enabled: draft.value_density_enabled,
+        value_density_max_adjust_percent: maxAdjust, value_density_price_window_percent: priceWindow,
+        min_markup_floor_kobo: floorKobo, updated_at: new Date().toISOString(),
+      });
+      setConfigDraft(undefined);
+    } catch (e) {
+      setError(e instanceof AdminApiError ? e.message : 'Could not save the settings');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div>
       <h2>Pricing</h2>
@@ -343,6 +507,139 @@ export default function PricingPage() {
       {loading ? <p className="muted">Loading…</p> : (
         <>
           <div className="card">
+            <h3>Automatic Data Markup Engine</h3>
+            <p className="muted">
+              Runs on every catalogue sync (every 5 minutes), across mtn, glo, 9mobile and airtel at once — a new plan the provider adds gets priced automatically, no manual entry needed. A manual markup set below in Data Plan Pricing still overrides this for that one plan. Value-density lowers markup on the best-value plan among similarly-priced siblings and raises it on the weaker one.
+            </p>
+            {engineConfig && (
+              <div className="row" style={{ gap: 16, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={configDraft?.enabled ?? engineConfig.enabled}
+                    disabled={!canEdit}
+                    onChange={(event) => setConfigDraft({
+                      enabled: event.target.checked,
+                      value_density_enabled: configDraft?.value_density_enabled ?? engineConfig.value_density_enabled,
+                      max_adjust: configDraft?.max_adjust ?? engineConfig.value_density_max_adjust_percent.toString(),
+                      price_window: configDraft?.price_window ?? engineConfig.value_density_price_window_percent.toString(),
+                      floor: configDraft?.floor ?? (engineConfig.min_markup_floor_kobo / 100).toFixed(2),
+                    })}
+                  />
+                  Engine enabled
+                </label>
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={configDraft?.value_density_enabled ?? engineConfig.value_density_enabled}
+                    disabled={!canEdit}
+                    onChange={(event) => setConfigDraft({
+                      enabled: configDraft?.enabled ?? engineConfig.enabled,
+                      value_density_enabled: event.target.checked,
+                      max_adjust: configDraft?.max_adjust ?? engineConfig.value_density_max_adjust_percent.toString(),
+                      price_window: configDraft?.price_window ?? engineConfig.value_density_price_window_percent.toString(),
+                      floor: configDraft?.floor ?? (engineConfig.min_markup_floor_kobo / 100).toFixed(2),
+                    })}
+                  />
+                  Value-density adjustment
+                </label>
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  Max adjust %
+                  <input
+                    className="mono" style={{ width: 60, textAlign: 'right' }} disabled={!canEdit}
+                    value={configDraft?.max_adjust ?? engineConfig.value_density_max_adjust_percent.toString()}
+                    onChange={(event) => setConfigDraft({
+                      enabled: configDraft?.enabled ?? engineConfig.enabled,
+                      value_density_enabled: configDraft?.value_density_enabled ?? engineConfig.value_density_enabled,
+                      max_adjust: event.target.value,
+                      price_window: configDraft?.price_window ?? engineConfig.value_density_price_window_percent.toString(),
+                      floor: configDraft?.floor ?? (engineConfig.min_markup_floor_kobo / 100).toFixed(2),
+                    })}
+                  />
+                </label>
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  Sibling price window %
+                  <input
+                    className="mono" style={{ width: 60, textAlign: 'right' }} disabled={!canEdit}
+                    value={configDraft?.price_window ?? engineConfig.value_density_price_window_percent.toString()}
+                    onChange={(event) => setConfigDraft({
+                      enabled: configDraft?.enabled ?? engineConfig.enabled,
+                      value_density_enabled: configDraft?.value_density_enabled ?? engineConfig.value_density_enabled,
+                      max_adjust: configDraft?.max_adjust ?? engineConfig.value_density_max_adjust_percent.toString(),
+                      price_window: event.target.value,
+                      floor: configDraft?.floor ?? (engineConfig.min_markup_floor_kobo / 100).toFixed(2),
+                    })}
+                  />
+                </label>
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  Markup floor (₦)
+                  <input
+                    className="mono" style={{ width: 80, textAlign: 'right' }} disabled={!canEdit}
+                    value={configDraft?.floor ?? (engineConfig.min_markup_floor_kobo / 100).toFixed(2)}
+                    onChange={(event) => setConfigDraft({
+                      enabled: configDraft?.enabled ?? engineConfig.enabled,
+                      value_density_enabled: configDraft?.value_density_enabled ?? engineConfig.value_density_enabled,
+                      max_adjust: configDraft?.max_adjust ?? engineConfig.value_density_max_adjust_percent.toString(),
+                      price_window: configDraft?.price_window ?? engineConfig.value_density_price_window_percent.toString(),
+                      floor: event.target.value,
+                    })}
+                  />
+                </label>
+                {canEdit && (
+                  <button className="primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === 'engine_config'} onClick={() => void saveEngineConfig()}>
+                    Save settings
+                  </button>
+                )}
+              </div>
+            )}
+
+            <table>
+              <thead><tr><th>Price from</th><th>Price to</th><th>Type</th><th>Value</th>{canEdit && <th />}</tr></thead>
+              <tbody>
+                {markupBrackets.map((bracket) => {
+                  const key = `bracket:${bracket.id}`;
+                  const draft = draftFor(key, bracket);
+                  return (
+                    <tr key={bracket.id}>
+                      <td><input className="mono" style={{ width: 90, textAlign: 'right' }} disabled={!canEdit} value={draft.min} onChange={(e) => setDraftField(key, bracket, 'min', e.target.value)} /></td>
+                      <td><input className="mono" style={{ width: 90, textAlign: 'right' }} disabled={!canEdit} value={draft.max} onChange={(e) => setDraftField(key, bracket, 'max', e.target.value)} /></td>
+                      <td>
+                        <select disabled={!canEdit} value={draft.type} onChange={(e) => setDraftField(key, bracket, 'type', e.target.value)}>
+                          <option value="flat">Flat ₦</option>
+                          <option value="percent">Percent</option>
+                        </select>
+                      </td>
+                      <td><input className="mono" style={{ width: 70, textAlign: 'right' }} disabled={!canEdit} value={draft.value} onChange={(e) => setDraftField(key, bracket, 'value', e.target.value)} /></td>
+                      {canEdit && (
+                        <td style={{ display: 'flex', gap: 6 }}>
+                          <button className="primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === key} onClick={() => void saveBracket(bracket.id)}>Save</button>
+                          <button style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === key} onClick={() => void deleteBracket(bracket.id)}>Delete</button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+                {canEdit && (
+                  <tr>
+                    <td><input className="mono" style={{ width: 90, textAlign: 'right' }} placeholder="0" value={draftFor('bracket:new').min} onChange={(e) => setDraftField('bracket:new', undefined, 'min', e.target.value)} /></td>
+                    <td><input className="mono" style={{ width: 90, textAlign: 'right' }} placeholder="0" value={draftFor('bracket:new').max} onChange={(e) => setDraftField('bracket:new', undefined, 'max', e.target.value)} /></td>
+                    <td>
+                      <select value={draftFor('bracket:new').type} onChange={(e) => setDraftField('bracket:new', undefined, 'type', e.target.value)}>
+                        <option value="flat">Flat ₦</option>
+                        <option value="percent">Percent</option>
+                      </select>
+                    </td>
+                    <td><input className="mono" style={{ width: 70, textAlign: 'right' }} placeholder="0" value={draftFor('bracket:new').value} onChange={(e) => setDraftField('bracket:new', undefined, 'value', e.target.value)} /></td>
+                    <td>
+                      <button className="primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === 'bracket:new'} onClick={() => void saveBracket(null)}>Add bracket</button>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="card">
             <h3>Data Plan Pricing</h3>
             <p className="muted">Showing available and unavailable plans — pricing works independently of availability, set on the Service Controls page.</p>
             <div className="row" style={{ marginBottom: 12 }}>
@@ -354,7 +651,7 @@ export default function PricingPage() {
             {networkPlans.length === 0 ? <p className="muted">No synced plans for this network.</p> : (
               <table>
                 <thead>
-                  <tr><th>Plan</th><th>Status</th><th>Provider Price</th><th>Your Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr>
+                  <tr><th>Plan</th><th>Status</th><th>Provider Price</th><th>Auto Price</th><th>Your Manual Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr>
                 </thead>
                 <tbody>
                   {networkPlans.map((plan) => {
@@ -365,12 +662,20 @@ export default function PricingPage() {
                     const previewMarkupKobo = draftText === undefined
                       ? (override ? override.price_kobo - plan.reseller_kobo : 0)
                       : (draftText.trim() === '' ? 0 : nairaTextToMarkupKobo(draftText));
-                    const customerPaysKobo = previewMarkupKobo === null ? null : plan.reseller_kobo + previewMarkupKobo;
+                    // What the customer actually pays if this row is left
+                    // blank: the manual override if set, else the auto-engine's
+                    // computed price, else raw provider cost — same order the
+                    // server resolves it in.
+                    const customerPaysKobo = previewMarkupKobo === null
+                      ? null
+                      : (draftText?.trim() ? plan.reseller_kobo + previewMarkupKobo
+                        : (override ? override.price_kobo : (plan.computed_price_kobo ?? plan.reseller_kobo)));
                     return (
                       <tr key={plan.id}>
                         <td>{plan.name} · {plan.validity}</td>
                         <td><span className={`badge ${plan.available ? 'enabled' : 'disabled'}`}>{plan.available ? 'Available' : 'Unavailable'}</span></td>
                         <td className="mono muted">{formatNaira(plan.reseller_kobo)}</td>
+                        <td className="mono muted">{plan.computed_price_kobo === null ? '—' : formatNaira(plan.computed_price_kobo)}</td>
                         <td>
                           <input
                             className="mono"

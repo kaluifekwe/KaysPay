@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { adminClient, getAuthUser, verifyCronSecret, withJobLock } from "../_shared/auth.ts";
 import { callVTUNaija } from "../_shared/vtunaija-client.ts";
+import { computeCatalogMarkup, type MarkupBracket, type PricingEngineConfig } from "../_shared/data-markup-engine.ts";
 
 const NETWORKS = ["mtn", "glo", "9mobile", "airtel"] as const;
 
@@ -108,6 +109,32 @@ async function fetchCatalog(tier: "premium" | "basic") {
   return rows;
 }
 
+// Loaded fresh every sync (not cached) — brackets/config are edited rarely
+// via the admin panel, and a stale in-memory copy surviving between cold
+// starts would mean a rule change doesn't actually take effect until the
+// next deploy. Missing/unreadable config fails safe to "engine off", which
+// falls back to the existing reseller_kobo-only pricing (never negative,
+// just no markup) rather than guessing.
+async function loadMarkupEngineInputs(
+  supabase: ReturnType<typeof adminClient>,
+): Promise<{ brackets: MarkupBracket[]; config: PricingEngineConfig }> {
+  const [{ data: brackets }, { data: config }] = await Promise.all([
+    supabase.from("data_markup_brackets")
+      .select("min_price_kobo, max_price_kobo, markup_type, markup_value"),
+    supabase.from("data_pricing_engine_config")
+      .select("enabled, value_density_enabled, value_density_max_adjust_percent, value_density_price_window_percent, min_markup_floor_kobo")
+      .eq("id", true).maybeSingle(),
+  ]);
+  return {
+    brackets: (brackets ?? []) as MarkupBracket[],
+    config: (config as PricingEngineConfig | null) ?? {
+      enabled: false, value_density_enabled: false,
+      value_density_max_adjust_percent: 0, value_density_price_window_percent: 10,
+      min_markup_floor_kobo: 0,
+    },
+  };
+}
+
 async function refreshCatalog(supabase: ReturnType<typeof adminClient>) {
   const tier = await getDataPricingTier(supabase);
   const rows = await fetchCatalog(tier); // already logs + throws CatalogSyncError itself
@@ -119,8 +146,16 @@ async function refreshCatalog(supabase: ReturnType<typeof adminClient>) {
     );
     throw new CatalogSyncError("SNAPSHOT_INVALID");
   }
+  const { brackets, config } = await loadMarkupEngineInputs(supabase);
+  const computed = computeCatalogMarkup(rows, brackets, config);
   const now = new Date().toISOString();
-  const storedRows = rows.map((row) => ({ ...row, provider_seen_at: now, updated_at: now }));
+  const storedRows = rows.map((row) => ({
+    ...row,
+    computed_markup_kobo: computed.get(row.id)?.computed_markup_kobo ?? null,
+    computed_price_kobo: computed.get(row.id)?.computed_price_kobo ?? null,
+    provider_seen_at: now,
+    updated_at: now,
+  }));
   const { error } = await supabase
     .from("vtunaija_data_catalog")
     .upsert(storedRows, { onConflict: "id" });
@@ -195,9 +230,10 @@ serve(async (req: Request) => {
   const network = String(body.network ?? "").toLowerCase();
   if (!NETWORKS.includes(network as typeof NETWORKS[number])) return json({ error: "Invalid network" }, 400);
 
+  const SELECT_FIELDS = "id, network, name, validity, family_key, family_name, reseller_kobo, computed_price_kobo, provider_seen_at";
   let { data, error } = await supabase
     .from("vtunaija_data_catalog")
-    .select("id, network, name, validity, family_key, family_name, reseller_kobo, provider_seen_at")
+    .select(SELECT_FIELDS)
     .eq("network", network)
     .eq("available", true)
     .order("reseller_kobo", { ascending: true });
@@ -209,7 +245,7 @@ serve(async (req: Request) => {
       await withJobLock(supabase, "vtunaija-data-catalog-sync", () => refreshCatalog(supabase));
       const refreshed = await supabase
         .from("vtunaija_data_catalog")
-        .select("id, network, name, validity, family_key, family_name, reseller_kobo, provider_seen_at")
+        .select(SELECT_FIELDS)
         .eq("network", network)
         .eq("available", true)
         .order("reseller_kobo", { ascending: true });
@@ -234,8 +270,8 @@ serve(async (req: Request) => {
   ));
 
   // Admin-settable per-plan price (see migration 112) — overrides the
-  // provider's reseller_kobo when set. Read AFTER the availability filter so
-  // this only queries prices for plans actually being returned.
+  // automatically computed price when set. Read AFTER the availability
+  // filter so this only queries prices for plans actually being returned.
   const { data: overrides, error: overridesError } = await supabase
     .from("vtu_plan_price_overrides")
     .select("plan_id, price_kobo")
@@ -244,6 +280,10 @@ serve(async (req: Request) => {
   if (overridesError) return json({ error: "Pricing temporarily unavailable" }, 503);
   const priceByPlan = new Map((overrides ?? []).map((row) => [row.plan_id, Number(row.price_kobo)]));
 
+  // Resolution order: manual admin override, else the automatic markup
+  // engine's computed price (migration 122), else raw provider cost as a
+  // last-resort fallback (e.g. before the very first sync populates
+  // computed_price_kobo) — never below cost either way.
   return json({
     success: true,
     plans: visible.map((row) => ({
@@ -253,7 +293,7 @@ serve(async (req: Request) => {
       validity: row.validity,
       family_key: row.family_key,
       family_name: row.family_name,
-      amount: (priceByPlan.get(row.id) ?? Number(row.reseller_kobo)) / 100,
+      amount: (priceByPlan.get(row.id) ?? row.computed_price_kobo ?? Number(row.reseller_kobo)) / 100,
     })),
     updated_at: data?.[0]?.provider_seen_at ?? null,
   });
