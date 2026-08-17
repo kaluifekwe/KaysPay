@@ -1058,7 +1058,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
                   is about to happen, not just who it happens to. */}
               <Text style={styles.actionButtonText} numberOfLines={1}>
                 {canSend && total > 0
-                  ? `Send ${formatNaira(walletAmountDue)} to ${recipientCount} ${recipientCount === 1 ? 'person' : 'people'}${cashbackApplied > 0 ? ' with cashback' : ''}`
+                  ? `Send ${formatNaira(walletAmountDue)} to ${recipientCount} ${recipientCount === 1 ? 'person' : 'people'}`
                   : firstMissingPlan && bundlesReady
                     ? `Choose a plan for ${
                         firstMissingPlan.contact.name &&

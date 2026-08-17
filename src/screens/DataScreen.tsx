@@ -614,9 +614,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
               <ActivityIndicator color={Colors.WHITE} />
             ) : (
               <View style={styles.payButtonTextColumn}>
-                <Text style={styles.primaryButtonText}>
-                  {cashbackApplied > 0 ? `Pay ${formatNaira(walletAmount)} with cashback` : 'Pay'}
-                </Text>
+                <Text style={styles.primaryButtonText}>Pay</Text>
                 {cashbackApplied > 0 && walletAmount === 0 && (
                   <Text style={styles.payButtonSubtext}>No new cashback earned on a cashback-funded order</Text>
                 )}
