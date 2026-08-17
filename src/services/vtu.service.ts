@@ -609,11 +609,17 @@ export const vtuService = {
     recipients: BatchDataRecipient[],
     authToken: string,
     onProgress?: (index: number, result: BatchResultItem) => void,
+    // Applied per-recipient, in order — the server always computes the real
+    // amount from the actual stored balance (LEAST(balance, price)), so once
+    // it's spent, later recipients in the same batch simply apply nothing
+    // rather than erroring or double-spending. Same discipline as buyData's
+    // single-purchase useCashback.
+    useCashback?: boolean,
   ): Promise<BatchResultItem[]> {
     const results: BatchResultItem[] = [];
     for (let i = 0; i < recipients.length; i++) {
       const r = recipients[i];
-      const res = await vtuService.buyData(r.phone, r.network, r.bundle, authToken);
+      const res = await vtuService.buyData(r.phone, r.network, r.bundle, authToken, undefined, useCashback);
       const item: BatchResultItem = {
         phone: r.phone,
         success: res.success,

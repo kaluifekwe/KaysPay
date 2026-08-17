@@ -12,6 +12,7 @@ import {
   Alert,
   ActivityIndicator,
   StyleSheet,
+  Switch,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -126,6 +127,10 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
     recipients.map((contact) => ({ contact, network: contact.network, bundle: null })),
   );
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [cashbackBalance, setCashbackBalance] = useState(0);
+  // Defaults off, same reasoning as the single Data screen (2026-08-16):
+  // auto-applying meant cashback never visibly accumulated.
+  const [useCashback, setUseCashback] = useState(false);
   const [phase, setPhase] = useState<Phase>('review');
   const [results, setResults] = useState<Record<string, BatchResultItem>>({});
   // Data bundles are read from a local per-network cache (see
@@ -171,7 +176,10 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
 
   useEffect(() => {
     walletService.getWallet().then((res) => {
-      if (res.success && res.wallet) setWalletBalance(res.wallet.available_balance);
+      if (res.success && res.wallet) {
+        setWalletBalance(res.wallet.available_balance);
+        setCashbackBalance(res.wallet.cashback_balance || 0);
+      }
     });
   }, []);
 
@@ -431,7 +439,13 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
     return Array.from(counts.entries());
   }, [type, airtimeRows, dataRows]);
 
-  const insufficientBalance = walletBalance !== null && total > walletBalance;
+  // Preview only — the server always computes the real per-recipient split
+  // from the actual stored balance, same discipline as every other amount
+  // shown before payment in this app.
+  const cashbackApplied = useCashback && type === 'data' ? Math.min(cashbackBalance, total) : 0;
+  const walletAmountDue = total - cashbackApplied;
+
+  const insufficientBalance = walletBalance !== null && walletAmountDue > walletBalance;
 
   const activePlanRow = useMemo(
     () => dataRows.find((r) => r.contact.phone === planModalFor) ?? null,
@@ -505,7 +519,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
     if (insufficientBalance) {
       Alert.alert(
         'Insufficient Balance',
-        `This batch needs ${formatNaira(total)}, but your available balance is ${formatNaira(walletBalance ?? 0)}.`,
+        `This batch needs ${formatNaira(walletAmountDue)} from your wallet, but your available balance is ${formatNaira(walletBalance ?? 0)}.`,
       );
       return;
     }
@@ -522,7 +536,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
     const maxUses = recipientCount + Math.max(2, Math.ceil(recipientCount * 0.2));
     const authResult = await authorize({
       title: `Confirm Bulk ${type === 'airtime' ? 'Airtime' : 'Data'} Send`,
-      amount: total,
+      amount: walletAmountDue,
       // One PIN entry authorizes the whole batch — a prompt per recipient
       // would be unusable. See TransactionAuthProvider's maxUses option.
       maxUses,
@@ -553,11 +567,12 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
         (_, result) => {
           setResults((prev) => ({ ...prev, [result.phone]: result }));
         },
+        useCashback,
       );
     }
 
     setPhase('done');
-  }, [canSend, insufficientBalance, total, walletBalance, type, airtimeRows, dataRows, authorize]);
+  }, [canSend, insufficientBalance, total, walletAmountDue, walletBalance, type, airtimeRows, dataRows, authorize, useCashback]);
 
   const successCount = Object.values(results).filter((r) => r.success && !r.pending).length;
   const pendingCount = Object.values(results).filter((r) => r.success && r.pending).length;
@@ -987,6 +1002,30 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
               ))}
             </View>
           )}
+          {phase === 'review' && type === 'data' && cashbackBalance > 0 && (
+            <View style={styles.cashbackToggleRow}>
+              <View style={styles.cashbackToggleLabel}>
+                <View style={styles.cashbackToggleBadge}>
+                  <Ionicons name="gift" size={18} color={Colors.WHITE} />
+                </View>
+                <View style={styles.cashbackToggleTextCol}>
+                  <Text style={styles.cashbackToggleTitle}>Use your cashback</Text>
+                  <Text style={styles.cashbackToggleSubtitle}>
+                    {formatNaira(cashbackBalance)} available
+                    {useCashback && cashbackApplied > 0 ? (
+                      <Text style={styles.cashbackToggleApplied}> • {formatNaira(cashbackApplied)} applied</Text>
+                    ) : ''}
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={useCashback}
+                onValueChange={setUseCashback}
+                trackColor={{ false: Colors.LIGHT_GRAY, true: Colors.GREEN }}
+                thumbColor={Colors.WHITE}
+              />
+            </View>
+          )}
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total</Text>
             <Text style={styles.totalValue}>{formatNaira(total)}</Text>
@@ -1014,7 +1053,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
                   is about to happen, not just who it happens to. */}
               <Text style={styles.actionButtonText} numberOfLines={1}>
                 {canSend && total > 0
-                  ? `Send ${formatNaira(total)} to ${recipientCount} ${recipientCount === 1 ? 'person' : 'people'}`
+                  ? `Send ${formatNaira(walletAmountDue)} to ${recipientCount} ${recipientCount === 1 ? 'person' : 'people'}${cashbackApplied > 0 ? ' with cashback' : ''}`
                   : firstMissingPlan && bundlesReady
                     ? `Choose a plan for ${
                         firstMissingPlan.contact.name &&
@@ -1028,7 +1067,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
           )}
           {phase === 'review' && walletBalance !== null && canSend && !insufficientBalance && (
             <Text style={styles.balanceAfterText}>
-              Wallet balance {formatNaira(walletBalance)} · {formatNaira(walletBalance - total)} left after
+              Wallet balance {formatNaira(walletBalance)} · {formatNaira(walletBalance - walletAmountDue)} left after
             </Text>
           )}
         </View>
@@ -1080,6 +1119,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
             renderItem={({ item }) => {
               const restricted = isRestrictedPlanName(item.name);
               const isSelected = activePlanRow?.bundle?.id === item.id;
+              const hasDiscount = !!item.list_amount && item.list_amount > item.amount;
               return (
                 <TouchableOpacity
                   style={[styles.planModalItem, isSelected && styles.planModalItemSelected]}
@@ -1094,8 +1134,29 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
                     {restricted && (
                       <Text style={styles.planModalItemWarning}>⚠ Can fail if owing airtime</Text>
                     )}
+                    {(hasDiscount || item.has_cashback) && (
+                      <View style={styles.planModalBadgeRow}>
+                        {hasDiscount && (
+                          <View style={styles.planModalDiscountBadge}>
+                            <Text style={styles.planModalDiscountBadgeText}>
+                              Discount {formatNaira((item.list_amount as number) - item.amount)}
+                            </Text>
+                          </View>
+                        )}
+                        {item.has_cashback && (
+                          <View style={styles.planModalCashbackBadge}>
+                            <Text style={styles.planModalCashbackBadgeText}>+ Cashback</Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
                   </View>
-                  <Text style={styles.planModalItemPrice}>{formatNaira(item.amount)}</Text>
+                  <View style={styles.planModalItemAmountColumn}>
+                    {hasDiscount && (
+                      <Text style={styles.planModalItemListPrice}>{formatNaira(item.list_amount as number)}</Text>
+                    )}
+                    <Text style={styles.planModalItemPrice}>{formatNaira(item.amount)}</Text>
+                  </View>
                   {isSelected && <Text style={styles.planModalItemTick}>✓</Text>}
                 </TouchableOpacity>
               );
@@ -1265,11 +1326,46 @@ const styles = StyleSheet.create({
     color: Colors.RED,
     marginTop: 2,
   },
+  planModalBadgeRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4,
+  },
+  planModalDiscountBadge: {
+    backgroundColor: Colors.GREEN_LIGHT,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  planModalDiscountBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.GREEN,
+  },
+  planModalCashbackBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  planModalCashbackBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.AMBER,
+  },
+  planModalItemAmountColumn: {
+    alignItems: 'flex-end',
+    marginLeft: Spacing.M,
+  },
+  planModalItemListPrice: {
+    ...Typography.CAPTION,
+    color: Colors.GRAY,
+    textDecorationLine: 'line-through',
+  },
   planModalItemPrice: {
     ...Typography.BODY,
     color: Colors.GREEN,
     fontWeight: '700',
-    marginLeft: Spacing.M,
   },
   submissionCard: {
     borderWidth: 1,
@@ -1576,6 +1672,54 @@ const styles = StyleSheet.create({
     ...Typography.ERROR,
     marginBottom: Spacing.S,
     textAlign: 'center',
+  },
+  cashbackToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1.5,
+    borderColor: 'rgba(245, 158, 11, 0.45)',
+    borderRadius: 14,
+    paddingHorizontal: Spacing.M,
+    paddingVertical: Spacing.S + 2,
+    marginBottom: Spacing.M,
+    shadowColor: Colors.AMBER,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  cashbackToggleLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.S + 3,
+    flex: 1,
+  },
+  cashbackToggleBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: Colors.AMBER,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cashbackToggleTextCol: {
+    flex: 1,
+  },
+  cashbackToggleTitle: {
+    ...Typography.CARD_TITLE,
+    fontWeight: '800',
+    color: '#78350F',
+  },
+  cashbackToggleSubtitle: {
+    ...Typography.CAPTION,
+    color: '#92640A',
+    marginTop: 1,
+  },
+  cashbackToggleApplied: {
+    color: Colors.GREEN,
+    fontWeight: '700',
   },
   totalRow: {
     flexDirection: 'row',
