@@ -23,7 +23,10 @@ function SupportPlaceholder() {
 const TAB_ICONS: Record<string, { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }> = {
   Home: { active: 'home', inactive: 'home-outline' },
   History: { active: 'receipt', inactive: 'receipt-outline' },
-  Support: { active: 'chatbubble-ellipses', inactive: 'chatbubble-ellipses-outline' },
+  // Ionicons' brand logos (unlike its regular glyphs) only ship one style —
+  // no separate outline variant — so both states use the same glyph and rely
+  // on the tab's tint color for the active/inactive distinction.
+  Support: { active: 'logo-whatsapp', inactive: 'logo-whatsapp' },
   Account: { active: 'person', inactive: 'person-outline' },
 };
 

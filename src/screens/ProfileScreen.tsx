@@ -106,7 +106,7 @@ const ProfileScreen = ({ navigation }: any) => {
   const links: { label: string; icon: keyof typeof Ionicons.glyphMap; screen: string | null; params?: object; onPress?: () => void; badge?: string }[] = [
     { label: 'Edit Profile', icon: 'create-outline', screen: 'EditProfile' },
     { label: 'Identity Verification (KYC)', icon: 'shield-checkmark-outline', screen: 'Kyc', badge: kycVerified ? 'Verified' : 'Not Verified' },
-    { label: 'Contact Support', icon: 'chatbubble-ellipses-outline', screen: null, onPress: handleOpenSupport },
+    { label: 'Contact Support', icon: 'logo-whatsapp', screen: null, onPress: handleOpenSupport },
     { label: 'Privacy Policy', icon: 'lock-closed-outline', screen: 'LegalDocument', params: { type: 'privacy' } },
     { label: 'Terms of Service', icon: 'document-text-outline', screen: 'LegalDocument', params: { type: 'terms' } },
     { label: 'Settings', icon: 'settings-outline', screen: 'Settings' },

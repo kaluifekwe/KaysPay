@@ -28,7 +28,7 @@ const SECTIONS: { title: string; rows: Row[] }[] = [
       { icon: 'shield-checkmark-outline', label: 'Verification (KYC)', screen: 'Kyc' },
       { icon: 'key-outline', label: 'Change PIN', screen: 'ChangePin' },
       { icon: 'settings-outline', label: 'Settings', screen: 'Settings' },
-      { icon: 'chatbubble-ellipses-outline', label: 'Contact Support', action: 'support' },
+      { icon: 'logo-whatsapp', label: 'Contact Support', action: 'support' },
     ],
   },
   {
