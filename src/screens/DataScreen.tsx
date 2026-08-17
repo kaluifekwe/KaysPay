@@ -552,12 +552,21 @@ export default function DataScreen({ navigation }: DataScreenProps) {
                 {selectedBundle.validity}
               </Text>
               <View style={styles.bundleAmountColumn}>
-                {!!selectedBundle.list_amount && selectedBundle.list_amount > selectedBundle.amount && (
-                  <Text style={styles.bundleListAmount}>{formatNaira(selectedBundle.list_amount)}</Text>
+                {cashbackApplied > 0 ? (
+                  <>
+                    <Text style={styles.bundleListAmount}>{formatNaira(selectedBundle.amount)}</Text>
+                    <Text style={styles.summaryAmount}>{formatNaira(walletAmount)}</Text>
+                  </>
+                ) : (
+                  <>
+                    {!!selectedBundle.list_amount && selectedBundle.list_amount > selectedBundle.amount && (
+                      <Text style={styles.bundleListAmount}>{formatNaira(selectedBundle.list_amount)}</Text>
+                    )}
+                    <Text style={styles.summaryAmount}>
+                      {formatNaira(selectedBundle.amount)}
+                    </Text>
+                  </>
                 )}
-                <Text style={styles.summaryAmount}>
-                  {formatNaira(selectedBundle.amount)}
-                </Text>
               </View>
             </View>
           )}

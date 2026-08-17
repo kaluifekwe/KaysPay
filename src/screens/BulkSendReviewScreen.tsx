@@ -1028,7 +1028,12 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
           )}
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValue}>{formatNaira(total)}</Text>
+            <View style={styles.totalAmountColumn}>
+              {cashbackApplied > 0 && (
+                <Text style={styles.totalListValue}>{formatNaira(total)}</Text>
+              )}
+              <Text style={styles.totalValue}>{formatNaira(walletAmountDue)}</Text>
+            </View>
           </View>
           {phase !== 'review' ? (
             <TouchableOpacity
@@ -1728,6 +1733,12 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.M,
   },
   totalLabel: { ...Typography.BODY, color: Colors.GRAY },
+  totalAmountColumn: { alignItems: 'flex-end' },
+  totalListValue: {
+    ...Typography.CAPTION,
+    color: Colors.GRAY,
+    textDecorationLine: 'line-through',
+  },
   totalValue: { ...Typography.AMOUNT_SMALL },
   actionButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
