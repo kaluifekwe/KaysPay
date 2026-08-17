@@ -42,7 +42,7 @@ export const Strings = {
   HOME_FUND_WALLET: "Fund Wallet",
   HOME_WITHDRAW: "Withdraw",
   HOME_TRANSFER: "Transfer",
-  HOME_QUICK_ACTIONS: "Quick Actions",
+  HOME_QUICK_ACTIONS: "Services",
   HOME_FAVOURITES: "Quick Recharge",
   HOME_RECENT: "Recent",
   HOME_VIEW_ALL: "View all",

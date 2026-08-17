@@ -329,10 +329,6 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           </TouchableOpacity>
         )}
 
-        <DataPromoBanner navigation={navigation} />
-
-        <AdvertCarousel navigation={navigation} />
-
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{Strings.HOME_QUICK_ACTIONS}</Text>
           <View style={styles.quickActionsGrid}>
@@ -359,6 +355,10 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             ))}
           </View>
         </View>
+
+        <DataPromoBanner navigation={navigation} />
+
+        <AdvertCarousel navigation={navigation} />
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
