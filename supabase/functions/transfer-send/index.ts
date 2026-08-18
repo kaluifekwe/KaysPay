@@ -37,6 +37,16 @@ function newRequestId() {
   return `kspxfer_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
 }
 
+// Flutterwave's top-level error.message is often a generic "Request is not
+// valid" — the actually useful reason is in error.validation_errors. Same
+// helper already used in create-virtual-account/index.ts.
+function flwErrorMessage(data: any, fallback: string): string {
+  const details = data?.error?.validation_errors
+    ?.map((v: any) => `${v.field_name}: ${v.message}`)
+    .join("; ");
+  return details || data?.error?.message || data?.message || fallback;
+}
+
 serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
@@ -196,9 +206,10 @@ serve(async (req: Request) => {
 
     // Flutterwave explicitly rejected the request (bad account, over their
     // own limits, etc.) — no money left KaysPay, safe to refund immediately.
-    console.error("transfer-send: Flutterwave rejected the transfer:", redactSecrets(JSON.stringify({ status: transferRes.status, message: transferRes.data?.message })));
-    await confirmServiceRefund(supabase, txId, transferRes.data?.message || "provider_rejected", "automatic");
-    return json({ success: false, error: "The bank rejected this transfer. You were not charged." });
+    const rejectReason = flwErrorMessage(transferRes.data, "provider_rejected");
+    console.error("transfer-send: Flutterwave rejected the transfer:", redactSecrets(JSON.stringify({ status: transferRes.status, message: rejectReason })));
+    await confirmServiceRefund(supabase, txId, rejectReason, "automatic");
+    return json({ success: false, error: `The bank rejected this transfer: ${redactSecrets(rejectReason)}. You were not charged.` });
   } catch (e) {
     // Network/timeout/parse error — genuinely ambiguous, the request may
     // have reached Flutterwave and been actioned with only the response
