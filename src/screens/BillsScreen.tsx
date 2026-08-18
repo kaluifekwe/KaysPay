@@ -8,7 +8,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { vtuService, type ElectricityProvider } from '../services/vtu.service';
@@ -23,6 +24,8 @@ interface BillsScreenProps {
 }
 
 export default function BillsScreen({ navigation }: BillsScreenProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [providers, setProviders] = useState<ElectricityProvider[]>(() =>
     vtuService.getElectricityProviders()
   );
@@ -82,8 +85,9 @@ export default function BillsScreen({ navigation }: BillsScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   scrollView: { flex: 1 },
   scrollContent: {
     paddingHorizontal: Spacing.SCREEN_PADDING,
@@ -97,9 +101,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.M,
   },
-  backText: { fontSize: 28, fontWeight: '600', color: Colors.DARK },
-  title: { ...Typography.SCREEN_TITLE, marginBottom: Spacing.XS },
-  subtitle: { ...Typography.BODY, color: Colors.GRAY, marginBottom: Spacing.L },
+  backText: { fontSize: 28, fontWeight: '600', color: theme.ink },
+  title: { ...Typography.SCREEN_TITLE, color: theme.ink, marginBottom: Spacing.XS },
+  subtitle: { ...Typography.BODY, color: theme.inkMuted, marginBottom: Spacing.L },
   providerGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -107,9 +111,9 @@ const styles = StyleSheet.create({
   },
   providerCard: {
     width: '47%',
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.CARD_PADDING,
     alignItems: 'center',
@@ -119,11 +123,13 @@ const styles = StyleSheet.create({
     ...Typography.BODY,
     fontSize: 12,
     textAlign: 'center',
-    color: Colors.DARK,
+    color: theme.ink,
     marginBottom: 2,
   },
   providerType: {
     ...Typography.CAPTION,
+    color: theme.inkMuted,
     textTransform: 'capitalize',
   },
-});
+  });
+}

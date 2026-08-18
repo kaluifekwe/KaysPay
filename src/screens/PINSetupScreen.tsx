@@ -10,7 +10,8 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { Strings } from '../constants/strings';
@@ -23,6 +24,8 @@ interface PINSetupScreenProps {
 
 export default function PINSetupScreen({ navigation }: PINSetupScreenProps) {
   useSensitiveScreenProtection();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [pin, setPin] = useState(['', '', '', '']);
   const [confirmPin, setConfirmPin] = useState(['', '', '', '']);
   const [isConfirming, setIsConfirming] = useState(false);
@@ -166,10 +169,11 @@ export default function PINSetupScreen({ navigation }: PINSetupScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.background,
   },
   keyboardView: {
     flex: 1,
@@ -189,15 +193,16 @@ const styles = StyleSheet.create({
   backText: {
     fontSize: 28,
     fontWeight: '600',
-    color: Colors.DARK,
+    color: theme.ink,
   },
   title: {
     ...Typography.SCREEN_TITLE,
+    color: theme.ink,
     marginBottom: 8,
   },
   subtitle: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginBottom: 32,
   },
   pinContainer: {
@@ -209,32 +214,34 @@ const styles = StyleSheet.create({
     width: 64,
     height: 72,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: 12,
     textAlign: 'center',
     fontSize: 24,
     fontFamily: 'Helvetica-Bold',
-    backgroundColor: Colors.LIGHT_GRAY,
+    color: theme.ink,
+    backgroundColor: theme.surfaceRaised,
   },
   pinBoxFilled: {
-    borderColor: Colors.GREEN,
-    backgroundColor: Colors.WHITE,
+    borderColor: theme.brand,
+    backgroundColor: theme.surface,
   },
   loadingText: {
     ...Typography.BODY,
-    color: Colors.GREEN,
+    color: theme.brand,
     textAlign: 'center',
     marginTop: 16,
   },
   hintContainer: {
     marginTop: 32,
     padding: 12,
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: 12,
   },
   hintText: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     textAlign: 'center',
   },
-});
+  });
+}

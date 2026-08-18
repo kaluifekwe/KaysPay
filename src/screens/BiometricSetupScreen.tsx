@@ -8,15 +8,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { Colors } from '../constants/colors';
-import { Typography } from '../constants/typography';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { authService } from '../services/auth.service';
-
-const BRAND_GREEN = '#1A5C3A';
-const DARK_TEXT = '#0F1A14';
-const GRAY_TEXT = '#6B7280';
-const WHITE = '#FFFFFF';
-const LIGHT_GREEN = '#D6F0E3';
 
 interface BiometricSetupScreenProps {
   route: { params?: { pin?: string } };
@@ -24,6 +18,8 @@ interface BiometricSetupScreenProps {
 }
 
 export default function BiometricSetupScreen({ route, onComplete }: BiometricSetupScreenProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [loading, setLoading] = useState(false);
   const pin = route.params?.pin;
 
@@ -110,10 +106,11 @@ export default function BiometricSetupScreen({ route, onComplete }: BiometricSet
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: WHITE,
+    backgroundColor: theme.background,
   },
   content: {
     flex: 1,
@@ -125,7 +122,7 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: LIGHT_GREEN,
+    backgroundColor: theme.brandSoft,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 32,
@@ -136,13 +133,13 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 24,
-    color: DARK_TEXT,
+    color: theme.ink,
     textAlign: 'center',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 15,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
     textAlign: 'center',
     marginBottom: 64,
     lineHeight: 22,
@@ -153,7 +150,7 @@ const styles = StyleSheet.create({
   },
   enableButton: {
     height: 56,
-    backgroundColor: BRAND_GREEN,
+    backgroundColor: theme.brand,
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
@@ -165,7 +162,7 @@ const styles = StyleSheet.create({
   enableButtonText: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 16,
-    color: WHITE,
+    color: '#FFFFFF',
   },
   skipButton: {
     height: 48,
@@ -174,6 +171,7 @@ const styles = StyleSheet.create({
   },
   skipButtonText: {
     fontSize: 15,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
   },
-});
+  });
+}

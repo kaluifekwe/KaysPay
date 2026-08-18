@@ -3,7 +3,8 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProviderLogo from '../components/ProviderLogo';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
 import { vtuService, type ExamType } from '../services/vtu.service';
@@ -31,6 +32,8 @@ function examBody(examId: string): string {
 }
 
 export default function ExamPinsScreen({ navigation }: ExamPinsScreenProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [examTypes, setExamTypes] = useState<ExamType[]>(() => vtuService.getExamTypes());
   const [refreshing, setRefreshing] = useState(false);
 
@@ -62,7 +65,7 @@ export default function ExamPinsScreen({ navigation }: ExamPinsScreenProps) {
 
         {refreshing ? (
           <View style={styles.refreshRow}>
-            <ActivityIndicator size="small" color={Colors.GREEN} />
+            <ActivityIndicator size="small" color={theme.brand} />
             <Text style={styles.refreshText}>Checking current prices…</Text>
           </View>
         ) : null}
@@ -94,8 +97,9 @@ export default function ExamPinsScreen({ navigation }: ExamPinsScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   scrollView: { flex: 1 },
   scrollContent: {
     paddingHorizontal: Spacing.SCREEN_PADDING,
@@ -103,11 +107,11 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.XL,
   },
   backButton: { width: 48, height: 48, justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.M },
-  backText: { fontSize: 28, fontWeight: '600', color: Colors.DARK },
-  title: { ...Typography.SCREEN_TITLE, marginBottom: Spacing.XS },
-  subtitle: { ...Typography.BODY, color: Colors.GRAY, marginBottom: Spacing.L },
+  backText: { fontSize: 28, fontWeight: '600', color: theme.ink },
+  title: { ...Typography.SCREEN_TITLE, color: theme.ink, marginBottom: Spacing.XS },
+  subtitle: { ...Typography.BODY, color: theme.inkMuted, marginBottom: Spacing.L },
   refreshRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.M },
-  refreshText: { ...Typography.CAPTION, color: Colors.GRAY, marginLeft: Spacing.S },
+  refreshText: { ...Typography.CAPTION, color: theme.inkMuted, marginLeft: Spacing.S },
   examCards: { gap: Spacing.M },
   examCard: {
     minHeight: 84,
@@ -115,13 +119,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: Spacing.CARD_PADDING,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.CARD_RADIUS,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
   },
   examLogo: { marginRight: Spacing.M },
   examDetails: { flex: 1 },
-  examName: { ...Typography.CARD_TITLE, marginBottom: 4 },
-  examPrice: { ...Typography.CAPTION, color: Colors.GREEN },
-  chevron: { fontSize: 22, fontWeight: '600', color: Colors.GRAY, marginLeft: Spacing.S },
-});
+  examName: { ...Typography.CARD_TITLE, color: theme.ink, marginBottom: 4 },
+  examPrice: { ...Typography.CAPTION, color: theme.brand },
+  chevron: { fontSize: 22, fontWeight: '600', color: theme.inkMuted, marginLeft: Spacing.S },
+  });
+}

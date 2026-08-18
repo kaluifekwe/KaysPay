@@ -10,7 +10,8 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { Strings } from '../constants/strings';
@@ -23,6 +24,8 @@ interface PhoneInputScreenProps {
 }
 
 export default function PhoneInputScreen({ navigation }: PhoneInputScreenProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -86,7 +89,7 @@ export default function PhoneInputScreen({ navigation }: PhoneInputScreenProps) 
               value={phone}
               onChangeText={handlePhoneChange}
               placeholder={Strings.PHONE_INPUT_PLACEHOLDER}
-              placeholderTextColor={Colors.GRAY}
+              placeholderTextColor={theme.inkFaint}
               keyboardType="phone-pad"
               maxLength={11}
               autoFocus
@@ -114,10 +117,11 @@ export default function PhoneInputScreen({ navigation }: PhoneInputScreenProps) 
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.background,
   },
   keyboardView: {
     flex: 1,
@@ -137,22 +141,23 @@ const styles = StyleSheet.create({
   backText: {
     fontSize: 28,
     fontWeight: '600',
-    color: Colors.DARK,
+    color: theme.ink,
   },
   title: {
     ...Typography.SCREEN_TITLE,
+    color: theme.ink,
     marginBottom: Spacing.S,
   },
   subtitle: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginBottom: Spacing.XL,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.BUTTON_RADIUS,
     height: Spacing.INPUT_HEIGHT,
     paddingHorizontal: Spacing.M,
@@ -164,7 +169,7 @@ const styles = StyleSheet.create({
     marginRight: Spacing.M,
     paddingRight: Spacing.M,
     borderRightWidth: 1,
-    borderRightColor: Colors.BORDER,
+    borderRightColor: theme.border,
   },
   flag: {
     fontSize: 20,
@@ -172,31 +177,32 @@ const styles = StyleSheet.create({
   },
   code: {
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
   },
   input: {
     flex: 1,
     height: '100%',
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
   },
   hint: {
     ...Typography.CAPTION,
-    color: Colors.RED,
+    color: theme.down,
     marginBottom: Spacing.M,
   },
   button: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: Spacing.L,
   },
   buttonDisabled: {
-    backgroundColor: Colors.GRAY,
+    backgroundColor: theme.inkFaint,
   },
   buttonText: {
     ...Typography.BUTTON_TEXT,
   },
-});
+  });
+}

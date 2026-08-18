@@ -3,7 +3,8 @@ import { View, StyleSheet, Text, ScrollView, TouchableOpacity, Alert, Image, Lin
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { authService } from '../services/auth.service';
@@ -41,6 +42,8 @@ const SECTIONS: { title: string; rows: Row[] }[] = [
 ];
 
 export default function MoreScreen({ navigation }: any) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -143,9 +146,9 @@ export default function MoreScreen({ navigation }: any) {
                     }
                   }}
                 >
-                  <Ionicons name={row.icon} size={20} color={Colors.GREEN} style={styles.rowIcon} />
+                  <Ionicons name={row.icon} size={20} color={theme.brand} style={styles.rowIcon} />
                   <Text style={styles.rowLabel}>{row.label}</Text>
-                  <Ionicons name="chevron-forward" size={18} color={Colors.GRAY} />
+                  <Ionicons name="chevron-forward" size={18} color={theme.inkFaint} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -160,20 +163,21 @@ export default function MoreScreen({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   header: {
     paddingHorizontal: Spacing.SCREEN_PADDING,
     paddingVertical: Spacing.M,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
+    borderBottomColor: theme.border,
   },
-  screenTitle: { ...Typography.SCREEN_TITLE, color: Colors.DARK },
+  screenTitle: { ...Typography.SCREEN_TITLE, color: theme.ink },
   content: { padding: Spacing.SCREEN_PADDING, paddingBottom: Spacing.XL },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.M,
     marginBottom: Spacing.L,
@@ -182,30 +186,30 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: Spacing.M,
     overflow: 'hidden',
   },
   avatarImg: { width: 52, height: 52 },
-  avatarInitial: { fontSize: 22, fontWeight: '800', color: Colors.GREEN },
+  avatarInitial: { fontSize: 22, fontWeight: '800', color: theme.brand },
   profileInfo: { flex: 1 },
-  profileName: { ...Typography.BODY, color: Colors.WHITE, fontWeight: '700', fontSize: 16 },
-  profileEmail: { ...Typography.CAPTION, color: Colors.WHITE_80, marginTop: 2 },
+  profileName: { ...Typography.BODY, color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
+  profileEmail: { ...Typography.CAPTION, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
   section: { marginBottom: Spacing.L },
   sectionTitle: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     fontWeight: '700',
     textTransform: 'uppercase',
     marginBottom: Spacing.S,
     marginLeft: Spacing.XS,
   },
   card: {
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.CARD_RADIUS,
     overflow: 'hidden',
   },
@@ -215,18 +219,19 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.M,
     paddingHorizontal: Spacing.M,
   },
-  rowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.BORDER },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: theme.border },
   rowIcon: { fontSize: 20, marginRight: Spacing.M },
-  rowLabel: { ...Typography.BODY, color: Colors.DARK, flex: 1 },
-  rowChevron: { fontSize: 22, color: Colors.GRAY },
+  rowLabel: { ...Typography.BODY, color: theme.ink, flex: 1 },
+  rowChevron: { fontSize: 22, color: theme.inkMuted },
   logout: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.ERROR,
+    borderColor: theme.down,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: Spacing.M,
   },
-  logoutText: { ...Typography.BUTTON_TEXT, color: Colors.ERROR },
-});
+  logoutText: { ...Typography.BUTTON_TEXT, color: theme.down },
+  });
+}

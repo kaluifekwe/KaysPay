@@ -12,7 +12,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
 import { authService } from '../services/auth.service';
@@ -25,6 +26,8 @@ const KEY_SIZE = 64;
 
 export default function ForgotPinScreen({ navigation }: { navigation: any }) {
   useSensitiveScreenProtection();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [step, setStep] = useState<Step>('request');
   const [sentTo, setSentTo] = useState('your verified email');
   const [code, setCode] = useState('');
@@ -97,13 +100,13 @@ export default function ForgotPinScreen({ navigation }: { navigation: any }) {
             <Text style={styles.title}>Reset your PIN</Text>
             <Text style={styles.subtitle}>We’ll send a secure 6-digit code to your verified email address.</Text>
             <TouchableOpacity style={styles.primaryButton} onPress={sendCode} disabled={busy}>
-              {busy ? <ActivityIndicator color={Colors.WHITE} /> : <Text style={styles.primaryText}>Send reset code</Text>}
+              {busy ? <ActivityIndicator color={"#FFFFFF"} /> : <Text style={styles.primaryText}>Send reset code</Text>}
             </TouchableOpacity>
           </>}
           {step === 'code' && <>
             <Text style={styles.title}>Enter verification code</Text>
             <Text style={styles.subtitle}>Enter the code sent to {sentTo}.</Text>
-            <TextInput style={styles.codeInput} value={code} onChangeText={(v) => { setCode(v.replace(/\D/g, '').slice(0, 6)); setError(null); }} keyboardType="number-pad" maxLength={6} placeholder="000000" placeholderTextColor={Colors.GRAY} />
+            <TextInput style={styles.codeInput} value={code} onChangeText={(v) => { setCode(v.replace(/\D/g, '').slice(0, 6)); setError(null); }} keyboardType="number-pad" maxLength={6} placeholder="000000" placeholderTextColor={theme.inkMuted} />
             <TouchableOpacity style={[styles.primaryButton, code.length !== 6 && styles.disabled]} onPress={continueFromCode} disabled={code.length !== 6 || busy}><Text style={styles.primaryText}>Continue</Text></TouchableOpacity>
             <TouchableOpacity style={styles.resend} onPress={sendCode} disabled={busy}><Text style={styles.resendText}>Send another code</Text></TouchableOpacity>
           </>}
@@ -117,28 +120,30 @@ export default function ForgotPinScreen({ navigation }: { navigation: any }) {
               </Pressable>
             ))}</View>
           </>}
-          <View style={styles.status}>{busy && step !== 'request' ? <ActivityIndicator color={Colors.GREEN} /> : error ? <Text style={styles.error}>{error}</Text> : null}</View>
+          <View style={styles.status}>{busy && step !== 'request' ? <ActivityIndicator color={theme.brand} /> : error ? <Text style={styles.error}>{error}</Text> : null}</View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE }, flex: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: Colors.BORDER, paddingHorizontal: Spacing.M },
-  back: { width: 48, height: 48, justifyContent: 'center', alignItems: 'center' }, backText: { fontSize: 28, color: Colors.DARK, fontWeight: '600' },
-  headerTitle: { ...Typography.SCREEN_TITLE, flex: 1, textAlign: 'center', fontSize: 20 },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background }, flex: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: theme.border, paddingHorizontal: Spacing.M },
+  back: { width: 48, height: 48, justifyContent: 'center', alignItems: 'center' }, backText: { fontSize: 28, color: theme.ink, fontWeight: '600' },
+  headerTitle: { ...Typography.SCREEN_TITLE, color: theme.ink, flex: 1, textAlign: 'center', fontSize: 20 },
   content: { flex: 1, alignItems: 'center', padding: Spacing.XL, paddingTop: Spacing.XL * 2 },
-  title: { ...Typography.HEADING, color: Colors.DARK, textAlign: 'center' },
-  subtitle: { ...Typography.BODY, color: Colors.GRAY, textAlign: 'center', marginTop: Spacing.S, marginBottom: Spacing.XL },
-  primaryButton: { width: '100%', height: Spacing.BUTTON_HEIGHT_PRIMARY, backgroundColor: Colors.GREEN, borderRadius: Spacing.BUTTON_RADIUS, justifyContent: 'center', alignItems: 'center' },
+  title: { ...Typography.HEADING, color: theme.ink, textAlign: 'center' },
+  subtitle: { ...Typography.BODY, color: theme.inkMuted, textAlign: 'center', marginTop: Spacing.S, marginBottom: Spacing.XL },
+  primaryButton: { width: '100%', height: Spacing.BUTTON_HEIGHT_PRIMARY, backgroundColor: theme.brand, borderRadius: Spacing.BUTTON_RADIUS, justifyContent: 'center', alignItems: 'center' },
   disabled: { opacity: 0.5 }, primaryText: { ...Typography.BUTTON_TEXT },
-  codeInput: { width: '100%', height: Spacing.INPUT_HEIGHT, borderWidth: 1, borderColor: Colors.BORDER, borderRadius: Spacing.BUTTON_RADIUS, textAlign: 'center', fontSize: 26, letterSpacing: 10, color: Colors.DARK, marginBottom: Spacing.L },
-  resend: { minHeight: 44, justifyContent: 'center', marginTop: Spacing.M }, resendText: { ...Typography.BODY, color: Colors.GREEN, fontWeight: '700' },
-  dots: { flexDirection: 'row', marginBottom: Spacing.L }, dot: { width: 16, height: 16, borderRadius: 8, borderWidth: 2, borderColor: Colors.GREEN, marginHorizontal: Spacing.M }, dotFilled: { backgroundColor: Colors.GREEN },
+  codeInput: { width: '100%', height: Spacing.INPUT_HEIGHT, borderWidth: 1, borderColor: theme.border, borderRadius: Spacing.BUTTON_RADIUS, textAlign: 'center', fontSize: 26, letterSpacing: 10, color: theme.ink, marginBottom: Spacing.L },
+  resend: { minHeight: 44, justifyContent: 'center', marginTop: Spacing.M }, resendText: { ...Typography.BODY, color: theme.brand, fontWeight: '700' },
+  dots: { flexDirection: 'row', marginBottom: Spacing.L }, dot: { width: 16, height: 16, borderRadius: 8, borderWidth: 2, borderColor: theme.brand, marginHorizontal: Spacing.M }, dotFilled: { backgroundColor: theme.brand },
   keypad: { flexDirection: 'row', flexWrap: 'wrap', width: KEY_SIZE * 3 + Spacing.L * 2, justifyContent: 'space-between' },
-  key: { width: KEY_SIZE, height: KEY_SIZE, borderRadius: KEY_SIZE / 2, justifyContent: 'center', alignItems: 'center', marginVertical: Spacing.S }, keyPressed: { backgroundColor: Colors.GREEN },
-  keyText: { fontSize: 26, color: Colors.DARK, fontWeight: '500' }, keyTextPressed: { color: Colors.WHITE },
-  status: { minHeight: 52, justifyContent: 'center', paddingTop: Spacing.M }, error: { ...Typography.ERROR, textAlign: 'center' },
-});
+  key: { width: KEY_SIZE, height: KEY_SIZE, borderRadius: KEY_SIZE / 2, justifyContent: 'center', alignItems: 'center', marginVertical: Spacing.S }, keyPressed: { backgroundColor: theme.brand },
+  keyText: { fontSize: 26, color: theme.ink, fontWeight: '500' }, keyTextPressed: { color: "#FFFFFF" },
+  status: { minHeight: 52, justifyContent: 'center', paddingTop: Spacing.M }, error: { ...Typography.ERROR, color: theme.down, textAlign: 'center' },
+  });
+}
