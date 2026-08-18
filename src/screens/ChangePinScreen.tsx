@@ -8,7 +8,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
 import { authService } from '../services/auth.service';
@@ -25,6 +26,8 @@ const PIN_LENGTH = 4;
 export default function ChangePinScreen({ navigation }: ChangePinScreenProps) {
   useSensitiveScreenProtection();
   const { authorize } = useTransactionAuth();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [step, setStep] = useState<'verifying' | 'new' | 'confirm'>('verifying');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -136,7 +139,7 @@ export default function ChangePinScreen({ navigation }: ChangePinScreenProps) {
     return (
       <SafeAreaView edges={['top']} style={styles.container}>
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={Colors.GREEN} />
+          <ActivityIndicator size="large" color={theme.brand} />
         </View>
       </SafeAreaView>
     );
@@ -170,7 +173,7 @@ export default function ChangePinScreen({ navigation }: ChangePinScreenProps) {
 
         <View style={styles.statusRow}>
           {saving ? (
-            <ActivityIndicator color={Colors.GREEN} />
+            <ActivityIndicator color={theme.brand} />
           ) : error ? (
             <Text style={styles.error}>{error}</Text>
           ) : (
@@ -201,8 +204,9 @@ export default function ChangePinScreen({ navigation }: ChangePinScreenProps) {
 
 const KEY_SIZE = 64;
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
     flexDirection: 'row',
@@ -210,27 +214,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.L,
     paddingVertical: Spacing.M,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
+    borderBottomColor: theme.border,
   },
   backButton: { width: 48, height: 48, justifyContent: 'center', alignItems: 'center' },
-  backButtonText: { fontSize: 28, fontWeight: '600', color: Colors.DARK },
-  headerTitle: { ...Typography.SCREEN_TITLE, flex: 1, textAlign: 'center' },
+  backButtonText: { fontSize: 28, fontWeight: '600', color: theme.ink },
+  headerTitle: { ...Typography.SCREEN_TITLE, color: theme.ink, flex: 1, textAlign: 'center' },
   headerSpacer: { width: 48 },
   content: { flex: 1, alignItems: 'center', paddingTop: Spacing.XL * 2 },
-  title: { ...Typography.HEADING, color: Colors.DARK },
-  subtitle: { ...Typography.BODY, color: Colors.GRAY, marginTop: Spacing.S, textAlign: 'center' },
+  title: { ...Typography.HEADING, color: theme.ink },
+  subtitle: { ...Typography.BODY, color: theme.inkMuted, marginTop: Spacing.S, textAlign: 'center' },
   dots: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.XL, marginBottom: Spacing.M },
   dot: {
     width: 16,
     height: 16,
     borderRadius: 8,
     borderWidth: 2,
-    borderColor: Colors.GREEN,
+    borderColor: theme.brand,
     marginHorizontal: Spacing.M,
   },
-  dotFilled: { backgroundColor: Colors.GREEN },
+  dotFilled: { backgroundColor: theme.brand },
   statusRow: { height: 24, justifyContent: 'center', marginBottom: Spacing.M },
-  error: { ...Typography.CAPTION, color: Colors.RED, textAlign: 'center' },
+  error: { ...Typography.CAPTION, color: theme.down, textAlign: 'center' },
   hint: { ...Typography.CAPTION },
   keypad: {
     flexDirection: 'row',
@@ -246,5 +250,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginVertical: Spacing.S,
   },
-  keyText: { fontSize: 26, color: Colors.DARK, fontWeight: '500' },
-});
+  keyText: { fontSize: 26, color: theme.ink, fontWeight: '500' },
+  });
+}

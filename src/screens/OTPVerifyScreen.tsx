@@ -10,16 +10,9 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '../constants/colors';
-import { Typography } from '../constants/typography';
-import { Spacing } from '../constants/spacing';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { authService } from '../services/auth.service';
-
-const BRAND_GREEN = '#1A5C3A';
-const DARK_TEXT = '#0F1A14';
-const GRAY_TEXT = '#6B7280';
-const BORDER_COLOR = '#E5E7EB';
-const WHITE = '#FFFFFF';
 
 interface OTPVerifyScreenProps {
   navigation: any;
@@ -27,6 +20,8 @@ interface OTPVerifyScreenProps {
 }
 
 export default function OTPVerifyScreen({ navigation, route }: OTPVerifyScreenProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const { phone, registrationData } = route.params || {};
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
@@ -205,10 +200,11 @@ export default function OTPVerifyScreen({ navigation, route }: OTPVerifyScreenPr
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: WHITE,
+    backgroundColor: theme.background,
   },
   keyboardView: {
     flex: 1,
@@ -227,17 +223,17 @@ const styles = StyleSheet.create({
   },
   backArrow: {
     fontSize: 24,
-    color: DARK_TEXT,
+    color: theme.ink,
   },
   title: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 22,
-    color: DARK_TEXT,
+    color: theme.ink,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 14,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
     marginBottom: 40,
     lineHeight: 20,
   },
@@ -250,47 +246,48 @@ const styles = StyleSheet.create({
     width: 48,
     height: 56,
     borderWidth: 1.5,
-    borderColor: BORDER_COLOR,
+    borderColor: theme.border,
     borderRadius: 12,
     textAlign: 'center',
     fontSize: 24,
     fontWeight: '700',
-    color: DARK_TEXT,
-    backgroundColor: WHITE,
+    color: theme.ink,
+    backgroundColor: theme.surface,
   },
   otpBoxFilled: {
-    borderColor: BRAND_GREEN,
-    backgroundColor: '#F9FAFB',
+    borderColor: theme.brand,
+    backgroundColor: theme.surfaceRaised,
   },
   verifyButton: {
     height: 52,
-    backgroundColor: BRAND_GREEN,
+    backgroundColor: theme.brand,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
   },
   verifyButtonDisabled: {
-    backgroundColor: '#9CA3AF',
+    backgroundColor: theme.inkFaint,
   },
   verifyButtonText: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 16,
-    color: WHITE,
+    color: '#FFFFFF',
   },
   verifyButtonTextDisabled: {
-    color: '#D1D5DB',
+    color: 'rgba(255,255,255,0.7)',
   },
   resendContainer: {
     alignItems: 'center',
   },
   timerText: {
     fontSize: 14,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
   },
   resendText: {
     fontSize: 14,
-    color: BRAND_GREEN,
+    color: theme.brand,
     fontWeight: '700',
   },
-});
+  });
+}

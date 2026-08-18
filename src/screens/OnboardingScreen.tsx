@@ -8,9 +8,9 @@ import {
   Text,
   Animated,
 } from 'react-native';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
-import { Spacing } from '../constants/spacing';
 import { Strings } from '../constants/strings';
 import { StorageKeys, storageHelpers } from '../lib/mmkv';
 
@@ -49,6 +49,8 @@ const slides: OnboardingSlide[] = [
 ];
 
 export default function OnboardingScreen({ navigation }: OnboardingScreenProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
@@ -176,10 +178,11 @@ export default function OnboardingScreen({ navigation }: OnboardingScreenProps) 
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.background,
   },
   skipContainer: {
     position: 'absolute',
@@ -192,7 +195,7 @@ const styles = StyleSheet.create({
   },
   skipText: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   slide: {
     width,
@@ -205,7 +208,7 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: Colors.GREEN_LIGHT,
+    backgroundColor: theme.brandSoft,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 32,
@@ -215,13 +218,14 @@ const styles = StyleSheet.create({
   },
   title: {
     ...Typography.SCREEN_TITLE,
+    color: theme.ink,
     textAlign: 'center',
     marginBottom: 12,
   },
   description: {
     ...Typography.BODY,
     textAlign: 'center',
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     lineHeight: 24,
   },
   dotsContainer: {
@@ -233,7 +237,7 @@ const styles = StyleSheet.create({
   dot: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     marginHorizontal: 4,
   },
   buttonContainer: {
@@ -242,7 +246,7 @@ const styles = StyleSheet.create({
   },
   button: {
     height: 52,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
@@ -253,7 +257,7 @@ const styles = StyleSheet.create({
   loginButton: {
     height: 52,
     borderWidth: 1.5,
-    borderColor: Colors.GREEN,
+    borderColor: theme.brand,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
@@ -261,6 +265,7 @@ const styles = StyleSheet.create({
   },
   loginButtonText: {
     ...Typography.BUTTON_TEXT,
-    color: Colors.GREEN,
+    color: theme.brand,
   },
-});
+  });
+}

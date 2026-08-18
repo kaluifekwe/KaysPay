@@ -12,7 +12,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import ProviderLogo from '../components/ProviderLogo';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
 import type { ExamType } from '../services/vtu.service';
@@ -35,6 +36,8 @@ function examBody(examId: string): string {
 export default function ExamPinPayScreen({ navigation, route }: any) {
   const exam = route.params.exam as ExamType;
   const { authorize } = useTransactionAuth();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const [quantity, setQuantity] = useState(exam.quantity_options[0] || 1);
@@ -132,7 +135,7 @@ export default function ExamPinPayScreen({ navigation, route }: any) {
                 onChangeText={handleProfileCodeChange}
                 onFocus={() => scrollRef.current?.scrollToEnd({ animated: true })}
                 placeholder="Enter your JAMB profile code"
-                placeholderTextColor={Colors.GRAY}
+                placeholderTextColor={theme.inkFaint}
                 autoCapitalize="characters"
                 autoCorrect={false}
               />
@@ -179,8 +182,9 @@ export default function ExamPinPayScreen({ navigation, route }: any) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   flex: { flex: 1 },
   scrollContent: {
     paddingHorizontal: Spacing.SCREEN_PADDING,
@@ -188,13 +192,13 @@ const styles = StyleSheet.create({
     paddingBottom: 170,
   },
   backButton: { width: 48, height: 48, justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.M },
-  backText: { fontSize: 28, fontWeight: '600', color: Colors.DARK },
+  backText: { fontSize: 28, fontWeight: '600', color: theme.ink },
   headingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.XL },
   headingText: { flex: 1, marginLeft: Spacing.M },
-  title: { ...Typography.SCREEN_TITLE, fontSize: 22, marginBottom: 4 },
-  subtitle: { ...Typography.BODY, color: Colors.GREEN },
+  title: { ...Typography.SCREEN_TITLE, color: theme.ink, fontSize: 22, marginBottom: 4 },
+  subtitle: { ...Typography.BODY, color: theme.brand },
   section: { marginBottom: Spacing.XL },
-  label: { ...Typography.SECTION_HEADING, marginBottom: Spacing.M },
+  label: { ...Typography.SECTION_HEADING, color: theme.ink, marginBottom: Spacing.M },
   quantityContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.M },
   quantityButton: {
     width: 56,
@@ -203,28 +207,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: Spacing.CARD_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
-    backgroundColor: Colors.WHITE,
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
   },
-  quantityButtonSelected: { backgroundColor: Colors.GREEN, borderColor: Colors.GREEN_DARK },
-  quantityText: { ...Typography.CARD_TITLE, fontSize: 18 },
-  quantityTextSelected: { color: Colors.WHITE },
+  quantityButtonSelected: { backgroundColor: theme.brand, borderColor: theme.brandDark },
+  quantityText: { ...Typography.CARD_TITLE, color: theme.ink, fontSize: 18 },
+  quantityTextSelected: { color: '#FFFFFF' },
   input: {
     height: Spacing.INPUT_HEIGHT,
     borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.BUTTON_RADIUS,
     paddingHorizontal: Spacing.L,
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
   },
-  inputHint: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: Spacing.S },
-  summaryCard: { padding: Spacing.CARD_PADDING, borderRadius: Spacing.CARD_RADIUS, backgroundColor: Colors.LIGHT_GRAY },
+  inputHint: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: Spacing.S },
+  summaryCard: { padding: Spacing.CARD_PADDING, borderRadius: Spacing.CARD_RADIUS, backgroundColor: theme.surfaceRaised },
   summaryRow: { minHeight: 44, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  summaryLabel: { ...Typography.BODY, color: Colors.GRAY },
-  summaryValue: { ...Typography.CARD_TITLE, flex: 1, textAlign: 'right', marginLeft: Spacing.M },
-  totalAmount: { ...Typography.AMOUNT_SMALL, color: Colors.GREEN },
-  divider: { height: 1, backgroundColor: Colors.BORDER },
+  summaryLabel: { ...Typography.BODY, color: theme.inkMuted },
+  summaryValue: { ...Typography.CARD_TITLE, color: theme.ink, flex: 1, textAlign: 'right', marginLeft: Spacing.M },
+  totalAmount: { ...Typography.AMOUNT_SMALL, color: theme.brand },
+  divider: { height: 1, backgroundColor: theme.border },
   bottomBar: {
     position: 'absolute',
     left: 0,
@@ -233,11 +237,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.SCREEN_PADDING,
     paddingTop: Spacing.L,
     borderTopWidth: 1,
-    borderTopColor: Colors.BORDER,
-    backgroundColor: Colors.WHITE,
+    borderTopColor: theme.border,
+    backgroundColor: theme.surface,
   },
-  payHint: { ...Typography.CAPTION, color: Colors.GRAY, textAlign: 'center', marginBottom: Spacing.M },
-  payButton: { height: Spacing.BUTTON_HEIGHT_PRIMARY, borderRadius: Spacing.BUTTON_RADIUS, backgroundColor: Colors.GREEN, justifyContent: 'center', alignItems: 'center' },
+  payHint: { ...Typography.CAPTION, color: theme.inkMuted, textAlign: 'center', marginBottom: Spacing.M },
+  payButton: { height: Spacing.BUTTON_HEIGHT_PRIMARY, borderRadius: Spacing.BUTTON_RADIUS, backgroundColor: theme.brand, justifyContent: 'center', alignItems: 'center' },
   payButtonDisabled: { opacity: 0.5 },
   payButtonText: { ...Typography.BUTTON_TEXT },
-});
+  });
+}

@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 
@@ -18,6 +19,8 @@ const LAST_UPDATED = '6 July 2026';
 
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -27,10 +30,14 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Para({ children }: { children: React.ReactNode }) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   return <Text style={styles.paragraph}>{children}</Text>;
 }
 
 function Bullet({ children }: { children: React.ReactNode }) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   return (
     <View style={styles.bulletRow}>
       <Text style={styles.bulletDot}>{'•'}</Text>
@@ -253,6 +260,8 @@ function TermsOfServiceContent() {
 
 export default function LegalDocumentScreen(props: any) {
   const { navigation, route } = props;
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const isPrivacy = route.params.type === 'privacy';
 
   return (
@@ -275,8 +284,9 @@ export default function LegalDocumentScreen(props: any) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -284,18 +294,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.SCREEN_PADDING,
     paddingVertical: Spacing.S,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
+    borderBottomColor: theme.border,
   },
   backButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
-  backText: { fontSize: 24, fontWeight: '600', color: Colors.DARK },
-  headerTitle: { ...Typography.SECTION_HEADING, color: Colors.DARK },
+  backText: { fontSize: 24, fontWeight: '600', color: theme.ink },
+  headerTitle: { ...Typography.SECTION_HEADING, color: theme.ink },
   scrollContent: { paddingHorizontal: Spacing.SCREEN_PADDING, paddingTop: Spacing.L, paddingBottom: Spacing.XL },
-  docTitle: { ...Typography.SCREEN_TITLE, color: Colors.DARK, marginBottom: 4 },
-  lastUpdated: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.L },
+  docTitle: { ...Typography.SCREEN_TITLE, color: theme.ink, marginBottom: 4 },
+  lastUpdated: { ...Typography.CAPTION, color: theme.inkMuted, marginBottom: Spacing.L },
   section: { marginTop: Spacing.L },
-  sectionTitle: { ...Typography.SECTION_HEADING, color: Colors.DARK, marginBottom: Spacing.S },
-  paragraph: { ...Typography.BODY, color: Colors.DARK, lineHeight: 21, marginBottom: Spacing.S },
+  sectionTitle: { ...Typography.SECTION_HEADING, color: theme.ink, marginBottom: Spacing.S },
+  paragraph: { ...Typography.BODY, color: theme.ink, lineHeight: 21, marginBottom: Spacing.S },
   bulletRow: { flexDirection: 'row', marginBottom: Spacing.S, paddingRight: Spacing.S },
-  bulletDot: { ...Typography.BODY, color: Colors.DARK, marginRight: Spacing.S },
-  bulletText: { ...Typography.BODY, color: Colors.DARK, lineHeight: 21, flex: 1 },
-});
+  bulletDot: { ...Typography.BODY, color: theme.ink, marginRight: Spacing.S },
+  bulletText: { ...Typography.BODY, color: theme.ink, lineHeight: 21, flex: 1 },
+  });
+}
