@@ -6,8 +6,14 @@ import { withTimeout, invokeWithRetry } from '../utils/network';
 // first outbound-money feature in the app — see supabase/functions/
 // transfer-send, transfer-resolve-account, transfer-banks.
 
+// MUST stay strictly alphanumeric (no underscores, dashes or dots):
+// transfer-send passes this straight through as Flutterwave's `reference`,
+// and Flutterwave rejects anything else outright with "reference: must be
+// an alphanumeric string". It doubles as our own idempotency key and is
+// what the settlement webhook matches on, so the two can never diverge —
+// one id, one meaning, everywhere.
 function newIdempotencyKey(prefix: string): string {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}${Date.now()}${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export interface TransferBank {

@@ -33,8 +33,13 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// MUST stay strictly alphanumeric — this value is sent to Flutterwave as
+// the transfer `reference`, and Flutterwave rejects anything containing
+// underscores/dashes with "reference: must be an alphanumeric string".
+// (crypto.randomUUID().slice(0, 8) is the leading hex block, before the
+// first dash, so it's already safe.)
 function newRequestId() {
-  return `kspxfer_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
+  return `kspxfer${Date.now()}${crypto.randomUUID().slice(0, 8)}`;
 }
 
 // Flutterwave's top-level error.message is often a generic "Request is not
@@ -100,7 +105,14 @@ serve(async (req: Request) => {
   }
   const amountKobo = Math.round(ngnAmount * 100);
 
-  const requestId = String(body.idempotency_key || newRequestId());
+  // Strip anything non-alphanumeric from a client-supplied key rather than
+  // trusting it verbatim: Flutterwave rejects a reference containing
+  // underscores/dashes outright, and older app builds (pre-OTA) still mint
+  // keys in the old `transfer_<ts>_<rand>` shape. Stripping is safe for
+  // idempotency — it's a deterministic mapping, so a genuine retry of the
+  // same request still collapses onto the same key.
+  const rawRequestId = String(body.idempotency_key || "").replace(/[^a-zA-Z0-9]/g, "");
+  const requestId = rawRequestId || newRequestId();
 
   // Idempotency short-circuit BEFORE the PIN/biometric token is spent —
   // same discipline as vtu-purchase: a retry of an already-resolved (or
