@@ -11,9 +11,10 @@ import {
   Image,
   ImageSourcePropType,
 } from 'react-native';
-import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from './ThemeProvider';
 import { virtualAccountService, VirtualAccount, VirtualAccountProvider } from '../services/virtualAccount.service';
 
 interface ProviderFundingBlockProps {
@@ -53,6 +54,8 @@ export default function ProviderFundingBlock({
   onPaystackCheckStarted,
   onPaystackCheckFailed,
 }: ProviderFundingBlockProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const branding = PROVIDER_BRANDING[provider];
   const [showBvnInput, setShowBvnInput] = useState(false);
   const [bvnOrNin, setBvnOrNin] = useState('');
@@ -147,7 +150,7 @@ export default function ProviderFundingBlock({
               disabled={requeryLoading}
             >
               {requeryLoading ? (
-                <ActivityIndicator color={Colors.GREEN} />
+                <ActivityIndicator color={theme.brand} />
               ) : (
                 <Text style={styles.requeryButtonText}>I've transferred — check payment</Text>
               )}
@@ -156,7 +159,7 @@ export default function ProviderFundingBlock({
         </View>
       ) : initialLoading ? (
         <View style={styles.transferCard}>
-          <ActivityIndicator color={Colors.GREEN} />
+          <ActivityIndicator color={theme.brand} />
         </View>
       ) : provider === 'paystack' ? (
         <TouchableOpacity
@@ -165,7 +168,7 @@ export default function ProviderFundingBlock({
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color={Colors.GREEN} />
+            <ActivityIndicator color={theme.brand} />
           ) : (
             <Text style={styles.transferButtonText}>Get my Paystack account number</Text>
           )}
@@ -181,7 +184,7 @@ export default function ProviderFundingBlock({
               value={bvnOrNin}
               onChangeText={(t) => setBvnOrNin(t.replace(/[^0-9]/g, '').slice(0, 11))}
               placeholder="Enter your BVN or NIN"
-              placeholderTextColor={Colors.GRAY}
+              placeholderTextColor={theme.inkFaint}
               keyboardType="number-pad"
               maxLength={11}
             />
@@ -192,7 +195,7 @@ export default function ProviderFundingBlock({
             disabled={loading || bvnOrNin.length !== 11}
           >
             {loading ? (
-              <ActivityIndicator color={Colors.GREEN} />
+              <ActivityIndicator color={theme.brand} />
             ) : (
               <Text style={styles.transferButtonText}>Continue</Text>
             )}
@@ -207,7 +210,8 @@ export default function ProviderFundingBlock({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   wrapper: {
     marginBottom: Spacing.L,
   },
@@ -224,7 +228,7 @@ const styles = StyleSheet.create({
   },
   providerCaption: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginLeft: Spacing.M,
     flexShrink: 1,
     textAlign: 'right',
@@ -233,7 +237,7 @@ const styles = StyleSheet.create({
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.GREEN,
+    borderColor: theme.brand,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -242,16 +246,16 @@ const styles = StyleSheet.create({
   },
   transferButtonText: {
     ...Typography.BUTTON_TEXT,
-    color: Colors.GREEN,
+    color: theme.brand,
   },
   transferCard: {
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: 12,
     padding: Spacing.L,
   },
   transferHint: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginBottom: Spacing.M,
   },
   transferRow: {
@@ -262,11 +266,11 @@ const styles = StyleSheet.create({
   },
   transferLabel: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   transferValue: {
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
     fontWeight: '600',
     flexShrink: 1,
     textAlign: 'right',
@@ -274,7 +278,7 @@ const styles = StyleSheet.create({
   },
   transferAccount: {
     ...Typography.HEADING,
-    color: Colors.GREEN,
+    color: theme.brand,
     fontWeight: '700',
     letterSpacing: 1,
   },
@@ -289,19 +293,19 @@ const styles = StyleSheet.create({
     marginTop: Spacing.XS,
     paddingHorizontal: Spacing.M,
     borderWidth: 1,
-    borderColor: Colors.GREEN,
+    borderColor: theme.brand,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
   },
   copyButtonText: {
     ...Typography.BUTTON_TEXT,
-    color: Colors.GREEN,
+    color: theme.brand,
   },
   requeryButton: {
     minHeight: 44,
     borderTopWidth: 1,
-    borderTopColor: Colors.BORDER,
+    borderTopColor: theme.border,
     marginTop: Spacing.M,
     paddingTop: Spacing.M,
     justifyContent: 'center',
@@ -309,24 +313,25 @@ const styles = StyleSheet.create({
   },
   requeryButtonText: {
     ...Typography.BUTTON_TEXT,
-    color: Colors.GREEN,
+    color: theme.brand,
     textAlign: 'center',
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.BUTTON_RADIUS,
     height: Spacing.INPUT_HEIGHT,
     paddingHorizontal: Spacing.M,
     marginBottom: Spacing.L,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
   },
   input: {
     flex: 1,
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
     height: '100%',
   },
-});
+  });
+}

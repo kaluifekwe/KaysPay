@@ -13,10 +13,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DataPromoBanner from '../components/DataPromoBanner';
-import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { Strings } from '../constants/strings';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { StorageKeys, storageHelpers } from '../lib/mmkv';
 import { formatNaira } from '../utils/formatCurrency';
 import { walletService } from '../services/wallet.service';
@@ -84,7 +85,7 @@ const quickActions: QuickAction[] = [
 
 // Auto-rotating advert banner (cycles every 3s). Taps navigate to the service,
 // or show the coming-soon alert for Crypto.
-function AdvertCarousel({ navigation }: { navigation: any }) {
+function AdvertCarousel({ navigation, theme, styles }: { navigation: any; theme: AppTheme; styles: ReturnType<typeof createStyles> }) {
   const [index, setIndex] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setIndex((i) => (i + 1) % ADVERTS.length), 3000);
@@ -103,13 +104,13 @@ function AdvertCarousel({ navigation }: { navigation: any }) {
         }
       >
         <View style={styles.advertIcon}>
-          <Ionicons name={ad.icon} size={22} color="#C79A3A" />
+          <Ionicons name={ad.icon} size={22} color={theme.gold} />
         </View>
         <View style={styles.advertText}>
           <Text style={styles.advertTitle} numberOfLines={1}>{ad.title}</Text>
           <Text style={styles.advertSub} numberOfLines={1}>{ad.sub}</Text>
         </View>
-        <Ionicons name="chevron-forward" size={20} color="#C79A3A" />
+        <Ionicons name="chevron-forward" size={20} color={theme.gold} />
       </TouchableOpacity>
       <View style={styles.advertDots}>
         {ADVERTS.map((_, i) => (
@@ -121,6 +122,8 @@ function AdvertCarousel({ navigation }: { navigation: any }) {
 }
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [balance, setBalance] = useState(0);
   const [cashbackBalance, setCashbackBalance] = useState(0);
   const [balanceVisible, setBalanceVisible] = useState(true);
@@ -250,7 +253,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.GREEN_DARK} />
+      <StatusBar barStyle="light-content" backgroundColor={theme.brandDark} />
 
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -262,7 +265,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             style={styles.headerIcon}
             onPress={() => navigation.navigate('Notifications')}
           >
-            <Ionicons name="notifications-outline" size={24} color={Colors.WHITE} />
+            <Ionicons name="notifications-outline" size={24} color="#FFFFFF" />
             {unreadCount > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
@@ -325,7 +328,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             <Text style={styles.cashbackPillText}>
               <Text style={styles.cashbackPillAmount}>{formatNaira(cashbackBalance)}</Text> cashback available
             </Text>
-            <Ionicons name="chevron-forward" size={16} color="#B8860A" />
+            <Ionicons name="chevron-forward" size={16} color={theme.gold} />
           </TouchableOpacity>
         )}
 
@@ -343,9 +346,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                 }
               >
                 <View style={styles.quickActionIcon}>
-                  <Ionicons name={action.icon} size={26} color={Colors.GREEN} />
+                  <Ionicons name={action.icon} size={26} color={theme.brand} />
                   {action.badge && (
-                    <View style={[styles.comingSoonBadge, action.badge === 'Soon' && { backgroundColor: Colors.GRAY }]}>
+                    <View style={[styles.comingSoonBadge, action.badge === 'Soon' && { backgroundColor: theme.inkFaint }]}>
                       <Text style={styles.comingSoonBadgeText}>{action.badge}</Text>
                     </View>
                   )}
@@ -358,7 +361,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
         <DataPromoBanner navigation={navigation} />
 
-        <AdvertCarousel navigation={navigation} />
+        <AdvertCarousel navigation={navigation} theme={theme} styles={styles} />
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -394,7 +397,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
                   <Text
                     style={[
                       styles.transactionAmount,
-                      { color: tx.type === 'wallet_fund' || tx.type === 'refund' ? Colors.SUCCESS : Colors.RED },
+                      { color: tx.type === 'wallet_fund' || tx.type === 'refund' ? theme.up : theme.down },
                     ]}
                   >
                     {tx.type === 'wallet_fund' || tx.type === 'refund' ? '+' : '-'}{formatNaira(tx.amount_ngn)}
@@ -410,13 +413,14 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.background,
   },
   header: {
-    backgroundColor: Colors.GREEN_DARK,
+    backgroundColor: theme.brandDark,
     paddingHorizontal: 16,
     paddingTop: 24,
     paddingBottom: 16,
@@ -430,13 +434,13 @@ const styles = StyleSheet.create({
   },
   headerGreetingTime: {
     fontSize: 13,
-    color: Colors.WHITE_80,
+    color: 'rgba(255,255,255,0.8)',
     marginTop: 2,
   },
   headerGreeting: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 20,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   headerRight: {
     flexDirection: 'row',
@@ -455,13 +459,13 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: Colors.RED,
+    backgroundColor: theme.down,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 3,
   },
   badgeText: {
-    color: Colors.WHITE,
+    color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '700',
   },
@@ -469,7 +473,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Colors.GREEN_MID,
+    backgroundColor: theme.brand,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -478,12 +482,12 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     borderWidth: 2,
-    borderColor: Colors.WHITE,
+    borderColor: '#FFFFFF',
   },
   avatarText: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 14,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -492,7 +496,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   walletCard: {
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: 16,
     paddingHorizontal: 18,
     paddingVertical: 16,
@@ -501,7 +505,7 @@ const styles = StyleSheet.create({
   cashbackPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEF3C7',
+    backgroundColor: theme.goldSoft,
     borderRadius: 12,
     paddingHorizontal: 13,
     paddingVertical: 10,
@@ -515,14 +519,14 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12.5,
     fontWeight: '600',
-    color: '#92640A',
+    color: theme.gold,
   },
   cashbackPillAmount: {
     fontWeight: '800',
   },
   walletLabel: {
     ...Typography.CAPTION,
-    color: Colors.WHITE_80,
+    color: 'rgba(255,255,255,0.8)',
     marginBottom: 4,
   },
   balanceRow: {
@@ -534,7 +538,7 @@ const styles = StyleSheet.create({
   balanceAmount: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 26,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   eyeIcon: {
     fontSize: 20,
@@ -547,20 +551,20 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 42,
     borderWidth: 1,
-    borderColor: Colors.WHITE,
+    borderColor: '#FFFFFF',
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
   walletButtonText: {
     ...Typography.BUTTON_TEXT,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   walletButtonSecondary: {
     flex: 1,
     height: 44,
     borderWidth: 1,
-    borderColor: Colors.WHITE,
+    borderColor: '#FFFFFF',
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
@@ -568,7 +572,7 @@ const styles = StyleSheet.create({
   },
   walletButtonTextSecondary: {
     ...Typography.BUTTON_TEXT,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   section: {
     marginBottom: 16,
@@ -579,7 +583,7 @@ const styles = StyleSheet.create({
   advertCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.GREEN_DARK,
+    backgroundColor: theme.brandDark,
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 14,
@@ -597,7 +601,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   advertTitle: {
-    color: Colors.WHITE,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -616,11 +620,11 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 3,
-    backgroundColor: Colors.BORDER,
+    backgroundColor: 'rgba(255,255,255,0.3)',
   },
   advertDotActive: {
     width: 16,
-    backgroundColor: Colors.AMBER,
+    backgroundColor: theme.gold,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -630,10 +634,12 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...Typography.SECTION_HEADING,
+    color: theme.ink,
     marginBottom: 12,
   },
   viewAllText: {
     ...Typography.LINK,
+    color: theme.brand,
     marginBottom: 12,
   },
   quickActionsGrid: {
@@ -650,7 +656,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 16,
-    backgroundColor: '#EAF4EE',
+    backgroundColor: theme.brandSoft,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 6,
@@ -660,7 +666,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -6,
     right: -10,
-    backgroundColor: Colors.AMBER,
+    backgroundColor: theme.gold,
     borderRadius: 8,
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -668,10 +674,11 @@ const styles = StyleSheet.create({
   comingSoonBadgeText: {
     fontSize: 8,
     fontWeight: '700',
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   quickActionLabel: {
     ...Typography.CAPTION,
+    color: theme.inkMuted,
     fontSize: 11,
     lineHeight: 14,
     minHeight: 28,
@@ -681,18 +688,18 @@ const styles = StyleSheet.create({
     height: 100,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderRadius: 12,
   },
   emptyStateText: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   transactionItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
@@ -707,7 +714,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -720,10 +727,12 @@ const styles = StyleSheet.create({
   },
   transactionType: {
     ...Typography.CARD_TITLE,
+    color: theme.ink,
     marginBottom: 2,
   },
   transactionRecipient: {
     ...Typography.CAPTION,
+    color: theme.inkMuted,
   },
   transactionRight: {
     alignItems: 'flex-end',
@@ -734,5 +743,7 @@ const styles = StyleSheet.create({
   },
   transactionTime: {
     ...Typography.CAPTION,
+    color: theme.inkFaint,
   },
-});
+  });
+}

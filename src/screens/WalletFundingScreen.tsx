@@ -11,9 +11,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { formatNaira } from '../utils/formatCurrency';
 import { walletService } from '../services/wallet.service';
 import { virtualAccountService, VirtualAccount, VirtualAccountProvider } from '../services/virtualAccount.service';
@@ -35,6 +36,8 @@ const BANK_TRANSFER_FUNDING_ENABLED = true;
 const PAYSTACK_FUNDING_ENABLED = true;
 
 const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
   const [customAmount, setCustomAmount] = useState('');
   const [loading, setLoading] = useState(false);
@@ -221,7 +224,7 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             >
               <Text style={styles.balanceLabel}>Current Balance</Text>
               {balanceLoading && balance === null ? (
-                <ActivityIndicator color={Colors.WHITE} />
+                <ActivityIndicator color="#FFFFFF" />
               ) : balanceError ? (
                 <>
                   <Text style={styles.balanceErrorText}>Couldn't load balance</Text>
@@ -283,10 +286,11 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.background,
   },
   keyboardView: {
     flex: 1,
@@ -310,7 +314,7 @@ const styles = StyleSheet.create({
   backText: {
     fontSize: 28,
     fontWeight: '600',
-    color: Colors.DARK,
+    color: theme.ink,
   },
   scrollView: {
     flex: 1,
@@ -321,11 +325,12 @@ const styles = StyleSheet.create({
   },
   title: {
     ...Typography.SCREEN_TITLE,
+    color: theme.ink,
     marginTop: Spacing.S,
     marginBottom: Spacing.L,
   },
   balanceCard: {
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: 12,
     paddingHorizontal: Spacing.L,
     paddingVertical: Spacing.XL,
@@ -333,22 +338,22 @@ const styles = StyleSheet.create({
   },
   balanceLabel: {
     ...Typography.CAPTION,
-    color: Colors.WHITE_80,
+    color: 'rgba(255,255,255,0.8)',
     marginBottom: Spacing.S,
   },
   balanceAmount: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 32,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   balanceErrorText: {
     ...Typography.BODY,
     fontWeight: '700',
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   balanceRetryText: {
     ...Typography.CAPTION,
-    color: Colors.WHITE_80,
+    color: 'rgba(255,255,255,0.8)',
     marginTop: 2,
   },
   dividerRow: {
@@ -359,26 +364,27 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: Colors.BORDER,
+    backgroundColor: theme.border,
   },
   dividerText: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginHorizontal: Spacing.M,
   },
   sectionTitle: {
     ...Typography.SECTION_HEADING,
+    color: theme.ink,
     marginBottom: Spacing.M,
   },
   cbnNotice: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginBottom: Spacing.L,
     lineHeight: 18,
   },
   paystackCheckText: {
     ...Typography.CAPTION,
-    color: Colors.GREEN_DARK,
+    color: theme.brand,
     marginTop: -Spacing.M,
     marginBottom: Spacing.L,
     lineHeight: 18,
@@ -394,29 +400,29 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.M,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     alignItems: 'center',
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
   },
   quickAmountSelected: {
-    backgroundColor: Colors.GREEN_LIGHT,
-    borderColor: Colors.GREEN,
+    backgroundColor: theme.brandSoft,
+    borderColor: theme.brand,
   },
   quickAmountText: {
     ...Typography.BODY,
     fontWeight: '600',
-    color: Colors.DARK,
+    color: theme.ink,
   },
   quickAmountTextSelected: {
-    color: Colors.GREEN_DARK,
+    color: theme.brand,
   },
   currencySymbol: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginRight: Spacing.S,
   },
   fundButton: {
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
@@ -428,8 +434,9 @@ const styles = StyleSheet.create({
   },
   fundButtonText: {
     ...Typography.BUTTON_TEXT,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
-});
+  });
+}
 
 export default WalletFundingScreen;
