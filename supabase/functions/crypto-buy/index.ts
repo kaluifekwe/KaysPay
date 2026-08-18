@@ -10,7 +10,7 @@ import {
   RequestBodyError,
 } from "../_shared/auth.ts";
 import { getUsdNgnRate } from "../_shared/esim-catalog.ts";
-import { createDepositAddress, getMarketTicker, isQuidaxConfigured } from "../_shared/quidax-client.ts";
+import { createDepositAddress, getMarketTicker, isQuidaxConfigured, QuidaxError } from "../_shared/quidax-client.ts";
 import { getOrCreateCryptoAccount } from "../_shared/crypto-account.ts";
 import { findSwapAsset } from "../_shared/crypto-assets.ts";
 import {
@@ -18,7 +18,9 @@ import {
   getBuyLimits,
   initiateOnRamp,
   isQuidaxRampConfigured,
+  QuidaxRampError,
 } from "../_shared/quidax-ramp-client.ts";
+import { redactSecrets } from "../_shared/redact.ts";
 
 // Buy (Phase 3): a REAL purchase. Quidax issues a single-use bank account,
 // the customer transfers Naira to it from their own bank, and Quidax
@@ -282,7 +284,17 @@ serve(async (req: Request) => {
     });
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
-    console.error("crypto-buy failed:", detail);
-    return json({ success: false, error: "Could not start the purchase. Please try again." }, 500);
+    console.error("crypto-buy failed:", redactSecrets(detail));
+    // Quidax's own error message (already just a short human-readable reason
+    // from their API response body, never raw request/response internals) is
+    // safe and far more useful to show than a blanket "try again" — it's the
+    // difference between the customer knowing to fix their KYC tier vs. just
+    // retrying the same failing request forever. Anything else (network
+    // failure, timeout, a bug on our side) still falls back to the generic
+    // message so we never leak internals.
+    const message = e instanceof QuidaxRampError || e instanceof QuidaxError
+      ? redactSecrets(e.message) || "Could not start the purchase. Please try again."
+      : "Could not start the purchase. Please try again.";
+    return json({ success: false, error: message }, 500);
   }
 });
