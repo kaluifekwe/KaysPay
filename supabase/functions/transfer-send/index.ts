@@ -152,6 +152,7 @@ serve(async (req: Request) => {
     txId = data as string;
   } catch (e: any) {
     const code = String(e?.message || e);
+    console.error("transfer-send: debit_for_transfer failed:", redactSecrets(code));
     if (code.includes("INSUFFICIENT_FUNDS")) {
       return json({ success: false, error: "Insufficient wallet balance for this transfer." });
     }
@@ -161,8 +162,14 @@ serve(async (req: Request) => {
     if (code.includes("INVALID_AMOUNT")) {
       return json({ success: false, error: "Enter an amount within the allowed transfer range." });
     }
-    console.error("transfer-send: debit_for_transfer failed:", redactSecrets(code));
-    return json({ success: false, error: "Could not start the transfer. Please try again." }, 500);
+    if (code.includes("WALLET_NOT_FOUND")) {
+      return json({ success: false, error: "We couldn't find your wallet. Please contact support." });
+    }
+    // Genuinely unexpected — surface the redacted reason instead of a blind
+    // "try again" so this class of bug (a real SQL/config issue, not a
+    // business-rule rejection) doesn't have to be re-diagnosed from logs
+    // alone, same fix already applied to crypto-buy.
+    return json({ success: false, error: `Could not start the transfer: ${redactSecrets(code)}` }, 500);
   }
 
   try {
