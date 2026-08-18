@@ -15,6 +15,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { Strings } from '../constants/strings';
@@ -63,6 +65,8 @@ function mapDetectedNetworkName(name: string): NetworkProvider | null {
 
 export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
   const { authorize } = useTransactionAuth();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const insets = useSafeAreaInsets();
   const [phoneNumber, setPhoneNumber] = useState('');
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkProvider | null>(null);
@@ -281,7 +285,7 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
               value={phoneNumber}
               onChangeText={handlePhoneChange}
               placeholder={Strings.PHONE_INPUT_PLACEHOLDER}
-              placeholderTextColor={Colors.GRAY}
+              placeholderTextColor={theme.inkMuted}
               keyboardType="phone-pad"
               editable={!isProcessing}
             />
@@ -383,7 +387,7 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
               <TextInput
                 style={styles.amountInput}
                 placeholder="Enter amount"
-                placeholderTextColor={Colors.GRAY}
+                placeholderTextColor={theme.inkMuted}
                 value={amount}
                 onChangeText={handleAmountChange}
                 onFocus={() => scrollRef.current?.scrollToEnd({ animated: true })}
@@ -450,10 +454,11 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.background,
   },
   keyboardView: {
     flex: 1,
@@ -479,10 +484,11 @@ const styles = StyleSheet.create({
   backText: {
     fontSize: 28,
     fontWeight: '600',
-    color: Colors.DARK,
+    color: theme.ink,
   },
   title: {
     ...Typography.SCREEN_TITLE,
+    color: theme.ink,
     marginBottom: Spacing.L,
   },
   section: {
@@ -490,10 +496,12 @@ const styles = StyleSheet.create({
   },
   label: {
     ...Typography.SECTION_HEADING,
+    color: theme.ink,
     marginBottom: Spacing.M,
   },
   recipientHeading: {
     ...Typography.SECTION_HEADING,
+    color: theme.ink,
     marginBottom: Spacing.M,
   },
   contactActions: {
@@ -508,15 +516,15 @@ const styles = StyleSheet.create({
     padding: Spacing.L,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.GREEN_MID,
-    backgroundColor: Colors.GREEN_10,
+    borderColor: theme.brand,
+    backgroundColor: theme.brandSoft,
     boxShadow: '0 2px 4px rgba(15, 61, 39, 0.10)',
   },
   contactActionIcon: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -524,19 +532,19 @@ const styles = StyleSheet.create({
     ...Typography.CARD_TITLE,
     fontSize: 13,
     lineHeight: 18,
-    color: Colors.DARK,
+    color: theme.ink,
   },
   contactActionDescription: {
     ...Typography.CAPTION,
     fontSize: 11,
     lineHeight: 16,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   contactActionButton: {
     minHeight: Spacing.TOUCH_TARGET_MIN,
     marginTop: 'auto',
     borderRadius: Spacing.TOUCH_TARGET_MIN / 2,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -549,11 +557,11 @@ const styles = StyleSheet.create({
   phoneInput: {
     height: Spacing.INPUT_HEIGHT,
     borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.BUTTON_RADIUS,
     paddingHorizontal: Spacing.L,
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
   },
   phoneInfoRow: {
     flexDirection: 'row',
@@ -563,23 +571,23 @@ const styles = StyleSheet.create({
   },
   phoneInfo: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   validIndicator: {
     ...Typography.CAPTION,
-    color: Colors.GREEN,
+    color: theme.brand,
     fontWeight: '600',
   },
   invalidIndicator: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   detectedNetworkContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: Spacing.M,
     padding: Spacing.S,
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: 8,
   },
   detectedNetworkDot: {
@@ -590,7 +598,7 @@ const styles = StyleSheet.create({
   },
   detectedNetworkText: {
     ...Typography.CAPTION,
-    color: Colors.GREEN,
+    color: theme.brand,
     fontWeight: '500',
   },
   undetectedNetworkContainer: {
@@ -617,13 +625,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.M,
     borderRadius: Spacing.TOUCH_TARGET_MIN / 2,
     borderWidth: 1.5,
-    borderColor: Colors.BORDER,
-    backgroundColor: Colors.WHITE,
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
   },
   networkChipText: {
     ...Typography.BODY,
     fontSize: 13,
-    color: Colors.DARK,
+    color: theme.ink,
   },
   quickAmountsContainer: {
     flexDirection: 'row',
@@ -636,21 +644,21 @@ const styles = StyleSheet.create({
     height: Spacing.CHIP_HEIGHT,
     borderRadius: Spacing.CHIP_HEIGHT / 2,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     justifyContent: 'center',
     alignItems: 'center',
   },
   quickAmountButtonSelected: {
-    borderColor: Colors.GREEN,
-    backgroundColor: Colors.GREEN,
+    borderColor: theme.brand,
+    backgroundColor: theme.brand,
   },
   quickAmountText: {
     ...Typography.BODY,
     fontSize: 13,
-    color: Colors.DARK,
+    color: theme.ink,
   },
   quickAmountTextSelected: {
-    color: Colors.WHITE,
+    color: '#FFFFFF',
     fontFamily: 'Helvetica-Bold',
   },
   customAmountContainer: {
@@ -658,27 +666,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     height: Spacing.INPUT_HEIGHT,
     borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.BUTTON_RADIUS,
     paddingHorizontal: Spacing.L,
   },
   currencySymbol: {
     ...Typography.BODY,
     fontWeight: '600',
-    color: Colors.DARK,
+    color: theme.ink,
     marginRight: Spacing.S,
   },
   amountInput: {
     flex: 1,
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
   },
   amountError: {
     ...Typography.ERROR,
     marginTop: Spacing.S,
   },
   summaryContainer: {
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.CARD_PADDING,
     marginTop: Spacing.M,
@@ -691,14 +699,15 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   summaryValue: {
     ...Typography.CARD_TITLE,
+    color: theme.ink,
   },
   summaryDivider: {
     height: 1,
-    backgroundColor: Colors.BORDER,
+    backgroundColor: theme.border,
     marginVertical: Spacing.XS,
   },
   bottomContainer: {
@@ -707,9 +716,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: Spacing.SCREEN_PADDING,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderTopWidth: 1,
-    borderTopColor: Colors.BORDER,
+    borderTopColor: theme.border,
   },
   payHintRow: {
     marginBottom: Spacing.M,
@@ -717,21 +726,22 @@ const styles = StyleSheet.create({
   },
   payHintText: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     textAlign: 'center',
   },
   payButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
   },
   payButtonDisabled: {
-    backgroundColor: Colors.GRAY,
+    backgroundColor: theme.inkFaint,
     opacity: 0.6,
   },
   payButtonText: {
     ...Typography.BUTTON_TEXT,
   },
-});
+  });
+}
