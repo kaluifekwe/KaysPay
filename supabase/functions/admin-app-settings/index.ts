@@ -14,7 +14,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-const VALID_KEYS = ["support_whatsapp_number"];
+const VALID_KEYS = ["support_whatsapp_number", "support_whatsapp_group_url"];
 
 /**
  * Normalises a WhatsApp number to the digits-only international form
@@ -33,6 +33,31 @@ function normaliseWhatsAppNumber(raw: string): string | null {
   // number. Anything outside this range is a typo, not a real number.
   if (digits.length < 10 || digits.length > 15) return null;
   return digits;
+}
+
+/**
+ * Accepts only a real chat.whatsapp.com invite, and strips WhatsApp's
+ * copy-source tracking params (?s=cl&p=a&ilr=4) — the invite resolves from
+ * the code in the path alone, and a bare URL avoids &-escaping problems
+ * when it is dropped into email HTML.
+ *
+ * The host check is a security boundary, not just tidiness: this URL is
+ * embedded in an email sent to every new user, so an arbitrary link pasted
+ * here (by mistake or otherwise) would be a link Kay's Pay appears to
+ * vouch for.
+ */
+function normaliseWhatsAppGroupUrl(raw: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:") return null;
+  if (url.hostname !== "chat.whatsapp.com") return null;
+  const code = url.pathname.replace(/^\/+/, "");
+  if (!/^[A-Za-z0-9]{6,}$/.test(code)) return null;
+  return `https://chat.whatsapp.com/${code}`;
 }
 
 serve(async (req) => {
@@ -84,6 +109,14 @@ serve(async (req) => {
       if (!normalised) {
         return json({
           error: "Enter a valid WhatsApp number in international format, e.g. 2349068446111.",
+        }, 400);
+      }
+      value = normalised;
+    } else if (key === "support_whatsapp_group_url") {
+      const normalised = normaliseWhatsAppGroupUrl(rawValue);
+      if (!normalised) {
+        return json({
+          error: "Enter a valid WhatsApp group invite link, e.g. https://chat.whatsapp.com/AbC123.",
         }, 400);
       }
       value = normalised;

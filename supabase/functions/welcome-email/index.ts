@@ -36,12 +36,23 @@ serve(async (req: Request) => {
   const { data: due, error } = await supabase.rpc("claim_due_welcome_emails", { p_limit: 50 });
   if (error) return json({ success: false, error: "Could not load pending welcomes" }, 500);
 
+  // Owner-editable WhatsApp support group (app_settings, migration 132).
+  // Read once per run, not per email. A missing or invalid value simply
+  // omits the invite block rather than failing the send — the welcome email
+  // matters more than the invite.
+  const { data: groupSetting } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", "support_whatsapp_group_url")
+    .maybeSingle();
+  const whatsappGroupUrl = groupSetting?.value ?? null;
+
   const rows: { user_id: string; email: string; full_name: string | null }[] = due || [];
   let sent = 0;
   let failed = 0;
 
   for (const row of rows) {
-    const { subject, html, text } = welcomeEmail(firstNameOf(row.full_name));
+    const { subject, html, text } = welcomeEmail(firstNameOf(row.full_name), whatsappGroupUrl);
     const result = await sendEmail(row.email, subject, html, { from: WELCOME_FROM, replyTo: WELCOME_REPLY_TO, text });
     if (result.ok) {
       sent++;

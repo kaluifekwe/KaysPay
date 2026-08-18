@@ -192,10 +192,36 @@ const WELCOME_STEPS: [string, string][] = [
   ["Explore the rest", "Electricity, TV subscriptions and exam pins are all in there too."],
 ];
 
+// WhatsApp's own brand green is #25D366, but white text on it only reaches
+// ~2:1 contrast — genuinely hard to read. This deepened green keeps the
+// unmistakable WhatsApp association at ~4.4:1 against white.
+const WHATSAPP_GREEN = "#0E8A43";
+const WHATSAPP_PANEL_BG = "#f1fbf5";
+const WHATSAPP_PANEL_LINE = "#bfe8cf";
+const WHATSAPP_EYEBROW = "#0b7a3b";
+
+/**
+ * Only a real WhatsApp group invite is ever rendered. This email goes to
+ * every new user, so a mistyped or malicious value in the admin-editable
+ * setting must never become a link we vouch for — anything that isn't a
+ * chat.whatsapp.com invite is dropped and the block is omitted entirely
+ * rather than shipping a broken or untrustworthy button.
+ */
+function safeWhatsAppGroupUrl(url: string | null | undefined): string | null {
+  const trimmed = String(url ?? "").trim();
+  if (!trimmed) return null;
+  if (!/^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]/.test(trimmed)) return null;
+  return trimmed;
+}
+
 /** Founder welcome, sent ~10 minutes after signup by the welcome-email cron. */
-export function welcomeEmail(firstName: string): { subject: string; html: string; text: string } {
+export function welcomeEmail(
+  firstName: string,
+  whatsappGroupUrl?: string | null,
+): { subject: string; html: string; text: string } {
   const name = firstName && firstName.trim() ? esc(firstName.trim()) : "there";
   const plainName = firstName && firstName.trim() ? firstName.trim() : "there";
+  const groupUrl = safeWhatsAppGroupUrl(whatsappGroupUrl);
   const steps = WELCOME_STEPS.map(
     ([t, d], i) => `
     <tr><td style="padding:0 0 16px;">
@@ -211,6 +237,28 @@ export function welcomeEmail(firstName: string): { subject: string; html: string
     </td></tr>`,
   ).join("");
 
+  // Sits between the numbered steps and "reply to this email", so the two
+  // support channels read as a pair: the community first, then the direct
+  // line to the founder. Omitted entirely when no valid group URL is set.
+  const whatsappBlock = groupUrl
+    ? `
+    <tr><td style="padding:6px 28px 4px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${WHATSAPP_PANEL_BG};border:1px solid ${WHATSAPP_PANEL_LINE};border-radius:12px;">
+        <tr><td style="padding:18px 18px 16px;">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;color:${WHATSAPP_EYEBROW};margin-bottom:7px;">WhatsApp community</div>
+          <div style="font-size:16px;font-weight:800;color:${INK};margin-bottom:6px;">Join our WhatsApp group</div>
+          <div style="font-size:14px;color:${MUTED};line-height:1.55;margin-bottom:14px;">Get quick help when you need it, hear about new features first, and tell us what to build next. It's the fastest way to reach us, and to meet other people using Kay's Pay.</div>
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            <td style="background:${WHATSAPP_GREEN};border-radius:10px;">
+              <a href="${esc(groupUrl)}" style="display:inline-block;padding:12px 20px;font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;">Join the WhatsApp group →</a>
+            </td>
+          </tr></table>
+          <div style="font-size:12px;color:${MUTED};line-height:1.5;margin-top:12px;">Or open this link: <a href="${esc(groupUrl)}" style="color:${ACCENT};text-decoration:none;">${esc(groupUrl)}</a></div>
+        </td></tr>
+      </table>
+    </td></tr>`
+    : "";
+
   const inner = `
     <tr><td style="padding:30px 28px 6px;">
       <h1 style="margin:0 0 14px;font-size:21px;color:${INK};font-weight:800;">Welcome to Kay's Pay 🎉</h1>
@@ -222,7 +270,8 @@ export function welcomeEmail(firstName: string): { subject: string; html: string
     <tr><td style="padding:0 28px 6px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${steps}</table>
     </td></tr>
-    <tr><td style="padding:8px 28px 4px;">
+    ${whatsappBlock}
+    <tr><td style="padding:${groupUrl ? "14px" : "8px"} 28px 4px;">
       <p style="margin:0 0 14px;font-size:15px;color:${INK};line-height:1.65;">If you ever have a question, an issue, or even just an idea, reply to this email. It comes straight to my team and me, and we read every one.</p>
       <p style="margin:0 0 4px;font-size:15px;color:${INK};line-height:1.65;">Thanks for trusting us with the little things that matter every day. We're only just getting started.</p>
     </td></tr>
@@ -248,6 +297,16 @@ export function welcomeEmail(firstName: string): { subject: string; html: string
     "",
     "HERE'S WHAT YOU CAN DO",
     ...WELCOME_STEPS.map(([t, d], i) => `${i + 1}. ${t} — ${d.replace(/&amp;/g, "&")}`),
+    // Gmail/Yahoo score HTML-only mail worse for spam, so the text part has
+    // to carry the invite too — not just the HTML.
+    ...(groupUrl
+      ? [
+        "",
+        "JOIN OUR WHATSAPP GROUP",
+        "Get quick help when you need it, hear about new features first, and tell us what to build next.",
+        groupUrl,
+      ]
+      : []),
     "",
     "If you ever have a question, an issue, or even just an idea, reply to this email. It comes straight to my team and me, and we read every one.",
     "",
