@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient } from "../_shared/auth.ts";
 import { redactSecrets } from "../_shared/redact.ts";
 import { processFundingCandidate } from "../_shared/funding-credit.ts";
+import { confirmServiceRefund } from "../_shared/service-refund.ts";
 
 const FLW_WEBHOOK_SECRET = Deno.env.get("FLUTTERWAVE_WEBHOOK_SECRET");
 
@@ -104,6 +105,48 @@ serve(async (req: Request) => {
           if (credit.outcome === "unmatched" || credit.outcome === "rejected") {
             throw new Error(`FLUTTERWAVE_FUNDING_${credit.outcome.toUpperCase()}`);
           }
+      }
+    }
+
+    // Transfer settlement (Wallet Transfer, phase 1) — Flutterwave's v4
+    // dashboard only exposes ONE live webhook URL for the whole account, not
+    // one per feature/product, so this has to live in the same function as
+    // funding rather than its own dedicated one (unlike Paystack/Quidax,
+    // which do support per-integration webhook URLs). /direct-transfers only
+    // ever confirms "accepted" synchronously (see transfer-send) — this is
+    // the only place a transfer transaction actually completes.
+    if (event.type === "transfer.disburse" || event.type === "transfer.reversal") {
+      const reference = String(event.data?.reference || "");
+      const providerTransferId = String(event.data?.id || "");
+      const status = String(event.data?.status || "").toUpperCase();
+
+      if (reference) {
+        const { data: tx } = await supabase
+          .from("transactions")
+          .select("id, status, type")
+          .eq("metadata->>idempotency_key", reference)
+          .maybeSingle();
+
+        if (tx && tx.type === "transfer") {
+          if (event.type === "transfer.disburse" && status === "SUCCESSFUL") {
+            const { error } = await supabase.rpc("complete_service_transaction", {
+              p_tx_id: tx.id,
+              p_order_id: providerTransferId,
+            });
+            if (error) throw error;
+          } else {
+            // transfer.reversal, or a disburse that settled as anything
+            // other than SUCCESSFUL — refund. Both refund RPCs are
+            // idempotent regardless of the transaction's exact prior state.
+            await confirmServiceRefund(
+              supabase,
+              tx.id,
+              `flutterwave_${event.type}_${status || "unknown"}`,
+              "webhook",
+              tx.status === "completed",
+            );
+          }
+        }
       }
     }
 
