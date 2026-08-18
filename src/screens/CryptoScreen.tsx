@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../constants/colors';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { formatNaira } from '../utils/formatCurrency';
@@ -41,12 +40,33 @@ interface CryptoScreenProps {
 
 type Tab = 'deposit' | 'buy' | 'sell' | 'withdraw';
 
-// The hero balance card is the one deliberately dark element on an
-// otherwise light, on-brand screen — a raised "this is your crypto
-// balance" moment, same idea as a bank app's card-style balance display.
-const HERO_BG = Colors.GREEN_DARK;
-const HERO_TEXT_MUTED = '#BFE3CE';
-const HERO_ERROR = '#FFC9C9';
+// Crypto gets its own dark, trading-terminal treatment — deliberately
+// distinct from the rest of the app's light screens, the way a bank app's
+// investing tab often reads differently from its everyday banking screens.
+// Kept local to this file rather than folded into the shared Colors
+// constants, since nothing else in the app uses it.
+const DARK = {
+  void: '#0A100C',
+  surface: '#121912',
+  raised: '#1B241C',
+  raised2: '#212C22',
+  hairline: '#28352C',
+  hairlineSoft: '#1E2921',
+  ink: '#EFF5F0',
+  inkMuted: '#8FA294',
+  inkFaint: '#5C6E62',
+  brand: '#35B073',
+  brandSoft: '#1E4A31',
+  gold: '#E7B451',
+  goldSoft: '#4A3A1C',
+  up: '#5FD98A',
+  down: '#F16A5C',
+  errorBg: '#3A1F1C',
+};
+
+const HERO_BG = DARK.raised;
+const HERO_TEXT_MUTED = DARK.inkMuted;
+const HERO_ERROR = DARK.down;
 
 const TAB_ICONS: Record<Tab, keyof typeof Ionicons.glyphMap> = {
   deposit: 'arrow-down-circle-outline',
@@ -389,10 +409,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     const { payment, estimatedCrypto, destinationType, asset, pendingSwap } = pendingBuyPayment;
     return (
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-        <StatusBar barStyle="dark-content" backgroundColor={Colors.WHITE} />
+        <StatusBar barStyle="light-content" backgroundColor={DARK.void} />
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => setPendingBuyPayment(null)}>
-            <Ionicons name="chevron-back" size={26} color={Colors.DARK} />
+            <Ionicons name="chevron-back" size={26} color={DARK.ink} />
           </TouchableOpacity>
           <Text style={styles.topTitle}>Complete your purchase</Text>
         </View>
@@ -473,10 +493,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.WHITE} />
+      <StatusBar barStyle="light-content" backgroundColor={DARK.void} />
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => navigation.goBack()}>
-          <Ionicons name="chevron-back" size={26} color={Colors.DARK} />
+          <Ionicons name="chevron-back" size={26} color={DARK.ink} />
         </TouchableOpacity>
         <Text style={styles.topTitle}>Crypto</Text>
       </View>
@@ -505,7 +525,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             {(['deposit', 'buy', 'sell', 'withdraw'] as Tab[]).map((t) => (
               <TouchableOpacity key={t} style={styles.actionItem} onPress={() => handleSelectTab(t)} activeOpacity={0.75}>
                 <View style={[styles.actionIcon, tab === t && styles.actionIconActive]}>
-                  <Ionicons name={TAB_ICONS[t]} size={20} color={Colors.GREEN} />
+                  <Ionicons name={TAB_ICONS[t]} size={20} color={DARK.brand} />
                 </View>
                 <Text style={[styles.actionLabel, tab === t && styles.actionLabelActive]}>{TAB_LABELS[t]}</Text>
               </TouchableOpacity>
@@ -555,7 +575,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                     disabled={depositLoading}
                   >
                     {depositLoading ? (
-                      <ActivityIndicator color={Colors.WHITE} />
+                      <ActivityIndicator color={DARK.void} />
                     ) : (
                       <Text style={styles.primaryButtonText}>Generate Deposit Address</Text>
                     )}
@@ -569,7 +589,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
               <View>
                 <Text style={styles.hintText}>Pick a coin — live prices from Quidax's own market.</Text>
                 {marketsLoading && markets.length === 0 ? (
-                  <ActivityIndicator color={Colors.GREEN} style={{ marginTop: Spacing.L }} />
+                  <ActivityIndicator color={DARK.brand} style={{ marginTop: Spacing.L }} />
                 ) : (
                   <View style={styles.coinList}>
                     {markets.map((m) => (
@@ -589,7 +609,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                         <View style={styles.coinRight}>
                           <Text style={styles.coinPrice}>{formatNaira(m.priceNgn)}</Text>
                           {m.change24hPct != null && (
-                            <Text style={[styles.coinChange, { color: m.change24hPct >= 0 ? Colors.GREEN : Colors.RED }]}>
+                            <Text style={[styles.coinChange, { color: m.change24hPct >= 0 ? DARK.up : DARK.down }]}>
                               {m.change24hPct >= 0 ? '+' : ''}{m.change24hPct.toFixed(2)}%
                             </Text>
                           )}
@@ -607,7 +627,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             {tab === 'buy' && buyStep === 'amount' && selectedBuyAsset && (
               <View>
                 <TouchableOpacity style={styles.backLink} onPress={() => setBuyStep('pick')}>
-                  <Ionicons name="chevron-back" size={16} color={Colors.GRAY} />
+                  <Ionicons name="chevron-back" size={16} color={DARK.inkFaint} />
                   <Text style={styles.backLinkText}>Change coin</Text>
                 </TouchableOpacity>
 
@@ -625,7 +645,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   value={buyUsdt}
                   onChangeText={(t) => setBuyUsdt(t.replace(/[^0-9.]/g, ''))}
                   placeholder="e.g. 50"
-                  placeholderTextColor={Colors.GRAY}
+                  placeholderTextColor={DARK.inkFaint}
                   keyboardType="decimal-pad"
                   autoFocus
                 />
@@ -649,7 +669,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             {tab === 'buy' && buyStep === 'review' && selectedBuyAsset && (
               <View>
                 <TouchableOpacity style={styles.backLink} onPress={() => setBuyStep('amount')}>
-                  <Ionicons name="chevron-back" size={16} color={Colors.GRAY} />
+                  <Ionicons name="chevron-back" size={16} color={DARK.inkFaint} />
                   <Text style={styles.backLinkText}>Edit amount</Text>
                 </TouchableOpacity>
 
@@ -696,7 +716,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                     onPress={handleBuy}
                     disabled={!canBuy || buyLoading}
                   >
-                    {buyLoading ? <ActivityIndicator color={Colors.WHITE} /> : <Text style={styles.primaryButtonText}>Confirm & Pay</Text>}
+                    {buyLoading ? <ActivityIndicator color={DARK.void} /> : <Text style={styles.primaryButtonText}>Confirm & Pay</Text>}
                   </TouchableOpacity>
                 )}
               </View>
@@ -705,7 +725,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             {tab === 'buy' && buyStep === 'destination' && selectedBuyAsset && (
               <View>
                 <TouchableOpacity style={styles.backLink} onPress={() => setBuyStep('review')}>
-                  <Ionicons name="chevron-back" size={16} color={Colors.GRAY} />
+                  <Ionicons name="chevron-back" size={16} color={DARK.inkFaint} />
                   <Text style={styles.backLinkText}>Back to review</Text>
                 </TouchableOpacity>
 
@@ -743,7 +763,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                       value={buyDestAddress}
                       onChangeText={setBuyDestAddress}
                       placeholder={`Paste your ${buyDestNetwork} address`}
-                      placeholderTextColor={Colors.GRAY}
+                      placeholderTextColor={DARK.inkFaint}
                       autoCapitalize="none"
                       autoCorrect={false}
                     />
@@ -772,7 +792,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   disabled={!canBuy || buyLoading}
                 >
                   {buyLoading ? (
-                    <ActivityIndicator color={Colors.WHITE} />
+                    <ActivityIndicator color={DARK.void} />
                   ) : (
                     <Text style={styles.primaryButtonText}>Confirm & Pay</Text>
                   )}
@@ -788,7 +808,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   value={sellUsdt}
                   onChangeText={(t) => setSellUsdt(t.replace(/[^0-9.]/g, ''))}
                   placeholder="e.g. 10"
-                  placeholderTextColor={Colors.GRAY}
+                  placeholderTextColor={DARK.inkFaint}
                   keyboardType="decimal-pad"
                 />
                 {sellNgnEstimate != null && (
@@ -849,7 +869,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   value={wdAddress}
                   onChangeText={setWdAddress}
                   placeholder={`Paste your ${wdNetwork} address`}
-                  placeholderTextColor={Colors.GRAY}
+                  placeholderTextColor={DARK.inkFaint}
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
@@ -861,7 +881,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   value={wdAmount}
                   onChangeText={(t) => setWdAmount(t.replace(/[^0-9.]/g, ''))}
                   placeholder="e.g. 20"
-                  placeholderTextColor={Colors.GRAY}
+                  placeholderTextColor={DARK.inkFaint}
                   keyboardType="decimal-pad"
                 />
                 {quidaxUsdtBalance != null && numericWdAmount > quidaxUsdtBalance && (
@@ -902,8 +922,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   );
 }
 
+const MONO = Platform.select({ ios: 'Courier', android: 'monospace', default: 'monospace' });
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE },
+  container: { flex: 1, backgroundColor: DARK.void },
   flex: { flex: 1 },
   topBar: {
     flexDirection: 'row',
@@ -913,7 +935,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.S,
   },
   backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  topTitle: { ...Typography.SECTION_HEADING, color: Colors.DARK, marginLeft: Spacing.S },
+  topTitle: { ...Typography.SECTION_HEADING, color: DARK.ink, marginLeft: Spacing.S },
   scrollContent: { paddingHorizontal: Spacing.SCREEN_PADDING, paddingBottom: 60 },
 
   hero: {
@@ -922,9 +944,11 @@ const styles = StyleSheet.create({
     padding: Spacing.CARD_PADDING,
     marginTop: Spacing.S,
     marginBottom: Spacing.L,
+    borderWidth: 1,
+    borderColor: DARK.hairline,
   },
   heroLabel: { ...Typography.CAPTION, color: HERO_TEXT_MUTED, marginBottom: Spacing.XS },
-  heroValue: { fontSize: 28, fontWeight: '600', color: Colors.WHITE, marginBottom: Spacing.S },
+  heroValue: { fontFamily: MONO, fontSize: 28, fontWeight: '600', color: DARK.ink, marginBottom: Spacing.S },
   heroSub: { ...Typography.CAPTION, color: HERO_TEXT_MUTED },
   heroError: { ...Typography.CAPTION, color: HERO_ERROR },
   heroLegacy: { ...Typography.CAPTION, color: HERO_TEXT_MUTED, marginTop: Spacing.XS },
@@ -935,39 +959,42 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.GREEN_10,
+    backgroundColor: DARK.surface,
+    borderWidth: 1,
+    borderColor: DARK.hairline,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Spacing.XS,
   },
-  actionIconActive: { borderWidth: 1.5, borderColor: Colors.GREEN },
-  actionLabel: { ...Typography.CAPTION, color: Colors.GRAY },
-  actionLabelActive: { color: Colors.GREEN_DARK, fontWeight: '700' },
+  actionIconActive: { borderWidth: 1.5, borderColor: DARK.brand, backgroundColor: DARK.brandSoft },
+  actionLabel: { ...Typography.CAPTION, color: DARK.inkFaint },
+  actionLabelActive: { color: DARK.brand, fontWeight: '700' },
 
   panel: {
-    backgroundColor: Colors.WHITE,
+    backgroundColor: DARK.surface,
     borderRadius: Spacing.CARD_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: DARK.hairline,
     padding: Spacing.CARD_PADDING,
   },
-  label: { ...Typography.SECTION_HEADING, color: Colors.DARK, marginTop: Spacing.M, marginBottom: Spacing.M },
+  label: { ...Typography.SECTION_HEADING, color: DARK.ink, marginTop: Spacing.M, marginBottom: Spacing.M },
   input: {
     height: Spacing.INPUT_HEIGHT,
     borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
+    borderColor: DARK.hairline,
+    backgroundColor: DARK.raised,
     borderRadius: Spacing.BUTTON_RADIUS,
     paddingHorizontal: Spacing.L,
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: DARK.ink,
   },
-  estimateText: { ...Typography.BODY, color: Colors.GREEN, fontWeight: '700', marginTop: Spacing.S },
-  errorText: { ...Typography.ERROR, marginTop: Spacing.S },
-  hintText: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: Spacing.M },
+  estimateText: { ...Typography.BODY, fontFamily: MONO, color: DARK.brand, fontWeight: '700', marginTop: Spacing.S },
+  errorText: { ...Typography.ERROR, color: DARK.down, marginTop: Spacing.S },
+  hintText: { ...Typography.CAPTION, color: DARK.inkMuted, marginTop: Spacing.M },
   notLiveBanner: {
     ...Typography.CAPTION,
-    color: Colors.GREEN_DARK,
-    backgroundColor: Colors.GREEN_10,
+    color: DARK.brand,
+    backgroundColor: DARK.brandSoft,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.M,
     marginBottom: Spacing.L,
@@ -975,23 +1002,24 @@ const styles = StyleSheet.create({
 
   primaryButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: DARK.brand,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: Spacing.L,
   },
-  primaryButtonDisabled: { opacity: 0.5 },
-  primaryButtonText: { ...Typography.BUTTON_TEXT },
+  primaryButtonDisabled: { opacity: 0.4 },
+  primaryButtonText: { ...Typography.BUTTON_TEXT, color: DARK.void },
 
   savedRow: {
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: DARK.hairline,
+    backgroundColor: DARK.raised,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.M,
     marginBottom: Spacing.S,
   },
-  savedRowText: { ...Typography.BODY, color: Colors.DARK },
+  savedRowText: { ...Typography.BODY, color: DARK.ink },
 
   networkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.S },
   networkChip: {
@@ -999,66 +1027,68 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.S,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: DARK.hairline,
   },
-  networkChipSelected: { backgroundColor: Colors.GREEN_10, borderColor: Colors.GREEN },
-  networkChipText: { ...Typography.CAPTION, color: Colors.GRAY, fontWeight: '600' },
-  networkChipTextSelected: { color: Colors.GREEN_DARK },
+  networkChipSelected: { backgroundColor: DARK.brandSoft, borderColor: DARK.brand },
+  networkChipText: { ...Typography.CAPTION, color: DARK.inkMuted, fontWeight: '600' },
+  networkChipTextSelected: { color: DARK.brand },
 
   qrCard: {
     alignSelf: 'center',
-    backgroundColor: Colors.WHITE,
+    backgroundColor: DARK.ink,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: DARK.hairline,
     borderRadius: 12,
     padding: Spacing.M,
     marginBottom: Spacing.M,
   },
-  depositAddressText: { ...Typography.BODY, color: Colors.DARK, textAlign: 'center', marginBottom: Spacing.M },
+  depositAddressText: { ...Typography.BODY, fontFamily: MONO, color: DARK.ink, textAlign: 'center', marginBottom: Spacing.M },
   copyAddressButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.GREEN,
+    borderColor: DARK.brand,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  copyAddressButtonText: { ...Typography.BUTTON_TEXT, color: Colors.GREEN },
+  copyAddressButtonText: { ...Typography.BUTTON_TEXT, color: DARK.brand },
 
   confirmBox: {
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: DARK.raised,
+    borderWidth: 1,
+    borderColor: DARK.hairline,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.CARD_PADDING,
     marginTop: Spacing.L,
   },
-  confirmText: { ...Typography.BODY, color: Colors.DARK },
-  confirmWarning: { ...Typography.CAPTION, color: Colors.ERROR, marginTop: Spacing.S },
+  confirmText: { ...Typography.BODY, color: DARK.ink },
+  confirmWarning: { ...Typography.CAPTION, color: DARK.gold, marginTop: Spacing.S },
   checkRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.M },
   checkbox: {
     width: 22,
     height: 22,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: Colors.GREEN,
+    borderColor: DARK.brand,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: Spacing.M,
   },
-  checkboxChecked: { backgroundColor: Colors.GREEN },
-  checkboxMark: { color: Colors.WHITE, fontSize: 14, fontWeight: '700' },
-  checkLabel: { ...Typography.CAPTION, color: Colors.DARK, flex: 1 },
+  checkboxChecked: { backgroundColor: DARK.brand },
+  checkboxMark: { color: DARK.void, fontSize: 14, fontWeight: '700' },
+  checkLabel: { ...Typography.CAPTION, color: DARK.ink, flex: 1 },
 
   destinationToggleRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.L },
 
-  heroValue2: { fontSize: 26, fontWeight: '600', color: Colors.DARK, marginTop: Spacing.XS, marginBottom: Spacing.M },
+  heroValue2: { fontFamily: MONO, fontSize: 26, fontWeight: '600', color: DARK.ink, marginTop: Spacing.XS, marginBottom: Spacing.M },
   payDetailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: Spacing.XS },
-  payDetailLabel: { ...Typography.CAPTION, color: Colors.GRAY },
-  payDetailValue: { ...Typography.BODY, color: Colors.DARK, fontWeight: '600' },
-  payDetailAccount: { ...Typography.BODY, color: Colors.GREEN, fontWeight: '700', letterSpacing: 1 },
+  payDetailLabel: { ...Typography.CAPTION, color: DARK.inkFaint },
+  payDetailValue: { ...Typography.BODY, color: DARK.ink, fontWeight: '600' },
+  payDetailAccount: { ...Typography.BODY, fontFamily: MONO, color: DARK.brand, fontWeight: '700', letterSpacing: 1 },
   feeBreakdown: { marginTop: Spacing.M, paddingHorizontal: Spacing.XS },
-  feeLabel: { ...Typography.CAPTION, color: Colors.GRAY },
+  feeLabel: { ...Typography.CAPTION, fontFamily: MONO, color: DARK.inkMuted },
   confirmWarningBox: {
-    backgroundColor: '#FCEBEB',
+    backgroundColor: DARK.errorBg,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.M,
     marginTop: Spacing.L,
@@ -1067,7 +1097,7 @@ const styles = StyleSheet.create({
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.GREEN,
+    borderColor: DARK.brand,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: Spacing.L,
@@ -1080,40 +1110,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: Spacing.M,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
+    borderBottomColor: DARK.hairlineSoft,
   },
   coinIcon: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: Colors.GREEN_10,
+    backgroundColor: DARK.raised2,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: Spacing.M,
   },
-  coinIconText: { ...Typography.BODY, color: Colors.GREEN_DARK, fontWeight: '700' },
+  coinIconText: { ...Typography.BODY, fontFamily: MONO, color: DARK.brand, fontWeight: '700' },
   coinMid: { flex: 1 },
-  coinName: { ...Typography.BODY, color: Colors.DARK, fontWeight: '600' },
-  coinTicker: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: 2 },
+  coinName: { ...Typography.BODY, color: DARK.ink, fontWeight: '600' },
+  coinTicker: { ...Typography.CAPTION, color: DARK.inkFaint, marginTop: 2 },
   coinRight: { alignItems: 'flex-end' },
-  coinPrice: { ...Typography.BODY, color: Colors.DARK, fontWeight: '600' },
-  coinChange: { ...Typography.CAPTION, fontWeight: '600', marginTop: 2 },
+  coinPrice: { ...Typography.BODY, fontFamily: MONO, color: DARK.ink, fontWeight: '600' },
+  coinChange: { ...Typography.CAPTION, fontFamily: MONO, fontWeight: '600', marginTop: 2 },
 
   backLink: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.M },
-  backLinkText: { ...Typography.CAPTION, color: Colors.GRAY, marginLeft: 2 },
+  backLinkText: { ...Typography.CAPTION, color: DARK.inkFaint, marginLeft: 2 },
 
   coinSummaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: DARK.raised,
+    borderWidth: 1,
+    borderColor: DARK.hairline,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.M,
     marginBottom: Spacing.L,
   },
   reviewBig: {
+    fontFamily: MONO,
     fontSize: 30,
     fontWeight: '700',
-    color: Colors.DARK,
+    color: DARK.ink,
     marginTop: Spacing.S,
     marginBottom: Spacing.M,
   },
