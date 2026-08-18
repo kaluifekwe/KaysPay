@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
 import ProviderLogo from '../components/ProviderLogo';
@@ -16,6 +17,8 @@ interface TVScreenProps {
 }
 
 export default function TVScreen({ navigation }: TVScreenProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const providers = useMemo(() => vtuService.getTVProviders(), []);
 
   return (
@@ -59,8 +62,9 @@ export default function TVScreen({ navigation }: TVScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   scrollView: { flex: 1 },
   scrollContent: {
     paddingHorizontal: Spacing.SCREEN_PADDING,
@@ -74,21 +78,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.M,
   },
-  backText: { fontSize: 28, fontWeight: '600', color: Colors.DARK },
-  title: { ...Typography.SCREEN_TITLE, marginBottom: Spacing.XS },
-  subtitle: { ...Typography.BODY, color: Colors.GRAY, marginBottom: Spacing.L },
+  backText: { fontSize: 28, fontWeight: '600', color: theme.ink },
+  title: { ...Typography.SCREEN_TITLE, color: theme.ink, marginBottom: Spacing.XS },
+  subtitle: { ...Typography.BODY, color: theme.inkMuted, marginBottom: Spacing.L },
   providerGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.M },
   providerCard: {
     width: '47%',
     minHeight: 132,
     padding: Spacing.CARD_PADDING,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.CARD_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
   },
   providerLogo: { marginBottom: Spacing.S },
-  providerName: { ...Typography.CARD_TITLE, fontSize: 15, textAlign: 'center' },
-});
+  providerName: { ...Typography.CARD_TITLE, color: theme.ink, fontSize: 15, textAlign: 'center' },
+  });
+}

@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, AppStateStatus, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from './ThemeProvider';
 import { useTransactionAuth } from './TransactionAuthProvider';
 import { deviceSessionService } from '../services/deviceSession.service';
 import { authService, APP_GATE_STATUS_TIMEOUT_MS, PINLockStatus } from '../services/auth.service';
@@ -12,6 +13,8 @@ const LOCK_AFTER_MS = 60 * 60 * 1000;
 
 export function AppPrivacyGate({ children }: { children: React.ReactNode }) {
   const { authorize } = useTransactionAuth();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const backgroundedAt = useRef<number | null>(null);
   const unlocking = useRef(false);
   const checkingRef = useRef(false);
@@ -234,11 +237,11 @@ export function AppPrivacyGate({ children }: { children: React.ReactNode }) {
                 style={styles.splashImage}
                 resizeMode="contain"
               />
-              <ActivityIndicator color={Colors.WHITE} style={styles.splashSpinner} />
+              <ActivityIndicator color="#FFFFFF" style={styles.splashSpinner} />
             </>
           ) : (
             <>
-              <Ionicons name="shield-checkmark" size={52} color={Colors.GREEN} />
+              <Ionicons name="shield-checkmark" size={52} color={theme.brand} />
               <Text style={styles.title}>Kay’s Pay is protected</Text>
               {securityError ? (
                 <>
@@ -260,7 +263,8 @@ export function AppPrivacyGate({ children }: { children: React.ReactNode }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   root: { flex: 1 },
   cover: {
     ...StyleSheet.absoluteFillObject,
@@ -268,16 +272,18 @@ const styles = StyleSheet.create({
     elevation: 1000,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.background,
     padding: 24,
   },
-  // Matches app.json's expo-splash-screen backgroundColor (#1A5C3A) so the
-  // native splash and this cover are indistinguishable.
-  coverSplash: { backgroundColor: Colors.GREEN },
+  // Deliberately NOT theme-reactive: matches app.json's fixed native
+  // expo-splash-screen backgroundColor (#1A5C3A), which cannot itself change
+  // with the in-app theme toggle, so this cover must stay fixed too or the
+  // handover between native splash and this cover would visibly flash.
+  coverSplash: { backgroundColor: '#1A5C3A' },
   splashImage: { width: 240 },
   splashSpinner: { marginTop: 28 },
-  title: { marginTop: 14, fontSize: 20, fontWeight: '700', color: Colors.DARK },
-  message: { marginTop: 16, maxWidth: 300, textAlign: 'center', color: Colors.GRAY, fontSize: 14, lineHeight: 20 },
+  title: { marginTop: 14, fontSize: 20, fontWeight: '700', color: theme.ink },
+  message: { marginTop: 16, maxWidth: 300, textAlign: 'center', color: theme.inkMuted, fontSize: 14, lineHeight: 20 },
   button: {
     marginTop: 24,
     minWidth: 160,
@@ -285,7 +291,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
   },
-  buttonText: { color: Colors.WHITE, fontSize: 16, fontWeight: '700' },
-});
+  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  });
+}

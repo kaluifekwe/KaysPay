@@ -1,11 +1,14 @@
 import React from 'react';
 import { View, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Strings } from '../constants/strings';
 
 export default function CardsScreen() {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
       <View style={styles.content}>
@@ -16,22 +19,25 @@ export default function CardsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.WHITE,
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  title: {
-    ...Typography.SCREEN_TITLE,
-    marginBottom: 8,
-  },
-  placeholder: {
-    ...Typography.BODY,
-    color: Colors.GRAY,
-  },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    content: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    title: {
+      ...Typography.SCREEN_TITLE,
+      color: theme.ink,
+      marginBottom: 8,
+    },
+    placeholder: {
+      ...Typography.BODY,
+      color: theme.inkMuted,
+    },
+  });
+}

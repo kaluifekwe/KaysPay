@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, StyleSheet, Text, TouchableOpacity, View, AccessibilityInfo } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from './ThemeProvider';
 
 const PERSON_IMAGE = require('../assets/promo-data-person.png');
 
@@ -35,6 +36,8 @@ interface DataPromoBannerProps {
 // Loop pauses on blur and collapses to a single fade for reduced-motion users
 // — see useFocusEffect/AccessibilityInfo below.
 export default function DataPromoBanner({ navigation }: DataPromoBannerProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [reduceMotion, setReduceMotion] = useState(false);
   const groupOpacity = useRef(new Animated.Value(1)).current;
   const wordAnims = useRef(WORDS.map(() => new Animated.Value(0))).current;
@@ -235,11 +238,12 @@ export default function DataPromoBanner({ navigation }: DataPromoBannerProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   card: {
     borderRadius: 18,
     overflow: 'hidden',
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     height: 220,
     marginBottom: 16,
   },
@@ -266,7 +270,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Helvetica-Bold',
     fontSize: 20,
     lineHeight: 23,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   wordSpacing: {
     marginRight: 6,
@@ -275,7 +279,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Helvetica-Bold',
     fontSize: 20,
     lineHeight: 23,
-    color: Colors.AMBER,
+    color: theme.gold,
     marginTop: 2,
   },
   sub: {
@@ -296,10 +300,10 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     marginRight: 6,
   },
-  badgeDiscount: { backgroundColor: Colors.WHITE },
-  badgeDiscountText: { fontFamily: 'Helvetica-Bold', fontSize: 10.5, color: Colors.GREEN_DARK },
-  badgeCashback: { backgroundColor: Colors.AMBER },
-  badgeCashbackText: { fontFamily: 'Helvetica-Bold', fontSize: 10.5, color: Colors.GREEN_DARK },
+  badgeDiscount: { backgroundColor: '#FFFFFF' },
+  badgeDiscountText: { fontFamily: 'Helvetica-Bold', fontSize: 10.5, color: theme.brandDark },
+  badgeCashback: { backgroundColor: theme.gold },
+  badgeCashbackText: { fontFamily: 'Helvetica-Bold', fontSize: 10.5, color: theme.brandDark },
   photo: {
     position: 'absolute',
     right: -6,
@@ -311,7 +315,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 17,
     bottom: 16,
-    backgroundColor: Colors.AMBER,
+    backgroundColor: theme.gold,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
@@ -319,6 +323,7 @@ const styles = StyleSheet.create({
   ctaText: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 12,
-    color: Colors.GREEN_DARK,
+    color: theme.brandDark,
   },
-});
+  });
+}

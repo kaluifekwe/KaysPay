@@ -3,7 +3,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StyleSheet, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import HomeScreen from '../screens/HomeScreen';
 import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
 import MoreScreen from '../screens/MoreScreen';
@@ -37,13 +38,15 @@ export default function TabNavigator() {
   // looks cut off and its taps land on the OS bar instead of our buttons.
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 8);
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
 
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: Colors.GREEN,
-        tabBarInactiveTintColor: Colors.GRAY,
+        tabBarActiveTintColor: theme.brand,
+        tabBarInactiveTintColor: theme.inkFaint,
         tabBarShowLabel: true,
         tabBarLabelStyle: styles.label,
         tabBarIconStyle: styles.iconWrap,
@@ -78,11 +81,12 @@ export default function TabNavigator() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   tabBar: {
     borderTopWidth: 1,
-    borderTopColor: Colors.BORDER,
-    backgroundColor: Colors.WHITE,
+    borderTopColor: theme.border,
+    backgroundColor: theme.surface,
     paddingTop: 8,
     // Sit above the OS nav bar rather than being clipped behind it.
     elevation: 8,
@@ -95,4 +99,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 2,
   },
-});
+  });
+}

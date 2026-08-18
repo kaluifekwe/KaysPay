@@ -8,7 +8,8 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from './ThemeProvider';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
 
@@ -31,6 +32,8 @@ function toWatDate(year: number, month: number, day: number, hour: number, minut
 }
 
 export default function DateTimePickerModal({ visible, onClose, onConfirm, initial }: Props) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const base = initial ?? new Date();
   const [viewYear, setViewYear] = useState(base.getFullYear());
   const [viewMonth, setViewMonth] = useState(base.getMonth());
@@ -156,28 +159,29 @@ export default function DateTimePickerModal({ visible, onClose, onConfirm, initi
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: Colors.WHITE, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: Spacing.L, paddingTop: Spacing.L },
+  sheet: { backgroundColor: theme.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: Spacing.L, paddingTop: Spacing.L },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.L },
-  title: { ...Typography.SECTION_HEADING },
-  close: { fontSize: 20, color: Colors.DARK, paddingHorizontal: Spacing.S },
+  title: { ...Typography.SECTION_HEADING, color: theme.ink },
+  close: { fontSize: 20, color: theme.ink, paddingHorizontal: Spacing.S },
   monthRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.M },
   navBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  navText: { fontSize: 26, color: Colors.GREEN, fontWeight: '700' },
-  monthLabel: { ...Typography.BODY, fontWeight: '700', color: Colors.DARK },
+  navText: { fontSize: 26, color: theme.brand, fontWeight: '700' },
+  monthLabel: { ...Typography.BODY, fontWeight: '700', color: theme.ink },
   weekRow: { flexDirection: 'row' },
-  weekday: { flex: 1, textAlign: 'center', ...Typography.CAPTION, color: Colors.GRAY },
+  weekday: { flex: 1, textAlign: 'center', ...Typography.CAPTION, color: theme.inkMuted },
   grid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: Spacing.S, marginBottom: Spacing.M },
   cell: { width: `${100 / 7}%`, aspectRatio: 1, justifyContent: 'center', alignItems: 'center' },
   cellSelected: { },
-  cellText: { ...Typography.BODY, color: Colors.DARK },
-  cellDisabled: { color: Colors.BORDER },
+  cellText: { ...Typography.BODY, color: theme.ink },
+  cellDisabled: { color: theme.hairline },
   cellTextSelected: {
-    color: Colors.WHITE,
+    color: '#FFFFFF',
     fontWeight: '700',
     overflow: 'hidden',
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     width: 36,
     height: 36,
     borderRadius: 18,
@@ -185,20 +189,21 @@ const styles = StyleSheet.create({
     textAlignVertical: 'center',
     lineHeight: 36,
   },
-  timeLabel: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.S },
+  timeLabel: { ...Typography.CAPTION, color: theme.inkMuted, marginBottom: Spacing.S },
   timeRow: { flexDirection: 'row', gap: Spacing.M, height: 130, marginBottom: Spacing.L },
   timeCol: { flex: 1 },
-  timeColLabel: { ...Typography.CAPTION, color: Colors.GRAY, textAlign: 'center', marginBottom: Spacing.XS },
-  timeScroll: { flex: 1, borderWidth: 1, borderColor: Colors.BORDER, borderRadius: Spacing.BUTTON_RADIUS },
+  timeColLabel: { ...Typography.CAPTION, color: theme.inkMuted, textAlign: 'center', marginBottom: Spacing.XS },
+  timeScroll: { flex: 1, borderWidth: 1, borderColor: theme.border, borderRadius: Spacing.BUTTON_RADIUS },
   timeItem: { paddingVertical: Spacing.S, alignItems: 'center' },
-  timeItemActive: { backgroundColor: Colors.GREEN_LIGHT },
-  timeItemText: { ...Typography.BODY, color: Colors.DARK },
-  timeItemTextActive: { color: Colors.GREEN_DARK, fontWeight: '700' },
-  selectedTimeBox: { flex: 1, borderWidth: 1, borderColor: Colors.GREEN, borderRadius: Spacing.BUTTON_RADIUS, justifyContent: 'center', alignItems: 'center' },
-  selectedTimeLabel: { ...Typography.CAPTION, color: Colors.GRAY },
-  selectedTime: { ...Typography.HEADING, color: Colors.GREEN, fontWeight: '700' },
-  selectedDate: { ...Typography.CAPTION, color: Colors.DARK, marginTop: 2 },
-  confirmBtn: { height: Spacing.BUTTON_HEIGHT_PRIMARY, backgroundColor: Colors.GREEN, borderRadius: Spacing.BUTTON_RADIUS, justifyContent: 'center', alignItems: 'center', marginTop: Spacing.S },
+  timeItemActive: { backgroundColor: theme.brandSoft },
+  timeItemText: { ...Typography.BODY, color: theme.ink },
+  timeItemTextActive: { color: theme.brand, fontWeight: '700' },
+  selectedTimeBox: { flex: 1, borderWidth: 1, borderColor: theme.brand, borderRadius: Spacing.BUTTON_RADIUS, justifyContent: 'center', alignItems: 'center' },
+  selectedTimeLabel: { ...Typography.CAPTION, color: theme.inkMuted },
+  selectedTime: { ...Typography.HEADING, color: theme.brand, fontWeight: '700' },
+  selectedDate: { ...Typography.CAPTION, color: theme.ink, marginTop: 2 },
+  confirmBtn: { height: Spacing.BUTTON_HEIGHT_PRIMARY, backgroundColor: theme.brand, borderRadius: Spacing.BUTTON_RADIUS, justifyContent: 'center', alignItems: 'center', marginTop: Spacing.S },
   confirmBtnDisabled: { opacity: 0.5 },
-  confirmText: { ...Typography.BUTTON_TEXT, color: Colors.WHITE },
-});
+  confirmText: { ...Typography.BUTTON_TEXT, color: '#FFFFFF' },
+  });
+}

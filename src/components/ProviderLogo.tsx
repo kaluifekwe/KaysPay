@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet, ImageSourcePropType, StyleProp, ViewStyle } from 'react-native';
-import { Colors } from '../constants/colors';
+import { useTheme } from './ThemeProvider';
 
 interface ProviderLogoProps {
   /** The real logo image, when we have one. Falls back to an initials badge otherwise. */
@@ -22,9 +22,11 @@ export default function ProviderLogo({
   source,
   fallbackLabel,
   size = 36,
-  fallbackColor = Colors.GREEN,
+  fallbackColor,
   style,
 }: ProviderLogoProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const dim = { width: size, height: size, borderRadius: size / 2 };
   // Scale padding with size so small badges don't lose most of their area to
   // a fixed inset (a flat 4px eats ~35% of a 22px circle but barely any of a 44px one).
@@ -32,7 +34,7 @@ export default function ProviderLogo({
 
   if (!source) {
     return (
-      <View style={[styles.fallback, dim, { backgroundColor: fallbackColor }, style]}>
+      <View style={[styles.fallback, dim, { backgroundColor: fallbackColor ?? theme.brand }, style]}>
         <Text style={[styles.fallbackText, { fontSize: size * 0.32 }]}>
           {initialsOf(fallbackLabel)}
         </Text>
@@ -47,11 +49,12 @@ export default function ProviderLogo({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: import('../constants/theme').AppTheme) {
+  return StyleSheet.create({
   wrap: {
-    backgroundColor: Colors.WHITE,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
@@ -65,8 +68,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   fallbackText: {
-    color: Colors.WHITE,
+    color: '#FFFFFF',
     fontWeight: '700',
     fontFamily: 'Helvetica-Bold',
   },
-});
+  });
+}

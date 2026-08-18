@@ -7,7 +7,8 @@ import {
   StatusBar,
   Image,
 } from 'react-native';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { isAuthenticated } from '../lib/supabase';
 import { StorageKeys, storageHelpers } from '../lib/mmkv';
 
@@ -18,6 +19,8 @@ interface SplashScreenProps {
 }
 
 export default function SplashScreen({ navigation }: SplashScreenProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const scaleAnim = useRef(new Animated.Value(0.5)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -62,7 +65,7 @@ export default function SplashScreen({ navigation }: SplashScreenProps) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.WHITE} />
+      <StatusBar barStyle={theme.mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <Animated.View
         style={[
           styles.logoContainer,
@@ -81,10 +84,11 @@ export default function SplashScreen({ navigation }: SplashScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -105,7 +109,8 @@ const styles = StyleSheet.create({
   appName: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 28,
-    color: Colors.GREEN,
+    color: theme.brand,
     letterSpacing: 1,
   },
-});
+  });
+}

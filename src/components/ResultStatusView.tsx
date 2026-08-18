@@ -2,7 +2,8 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from './ThemeProvider';
 import { formatNaira } from '../utils/formatCurrency';
 
 export type ResultStatus = 'processing' | 'success' | 'failed';
@@ -38,12 +39,14 @@ export default function ResultStatusView({
   onDone?: () => void;
   doneLabel?: string;
 }) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const visual =
     status === 'success'
       ? { color: SUCCESS_GREEN, icon: 'checkmark' as const, label: successLabel }
       : status === 'failed'
-      ? { color: Colors.RED, icon: 'close' as const, label: failedLabel }
-      : { color: Colors.WARNING, icon: 'time' as const, label: processingLabel };
+      ? { color: theme.down, icon: 'close' as const, label: failedLabel }
+      : { color: theme.gold, icon: 'time' as const, label: processingLabel };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -55,14 +58,14 @@ export default function ResultStatusView({
 
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={[styles.iconCircle, { backgroundColor: visual.color }]}>
-          <Ionicons name={visual.icon} size={42} color={Colors.WHITE} />
+          <Ionicons name={visual.icon} size={42} color="#FFFFFF" />
         </View>
         <Text style={styles.statusLabel}>{visual.label}</Text>
         {typeof amount === 'number' ? <Text style={styles.amount}>{formatNaira(amount)}</Text> : null}
 
         {status === 'processing' ? (
           <View style={styles.spinnerRow}>
-            <ActivityIndicator size="small" color={Colors.GRAY} />
+            <ActivityIndicator size="small" color={theme.inkMuted} />
             <Text style={styles.processingHint}>{processingHint}</Text>
           </View>
         ) : null}
@@ -81,17 +84,19 @@ export default function ResultStatusView({
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE },
-  header: { alignItems: 'center', paddingVertical: 14 },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: Colors.DARK },
-  body: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 20 },
-  iconCircle: { width: 84, height: 84, borderRadius: 42, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
-  statusLabel: { fontSize: 24, fontWeight: '700', color: Colors.DARK, marginBottom: 8 },
-  amount: { fontSize: 36, fontWeight: '800', color: Colors.DARK, marginBottom: 12 },
-  spinnerRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, marginBottom: 8 },
-  processingHint: { marginLeft: 8, color: Colors.GRAY, fontSize: 14 },
-  message: { marginTop: 12, fontSize: 14, color: Colors.GRAY, textAlign: 'center', lineHeight: 20 },
-  doneButton: { margin: 20, backgroundColor: Colors.GREEN, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  doneText: { color: Colors.WHITE, fontSize: 16, fontWeight: '700' },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: theme.background },
+    header: { alignItems: 'center', paddingVertical: 14 },
+    headerTitle: { fontSize: 18, fontWeight: '700', color: theme.ink },
+    body: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 20 },
+    iconCircle: { width: 84, height: 84, borderRadius: 42, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+    statusLabel: { fontSize: 24, fontWeight: '700', color: theme.ink, marginBottom: 8 },
+    amount: { fontSize: 36, fontWeight: '800', color: theme.ink, marginBottom: 12 },
+    spinnerRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, marginBottom: 8 },
+    processingHint: { marginLeft: 8, color: theme.inkMuted, fontSize: 14 },
+    message: { marginTop: 12, fontSize: 14, color: theme.inkMuted, textAlign: 'center', lineHeight: 20 },
+    doneButton: { margin: 20, backgroundColor: theme.brand, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+    doneText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  });
+}

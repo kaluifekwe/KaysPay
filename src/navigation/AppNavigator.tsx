@@ -36,7 +36,8 @@ import { authService } from '../services/auth.service';
 import { pushService } from '../services/push.service';
 import { deviceSessionService } from '../services/deviceSession.service';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 
 const RootStack = createStackNavigator<any>();
 const MainStack = createStackNavigator<any>();
@@ -76,6 +77,8 @@ function MainStackScreen() {
 }
 
 export default function AppNavigator() {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuth, setIsAuth] = useState(false);
   // Whether the signed-in user's email has been verified via our own
@@ -193,7 +196,7 @@ export default function AppNavigator() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.GREEN} />
+        <ActivityIndicator size="large" color={theme.brand} />
       </View>
     );
   }
@@ -237,11 +240,13 @@ export default function AppNavigator() {
   );
 }
 
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.WHITE,
-  },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    loadingContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: theme.background,
+    },
+  });
+}

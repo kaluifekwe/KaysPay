@@ -13,7 +13,8 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from './ThemeProvider';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
 import { formatNigerianPhone } from '../utils/detectNetwork';
@@ -46,6 +47,8 @@ export default function ContactPickerModal({
   multiSelect = false,
   onSelectMultiple,
 }: Props) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const { contacts, loading, permission, query, setQuery } = useContacts();
   // Store the FULL selected contact objects (not just ids), keyed by id, so a
   // selection survives even after the search query changes and filters that
@@ -109,7 +112,7 @@ export default function ContactPickerModal({
     if (loading) {
       return (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={Colors.GREEN} />
+          <ActivityIndicator size="large" color={theme.brand} />
           <Text style={styles.muted}>Loading contacts…</Text>
         </View>
       );
@@ -167,7 +170,7 @@ export default function ContactPickerModal({
           <TextInput
             style={styles.search}
             placeholder="Search name or number"
-            placeholderTextColor={Colors.GRAY}
+            placeholderTextColor={theme.inkFaint}
             value={query}
             onChangeText={setQuery}
             autoCorrect={false}
@@ -197,8 +200,9 @@ export default function ContactPickerModal({
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -206,21 +210,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.L,
     paddingVertical: Spacing.M,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
+    borderBottomColor: theme.border,
   },
-  title: { ...Typography.SCREEN_TITLE },
-  close: { fontSize: 22, color: Colors.DARK, paddingHorizontal: Spacing.S },
+  title: { ...Typography.SCREEN_TITLE, color: theme.ink },
+  close: { fontSize: 22, color: theme.ink, paddingHorizontal: Spacing.S },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     margin: Spacing.L,
     paddingHorizontal: Spacing.L,
     height: Spacing.INPUT_HEIGHT,
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: Spacing.BUTTON_RADIUS,
   },
   searchIcon: { fontSize: 16, marginRight: Spacing.M },
-  search: { flex: 1, ...Typography.BODY, color: Colors.DARK, paddingVertical: 0 },
+  search: { flex: 1, ...Typography.BODY, color: theme.ink, paddingVertical: 0 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -232,15 +236,15 @@ const styles = StyleSheet.create({
     width: Spacing.AVATAR_MEDIUM,
     height: Spacing.AVATAR_MEDIUM,
     borderRadius: Spacing.AVATAR_MEDIUM / 2,
-    backgroundColor: Colors.GREEN_LIGHT,
+    backgroundColor: theme.brandSoft,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: Spacing.M,
   },
-  avatarText: { ...Typography.CAPTION, color: Colors.GREEN, fontWeight: '700' },
+  avatarText: { ...Typography.CAPTION, color: theme.brand, fontWeight: '700' },
   rowMid: { flex: 1, marginRight: Spacing.M },
-  name: { ...Typography.BODY, color: Colors.DARK },
-  number: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: 2 },
+  name: { ...Typography.BODY, color: theme.ink },
+  number: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: 2 },
   badge: {
     paddingHorizontal: Spacing.M,
     height: Spacing.CHIP_HEIGHT,
@@ -248,52 +252,53 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  badgeText: { ...Typography.CAPTION, color: Colors.WHITE, fontWeight: '700' },
-  sep: { height: 1, backgroundColor: Colors.BORDER, marginLeft: Spacing.L + Spacing.AVATAR_MEDIUM + Spacing.M },
+  badgeText: { ...Typography.CAPTION, color: '#FFFFFF', fontWeight: '700' },
+  sep: { height: 1, backgroundColor: theme.border, marginLeft: Spacing.L + Spacing.AVATAR_MEDIUM + Spacing.M },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: Spacing.XL },
-  muted: { ...Typography.BODY, color: Colors.GRAY, textAlign: 'center', marginTop: Spacing.M },
+  muted: { ...Typography.BODY, color: theme.inkMuted, textAlign: 'center', marginTop: Spacing.M },
   emptyIcon: { fontSize: 44, marginBottom: Spacing.S },
-  emptyTitle: { ...Typography.HEADING, color: Colors.DARK, marginBottom: Spacing.S },
+  emptyTitle: { ...Typography.HEADING, color: theme.ink, marginBottom: Spacing.S },
   settingsBtn: {
     marginTop: Spacing.L,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     height: Spacing.BUTTON_HEIGHT_SECONDARY,
     paddingHorizontal: Spacing.XL,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  settingsBtnText: { ...Typography.BUTTON_TEXT, color: Colors.WHITE },
+  settingsBtnText: { ...Typography.BUTTON_TEXT, color: '#FFFFFF' },
   checkbox: {
     width: 22,
     height: 22,
     borderRadius: 11,
     borderWidth: 2,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: Spacing.M,
   },
   checkboxChecked: {
-    borderColor: Colors.GREEN,
-    backgroundColor: Colors.GREEN,
+    borderColor: theme.brand,
+    backgroundColor: theme.brand,
   },
-  checkboxTick: { color: Colors.WHITE, fontSize: 13, fontWeight: '700' },
+  checkboxTick: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
   footer: {
     padding: Spacing.L,
     borderTopWidth: 1,
-    borderTopColor: Colors.BORDER,
+    borderTopColor: theme.border,
   },
   doneBtn: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
   },
   doneBtnDisabled: {
-    backgroundColor: Colors.GRAY,
+    backgroundColor: theme.inkFaint,
     opacity: 0.6,
   },
-  doneBtnText: { ...Typography.BUTTON_TEXT, color: Colors.WHITE },
-});
+  doneBtnText: { ...Typography.BUTTON_TEXT, color: '#FFFFFF' },
+  });
+}
