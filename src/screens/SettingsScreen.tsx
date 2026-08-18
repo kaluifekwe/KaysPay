@@ -11,13 +11,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../constants/colors';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
+import { AppTheme } from '../constants/theme';
 import { formatNaira } from '../utils/formatCurrency';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { authService } from '../services/auth.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
+import { useTheme } from '../components/ThemeProvider';
 
 interface SettingsScreenProps {
   navigation: any;
@@ -41,6 +42,8 @@ interface SettingsSection {
 
 export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   const { authorize } = useTransactionAuth();
+  const { theme, mode, setMode } = useTheme();
+  const styles = createStyles(theme);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -162,9 +165,10 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
         },
         {
           icon: 'color-palette-outline',
-          label: 'Theme',
-          value: 'Light',
-          onPress: () => {},
+          label: 'Dark Mode',
+          hasToggle: true,
+          toggleValue: mode === 'dark',
+          onToggle: (value: boolean) => setMode(value ? 'dark' : 'light'),
         },
       ],
     },
@@ -192,7 +196,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       activeOpacity={item.hasToggle ? 1 : 0.7}
     >
       <View style={styles.settingsItemLeft}>
-        <Ionicons name={item.icon} size={20} color={Colors.GREEN} style={styles.settingsItemIcon} />
+        <Ionicons name={item.icon} size={20} color={theme.brand} style={styles.settingsItemIcon} />
         <Text
           style={[
             styles.settingsItemLabel,
@@ -207,9 +211,9 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           <Switch
             value={item.toggleValue}
             onValueChange={item.onToggle}
-            trackColor={{ false: Colors.LIGHT_GRAY, true: Colors.GREEN_LIGHT }}
-            thumbColor={item.toggleValue ? Colors.GREEN : Colors.GRAY}
-            ios_backgroundColor={Colors.LIGHT_GRAY}
+            trackColor={{ false: theme.surfaceRaised2, true: theme.brandSoft }}
+            thumbColor={item.toggleValue ? theme.brand : theme.inkFaint}
+            ios_backgroundColor={theme.surfaceRaised2}
           />
         ) : (
           <>
@@ -262,7 +266,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           disabled={loggingOut}
         >
           {loggingOut ? (
-            <ActivityIndicator color={Colors.WHITE} size="small" />
+            <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
             <Text style={styles.logoutButtonText}>Log Out</Text>
           )}
@@ -274,111 +278,114 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.WHITE,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.L,
-    paddingVertical: Spacing.M,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
-  },
-  backButton: {
-    width: 48,
-    height: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  backButtonText: {
-    fontSize: 28,
-    fontWeight: '600',
-    color: Colors.DARK,
-  },
-  headerTitle: {
-    ...Typography.SCREEN_TITLE,
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerSpacer: {
-    width: 48,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: Spacing.SCREEN_PADDING,
-  },
-  section: {
-    marginBottom: Spacing.XL,
-  },
-  sectionTitle: {
-    ...Typography.SECTION_HEADING,
-    color: Colors.GREEN,
-    marginBottom: Spacing.M,
-  },
-  sectionContent: {
-    backgroundColor: Colors.LIGHT_GRAY,
-    borderRadius: Spacing.BUTTON_RADIUS,
-    overflow: 'hidden',
-  },
-  settingsItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.L,
-    paddingVertical: Spacing.L,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
-  },
-  settingsItemLast: {
-    borderBottomWidth: 0,
-  },
-  settingsItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  settingsItemIcon: {
-    fontSize: 20,
-    marginRight: Spacing.M,
-  },
-  settingsItemLabel: {
-    ...Typography.BODY,
-    color: Colors.DARK,
-  },
-  settingsItemRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  settingsItemValue: {
-    ...Typography.BODY,
-    color: Colors.GRAY,
-    marginRight: Spacing.S,
-  },
-  settingsItemChevron: {
-    fontSize: 20,
-    color: Colors.GRAY,
-  },
-  destructiveText: {
-    color: Colors.RED,
-  },
-  logoutButton: {
-    backgroundColor: Colors.RED,
-    height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    borderRadius: Spacing.BUTTON_RADIUS,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: Spacing.L,
-  },
-  logoutButtonText: {
-    ...Typography.BUTTON_TEXT,
-    color: Colors.WHITE,
-  },
-  bottomSpacer: {
-    height: Spacing.XL * 2,
-  },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.L,
+      paddingVertical: Spacing.M,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    backButton: {
+      width: 48,
+      height: 48,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    backButtonText: {
+      fontSize: 28,
+      fontWeight: '600',
+      color: theme.ink,
+    },
+    headerTitle: {
+      ...Typography.SCREEN_TITLE,
+      color: theme.ink,
+      flex: 1,
+      textAlign: 'center',
+    },
+    headerSpacer: {
+      width: 48,
+    },
+    scrollView: {
+      flex: 1,
+    },
+    scrollContent: {
+      padding: Spacing.SCREEN_PADDING,
+    },
+    section: {
+      marginBottom: Spacing.XL,
+    },
+    sectionTitle: {
+      ...Typography.SECTION_HEADING,
+      color: theme.brand,
+      marginBottom: Spacing.M,
+    },
+    sectionContent: {
+      backgroundColor: theme.surfaceRaised,
+      borderRadius: Spacing.BUTTON_RADIUS,
+      overflow: 'hidden',
+    },
+    settingsItem: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.L,
+      paddingVertical: Spacing.L,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    settingsItemLast: {
+      borderBottomWidth: 0,
+    },
+    settingsItemLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
+    settingsItemIcon: {
+      fontSize: 20,
+      marginRight: Spacing.M,
+    },
+    settingsItemLabel: {
+      ...Typography.BODY,
+      color: theme.ink,
+    },
+    settingsItemRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    settingsItemValue: {
+      ...Typography.BODY,
+      color: theme.inkMuted,
+      marginRight: Spacing.S,
+    },
+    settingsItemChevron: {
+      fontSize: 20,
+      color: theme.inkMuted,
+    },
+    destructiveText: {
+      color: theme.down,
+    },
+    logoutButton: {
+      backgroundColor: theme.down,
+      height: Spacing.BUTTON_HEIGHT_PRIMARY,
+      borderRadius: Spacing.BUTTON_RADIUS,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginTop: Spacing.L,
+    },
+    logoutButtonText: {
+      ...Typography.BUTTON_TEXT,
+      color: '#FFFFFF',
+    },
+    bottomSpacer: {
+      height: Spacing.XL * 2,
+    },
+  });
+}

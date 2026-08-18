@@ -25,6 +25,8 @@ export const StorageKeys = {
   // server remains authoritative for the PIN lock deadline.
   PRIVACY_BACKGROUNDED_AT: 'privacy_backgrounded_at',
   PIN_LOCKED_UNTIL: 'pin_locked_until',
+  // 'light' | 'dark' — see src/components/ThemeProvider.tsx.
+  THEME_MODE: 'theme_mode',
 };
 
 // Helper functions using SecureStore (max 2KB per item)
