@@ -12,23 +12,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { authService } from '../services/auth.service';
-
-const BRAND_GREEN = '#1A5C3A';
-const DARK_TEXT = '#0F1A14';
-const GRAY_TEXT = '#6B7280';
-const LABEL_COLOR = '#374151';
-const BORDER_COLOR = '#E5E7EB';
-const ERROR_RED = '#DC2626';
-const WHITE = '#FFFFFF';
-const SCREEN_BG = '#F8FAF9';
-const FOCUS_BG = '#FAFFFE';
-const BACK_BTN_BG = '#F3F4F6';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 
 interface Props {
   navigation: any;
 }
 
 export default function ForgotPasswordScreen({ navigation }: Props) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState('');
   const [focused, setFocused] = useState(false);
@@ -102,7 +95,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
                 <TextInput
                   style={styles.input}
                   placeholder="example@gmail.com"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={theme.inkMuted}
                   value={email}
                   onChangeText={(t) => {
                     setEmail(t);
@@ -143,26 +136,27 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: SCREEN_BG },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   keyboardView: { flex: 1 },
   header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16, zIndex: 10 },
   backButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: BACK_BTN_BG,
+    backgroundColor: theme.surfaceRaised,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
   },
-  backArrow: { fontSize: 22, color: DARK_TEXT, fontWeight: '600' },
-  title: { fontFamily: 'Helvetica-Bold', fontSize: 26, color: DARK_TEXT, marginBottom: 6 },
-  subtitle: { fontSize: 14, color: GRAY_TEXT, lineHeight: 20 },
+  backArrow: { fontSize: 22, color: theme.ink, fontWeight: '600' },
+  title: { fontFamily: 'Helvetica-Bold', fontSize: 26, color: theme.ink, marginBottom: 6 },
+  subtitle: { fontSize: 14, color: theme.inkMuted, lineHeight: 20 },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 40 },
   formCard: {
-    backgroundColor: WHITE,
+    backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 20,
     shadowColor: '#000',
@@ -172,27 +166,27 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   fieldContainer: { marginBottom: 4 },
-  label: { fontSize: 13, color: LABEL_COLOR, fontWeight: '500', marginBottom: 6 },
-  required: { color: ERROR_RED },
+  label: { fontSize: 13, color: theme.ink, fontWeight: '500', marginBottom: 6 },
+  required: { color: theme.down },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     height: 56,
     borderWidth: 1.5,
-    borderColor: BORDER_COLOR,
+    borderColor: theme.border,
     borderRadius: 12,
     paddingHorizontal: 16,
-    backgroundColor: WHITE,
+    backgroundColor: theme.surface,
   },
-  inputFocused: { borderColor: BRAND_GREEN, backgroundColor: FOCUS_BG, borderWidth: 2 },
-  inputError: { borderColor: ERROR_RED },
+  inputFocused: { borderColor: theme.brand, backgroundColor: theme.surfaceRaised2, borderWidth: 2 },
+  inputError: { borderColor: theme.down },
   fieldIcon: { fontSize: 18, marginRight: 10, opacity: 0.5 },
-  input: { flex: 1, fontSize: 15, color: DARK_TEXT, padding: 0 },
-  validIcon: { fontSize: 18, color: BRAND_GREEN, fontWeight: '700', marginLeft: 8 },
-  errorText: { fontSize: 11, color: ERROR_RED, marginTop: 6, marginLeft: 4 },
+  input: { flex: 1, fontSize: 15, color: theme.ink, padding: 0 },
+  validIcon: { fontSize: 18, color: theme.brand, fontWeight: '700', marginLeft: 8 },
+  errorText: { fontSize: 11, color: theme.down, marginTop: 6, marginLeft: 4 },
   primaryButton: {
     height: 56,
-    backgroundColor: BRAND_GREEN,
+    backgroundColor: theme.brand,
     borderRadius: 14,
     flexDirection: 'row',
     justifyContent: 'center',
@@ -201,9 +195,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   primaryButtonDisabled: { opacity: 0.6 },
-  primaryButtonText: { fontFamily: 'Helvetica-Bold', fontSize: 16, color: WHITE },
-  primaryButtonArrow: { fontSize: 18, color: WHITE, marginLeft: 8 },
+  primaryButtonText: { fontFamily: 'Helvetica-Bold', fontSize: 16, color: '#FFFFFF' },
+  primaryButtonArrow: { fontSize: 18, color: '#FFFFFF', marginLeft: 8 },
   backLink: { alignItems: 'center', marginTop: 4 },
-  backLinkText: { fontSize: 14, color: GRAY_TEXT },
-  backLinkBold: { color: BRAND_GREEN, fontWeight: '700' },
-});
+  backLinkText: { fontSize: 14, color: theme.inkMuted },
+  backLinkBold: { color: theme.brand, fontWeight: '700' },
+  });
+}

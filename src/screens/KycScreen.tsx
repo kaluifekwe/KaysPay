@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
+  StyleSheet,
   ScrollView,
   TouchableOpacity,
   TextInput,
@@ -15,16 +15,13 @@ import { useFocusEffect } from '@react-navigation/native';
 import { kycService } from '../services/kyc.service';
 import { safeErrorMessage } from '../utils/errorMessages';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
-
-const BRAND_GREEN = '#1A5C3A';
-const DARK_TEXT = '#0F1A14';
-const GRAY_TEXT = '#6B7280';
-const WHITE = '#FFFFFF';
-const BORDER_COLOR = '#E5E7EB';
-const ERROR_RED = '#DC2626';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 
 export default function KycScreen({ navigation }: any) {
   useSensitiveScreenProtection();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [loading, setLoading] = useState(true);
   const [verified, setVerified] = useState(false);
   const [verifiedName, setVerifiedName] = useState<string | undefined>();
@@ -89,7 +86,7 @@ export default function KycScreen({ navigation }: any) {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator color={BRAND_GREEN} size="large" />
+          <ActivityIndicator color={theme.brand} size="large" />
         </View>
       ) : (
         <KeyboardAvoidingView style={styles.scrollView} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -127,7 +124,7 @@ export default function KycScreen({ navigation }: any) {
                   setError('');
                 }}
                 placeholder="Enter your 11-digit NIN"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={theme.inkMuted}
                 keyboardType="number-pad"
                 maxLength={11}
               />
@@ -140,7 +137,7 @@ export default function KycScreen({ navigation }: any) {
                 activeOpacity={0.8}
               >
                 {submitting ? (
-                  <ActivityIndicator color={WHITE} size="small" />
+                  <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
                   <Text style={styles.submitButtonText}>Verify</Text>
                 )}
@@ -154,8 +151,9 @@ export default function KycScreen({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: WHITE },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: {
     flexDirection: 'row',
@@ -163,38 +161,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: BORDER_COLOR,
+    borderBottomColor: theme.border,
   },
   backButton: { width: 44, height: 44, justifyContent: 'center', alignItems: 'center' },
-  backButtonText: { fontSize: 28, fontWeight: '600', color: DARK_TEXT },
-  headerTitle: { fontFamily: 'Helvetica-Bold', fontSize: 18, color: DARK_TEXT, flex: 1, textAlign: 'center' },
+  backButtonText: { fontSize: 28, fontWeight: '600', color: theme.ink },
+  headerTitle: { fontFamily: 'Helvetica-Bold', fontSize: 18, color: theme.ink, flex: 1, textAlign: 'center' },
   headerSpacer: { width: 44 },
   scrollView: { flex: 1 },
   scrollContent: { padding: 16 },
   formCard: {
-    backgroundColor: WHITE,
+    backgroundColor: theme.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: BORDER_COLOR,
+    borderColor: theme.border,
     padding: 20,
   },
-  title: { fontFamily: 'Helvetica-Bold', fontSize: 18, color: DARK_TEXT, marginBottom: 8 },
-  subtitle: { fontSize: 13, color: GRAY_TEXT, lineHeight: 19, marginBottom: 20 },
-  label: { fontSize: 13, color: DARK_TEXT, fontWeight: '600', marginBottom: 8 },
+  title: { fontFamily: 'Helvetica-Bold', fontSize: 18, color: theme.ink, marginBottom: 8 },
+  subtitle: { fontSize: 13, color: theme.inkMuted, lineHeight: 19, marginBottom: 20 },
+  label: { fontSize: 13, color: theme.ink, fontWeight: '600', marginBottom: 8 },
   input: {
     height: 52,
     borderWidth: 1.5,
-    borderColor: BORDER_COLOR,
+    borderColor: theme.border,
     borderRadius: 10,
     paddingHorizontal: 14,
     fontSize: 16,
     letterSpacing: 1,
-    color: DARK_TEXT,
+    color: theme.ink,
   },
-  inputError: { borderColor: ERROR_RED },
-  errorText: { fontSize: 12, color: ERROR_RED, marginTop: 6 },
+  inputError: { borderColor: theme.down },
+  errorText: { fontSize: 12, color: theme.down, marginTop: 6 },
   submitButton: {
-    backgroundColor: BRAND_GREEN,
+    backgroundColor: theme.brand,
     height: 52,
     borderRadius: 12,
     justifyContent: 'center',
@@ -202,22 +200,23 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   submitButtonDisabled: { opacity: 0.5 },
-  submitButtonText: { fontSize: 15, color: WHITE, fontWeight: '700' },
+  submitButtonText: { fontSize: 15, color: '#FFFFFF', fontWeight: '700' },
   verifiedCard: {
-    backgroundColor: '#F0FFF4',
+    backgroundColor: theme.brandSoft,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#C6F0D8',
+    borderColor: theme.brand,
     padding: 24,
     alignItems: 'center',
   },
   verifiedIcon: {
     fontSize: 32,
-    color: BRAND_GREEN,
+    color: theme.brand,
     fontWeight: '700',
     marginBottom: 8,
   },
-  verifiedTitle: { fontFamily: 'Helvetica-Bold', fontSize: 18, color: DARK_TEXT, marginBottom: 4 },
-  verifiedName: { fontSize: 15, color: BRAND_GREEN, fontWeight: '700', marginBottom: 8 },
-  verifiedSubtitle: { fontSize: 13, color: GRAY_TEXT, textAlign: 'center', lineHeight: 19 },
-});
+  verifiedTitle: { fontFamily: 'Helvetica-Bold', fontSize: 18, color: theme.ink, marginBottom: 4 },
+  verifiedName: { fontSize: 15, color: theme.brand, fontWeight: '700', marginBottom: 8 },
+  verifiedSubtitle: { fontSize: 13, color: theme.inkMuted, textAlign: 'center', lineHeight: 19 },
+  });
+}

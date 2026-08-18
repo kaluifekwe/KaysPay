@@ -14,31 +14,21 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { authService } from '../services/auth.service';
 import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
-
-const BRAND_GREEN = '#1A5C3A';
-const DARK_TEXT = '#0F1A14';
-const GRAY_TEXT = '#6B7280';
-const LABEL_COLOR = '#374151';
-const BORDER_COLOR = '#E5E7EB';
-const ERROR_RED = '#DC2626';
-const WHITE = '#FFFFFF';
-const SCREEN_BG = '#F8FAF9';
-const FOCUS_BG = '#FAFFFE';
-const BACK_BTN_BG = '#F3F4F6';
-const TRACK_BG = '#EEF2F0';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 
 // Same advisory strength signal as signup (RegistrationScreen): rewards length
 // + character variety, while the enforceable policy remains length-first.
-function passwordStrength(pw: string): { label: string; color: string; pct: number } {
+function passwordStrength(pw: string, theme: AppTheme): { label: string; color: string; pct: number } {
   let score = 0;
   if (pw.length >= 8) score++;
   if (pw.length >= 12) score++;
   if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score++;
   if (/\d/.test(pw)) score++;
   if (/[^A-Za-z0-9]/.test(pw)) score++;
-  if (score <= 1) return { label: 'Weak', color: '#DC2626', pct: 33 };
-  if (score <= 3) return { label: 'Fair', color: '#F59E0B', pct: 66 };
-  return { label: 'Strong', color: '#16A34A', pct: 100 };
+  if (score <= 1) return { label: 'Weak', color: theme.down, pct: 33 };
+  if (score <= 3) return { label: 'Fair', color: theme.gold, pct: 66 };
+  return { label: 'Strong', color: theme.brand, pct: 100 };
 }
 
 interface Props {
@@ -48,6 +38,8 @@ interface Props {
 
 export default function ResetPasswordScreen({ navigation, route }: Props) {
   useSensitiveScreenProtection();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const email = route?.params?.email || '';
 
   const [code, setCode] = useState('');
@@ -67,7 +59,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
   const passwordValid = passwordValidationError(password) === null;
   const confirmValid = confirm.length > 0 && confirm === password;
   const isValid = codeValid && passwordValid && confirmValid;
-  const strength = passwordStrength(password);
+  const strength = passwordStrength(password, theme);
 
   const handleReset = async () => {
     setError('');
@@ -153,7 +145,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
                 <TextInput
                   style={[styles.input, styles.codeInput]}
                   placeholder="6-digit code"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={theme.inkMuted}
                   value={code}
                   onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 6))}
                   onFocus={() => setFocused('code')}
@@ -178,7 +170,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
                   ref={passwordRef}
                   style={styles.input}
                   placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={theme.inkMuted}
                   value={password}
                   onChangeText={setPassword}
                   onFocus={() => setFocused('password')}
@@ -214,7 +206,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
                   ref={confirmRef}
                   style={styles.input}
                   placeholder="Re-enter your new password"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={theme.inkMuted}
                   value={confirm}
                   onChangeText={setConfirm}
                   onFocus={() => setFocused('confirm')}
@@ -258,27 +250,28 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: SCREEN_BG },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   keyboardView: { flex: 1 },
   header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16, zIndex: 10 },
   backButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: BACK_BTN_BG,
+    backgroundColor: theme.surfaceRaised,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
   },
-  backArrow: { fontSize: 22, color: DARK_TEXT, fontWeight: '600' },
-  title: { fontFamily: 'Helvetica-Bold', fontSize: 26, color: DARK_TEXT, marginBottom: 6 },
-  subtitle: { fontSize: 14, color: GRAY_TEXT, lineHeight: 20 },
-  emailBold: { color: DARK_TEXT, fontWeight: '700' },
+  backArrow: { fontSize: 22, color: theme.ink, fontWeight: '600' },
+  title: { fontFamily: 'Helvetica-Bold', fontSize: 26, color: theme.ink, marginBottom: 6 },
+  subtitle: { fontSize: 14, color: theme.inkMuted, lineHeight: 20 },
+  emailBold: { color: theme.ink, fontWeight: '700' },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 40 },
   formCard: {
-    backgroundColor: WHITE,
+    backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 20,
     shadowColor: '#000',
@@ -288,35 +281,35 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   fieldContainer: { marginBottom: 20 },
-  label: { fontSize: 13, color: LABEL_COLOR, fontWeight: '500', marginBottom: 6 },
-  required: { color: ERROR_RED },
+  label: { fontSize: 13, color: theme.ink, fontWeight: '500', marginBottom: 6 },
+  required: { color: theme.down },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     height: 56,
     borderWidth: 1.5,
-    borderColor: BORDER_COLOR,
+    borderColor: theme.border,
     borderRadius: 12,
     paddingHorizontal: 16,
-    backgroundColor: WHITE,
+    backgroundColor: theme.surface,
   },
-  inputFocused: { borderColor: BRAND_GREEN, backgroundColor: FOCUS_BG, borderWidth: 2 },
-  inputError: { borderColor: ERROR_RED },
+  inputFocused: { borderColor: theme.brand, backgroundColor: theme.surfaceRaised2, borderWidth: 2 },
+  inputError: { borderColor: theme.down },
   fieldIcon: { fontSize: 18, marginRight: 10, opacity: 0.5 },
-  input: { flex: 1, fontSize: 15, color: DARK_TEXT, padding: 0 },
+  input: { flex: 1, fontSize: 15, color: theme.ink, padding: 0 },
   codeInput: { letterSpacing: 6, fontWeight: '700' },
-  validIcon: { fontSize: 18, color: BRAND_GREEN, fontWeight: '700', marginLeft: 8 },
+  validIcon: { fontSize: 18, color: theme.brand, fontWeight: '700', marginLeft: 8 },
   eyeButton: { padding: 4, marginLeft: 8 },
   eyeIcon: { fontSize: 18 },
-  errorText: { fontSize: 11, color: ERROR_RED, marginTop: 6, marginLeft: 4 },
-  formError: { fontSize: 13, color: ERROR_RED, marginTop: 4, textAlign: 'center' },
+  errorText: { fontSize: 11, color: theme.down, marginTop: 6, marginLeft: 4 },
+  formError: { fontSize: 13, color: theme.down, marginTop: 4, textAlign: 'center' },
   strengthRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10, marginLeft: 2 },
-  strengthTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: TRACK_BG, overflow: 'hidden' },
+  strengthTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: theme.surfaceRaised, overflow: 'hidden' },
   strengthFill: { height: 6, borderRadius: 3 },
   strengthLabel: { fontSize: 12, fontWeight: '700', marginLeft: 10, width: 52, textAlign: 'right' },
   primaryButton: {
     height: 56,
-    backgroundColor: BRAND_GREEN,
+    backgroundColor: theme.brand,
     borderRadius: 14,
     flexDirection: 'row',
     justifyContent: 'center',
@@ -325,9 +318,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   primaryButtonDisabled: { opacity: 0.6 },
-  primaryButtonText: { fontFamily: 'Helvetica-Bold', fontSize: 16, color: WHITE },
-  primaryButtonArrow: { fontSize: 18, color: WHITE, marginLeft: 8 },
+  primaryButtonText: { fontFamily: 'Helvetica-Bold', fontSize: 16, color: '#FFFFFF' },
+  primaryButtonArrow: { fontSize: 18, color: '#FFFFFF', marginLeft: 8 },
   resendLink: { alignItems: 'center', marginTop: 4 },
-  resendText: { fontSize: 14, color: GRAY_TEXT },
-  resendBold: { color: BRAND_GREEN, fontWeight: '700' },
-});
+  resendText: { fontSize: 14, color: theme.inkMuted },
+  resendBold: { color: theme.brand, fontWeight: '700' },
+  });
+}

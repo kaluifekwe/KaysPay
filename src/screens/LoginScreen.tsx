@@ -12,23 +12,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { authService } from '../services/auth.service';
-
-const BRAND_GREEN = '#1A5C3A';
-const DARK_TEXT = '#0F1A14';
-const GRAY_TEXT = '#6B7280';
-const LABEL_COLOR = '#374151';
-const BORDER_COLOR = '#E5E7EB';
-const ERROR_RED = '#DC2626';
-const WHITE = '#FFFFFF';
-const SCREEN_BG = '#F8FAF9';
-const FOCUS_BG = '#FAFFFE';
-const BACK_BTN_BG = '#F3F4F6';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 
 interface LoginScreenProps {
   navigation: any;
 }
 
 export default function LoginScreen({ navigation }: LoginScreenProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -146,7 +139,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
                 <TextInput
                   style={styles.input}
                   placeholder="example@gmail.com"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={theme.inkMuted}
                   value={email}
                   onChangeText={(text) => {
                     setEmail(text);
@@ -179,7 +172,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
                   ref={passwordRef}
                   style={styles.input}
                   placeholder="Enter your password"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={theme.inkMuted}
                   value={password}
                   onChangeText={(text) => {
                     setPassword(text);
@@ -250,10 +243,11 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: SCREEN_BG,
+    backgroundColor: theme.background,
   },
   keyboardView: {
     flex: 1,
@@ -268,25 +262,25 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: BACK_BTN_BG,
+    backgroundColor: theme.surfaceRaised,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
   },
   backArrow: {
     fontSize: 22,
-    color: DARK_TEXT,
+    color: theme.ink,
     fontWeight: '600',
   },
   title: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 26,
-    color: DARK_TEXT,
+    color: theme.ink,
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 14,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
   },
   scrollView: {
     flex: 1,
@@ -296,7 +290,7 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   formCard: {
-    backgroundColor: WHITE,
+    backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 20,
     shadowColor: '#000',
@@ -310,30 +304,30 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 13,
-    color: LABEL_COLOR,
+    color: theme.ink,
     fontWeight: '500',
     marginBottom: 6,
   },
   required: {
-    color: ERROR_RED,
+    color: theme.down,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
     height: 56,
     borderWidth: 1.5,
-    borderColor: BORDER_COLOR,
+    borderColor: theme.border,
     borderRadius: 12,
     paddingHorizontal: 16,
-    backgroundColor: WHITE,
+    backgroundColor: theme.surface,
   },
   inputFocused: {
-    borderColor: BRAND_GREEN,
-    backgroundColor: FOCUS_BG,
+    borderColor: theme.brand,
+    backgroundColor: theme.surfaceRaised2,
     borderWidth: 2,
   },
   inputError: {
-    borderColor: ERROR_RED,
+    borderColor: theme.down,
   },
   fieldIcon: {
     fontSize: 18,
@@ -343,24 +337,24 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 15,
-    color: DARK_TEXT,
+    color: theme.ink,
     padding: 0,
   },
   validIcon: {
     fontSize: 18,
-    color: BRAND_GREEN,
+    color: theme.brand,
     fontWeight: '700',
     marginLeft: 8,
   },
   errorIcon: {
     fontSize: 18,
-    color: ERROR_RED,
+    color: theme.down,
     fontWeight: '700',
     marginLeft: 8,
   },
   errorText: {
     fontSize: 11,
-    color: ERROR_RED,
+    color: theme.down,
     marginTop: 6,
     marginLeft: 4,
   },
@@ -373,7 +367,7 @@ const styles = StyleSheet.create({
   },
   loginButton: {
     height: 56,
-    backgroundColor: BRAND_GREEN,
+    backgroundColor: theme.brand,
     borderRadius: 14,
     flexDirection: 'row',
     justifyContent: 'center',
@@ -387,11 +381,11 @@ const styles = StyleSheet.create({
   loginButtonText: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 16,
-    color: WHITE,
+    color: '#FFFFFF',
   },
   loginButtonArrow: {
     fontSize: 18,
-    color: WHITE,
+    color: '#FFFFFF',
     marginLeft: 8,
   },
   forgotLink: {
@@ -400,7 +394,7 @@ const styles = StyleSheet.create({
   },
   forgotText: {
     fontSize: 14,
-    color: BRAND_GREEN,
+    color: theme.brand,
     fontWeight: '600',
   },
   signupLink: {
@@ -409,21 +403,22 @@ const styles = StyleSheet.create({
   },
   signupLinkText: {
     fontSize: 14,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
   },
   signupLinkBold: {
-    color: BRAND_GREEN,
+    color: theme.brand,
     fontWeight: '700',
     textDecorationLine: 'underline',
   },
   terms: {
     fontSize: 11,
-    color: '#9CA3AF',
+    color: theme.inkMuted,
     textAlign: 'center',
     lineHeight: 16,
   },
   termsLink: {
-    color: BRAND_GREEN,
+    color: theme.brand,
     fontWeight: '600',
   },
-});
+  });
+}

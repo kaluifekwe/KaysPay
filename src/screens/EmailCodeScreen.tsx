@@ -14,6 +14,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { emailVerificationService } from '../services/emailVerification.service';
 import { safeErrorMessage } from '../utils/errorMessages';
 import { storageHelpers } from '../lib/mmkv';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 
 const RESEND_COOLDOWN_MS = 60 * 1000;
 
@@ -21,14 +23,10 @@ function lastSentStorageKey(email: string): string {
   return `email_otp_last_sent_at:${email.trim().toLowerCase()}`;
 }
 
-const BRAND_GREEN = '#1A5C3A';
-const DARK_TEXT = '#0F1A14';
-const GRAY_TEXT = '#6B7280';
-const BORDER_COLOR = '#E5E7EB';
-const WHITE = '#FFFFFF';
-
 export default function EmailCodeScreen(props: any) {
   const { navigation, route } = props;
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const {
     target: email,
     onVerified,
@@ -205,7 +203,7 @@ export default function EmailCodeScreen(props: any) {
 
           {initializing ? (
             <View style={styles.initStateContainer}>
-              <ActivityIndicator color={BRAND_GREEN} size="large" />
+              <ActivityIndicator color={theme.brand} size="large" />
               <Text style={styles.subtitle}>Sending your verification code...</Text>
             </View>
           ) : initError ? (
@@ -249,7 +247,7 @@ export default function EmailCodeScreen(props: any) {
                 disabled={code.join('').length !== 6 || loading}
               >
                 {loading ? (
-                  <ActivityIndicator color={WHITE} size="small" />
+                  <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
                   <Text style={[styles.verifyButtonText, code.join('').length !== 6 && styles.verifyButtonTextDisabled]}>
                     Verify
@@ -274,10 +272,11 @@ export default function EmailCodeScreen(props: any) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: WHITE,
+    backgroundColor: theme.background,
   },
   keyboardView: {
     flex: 1,
@@ -296,7 +295,7 @@ const styles = StyleSheet.create({
   },
   backArrow: {
     fontSize: 24,
-    color: DARK_TEXT,
+    color: theme.ink,
   },
   initStateContainer: {
     alignItems: 'center',
@@ -306,13 +305,13 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 22,
-    color: DARK_TEXT,
+    color: theme.ink,
     marginBottom: 8,
     marginTop: 24,
   },
   subtitle: {
     fontSize: 14,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
     marginBottom: 40,
     lineHeight: 20,
   },
@@ -320,7 +319,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   spamHint: {
-    backgroundColor: '#F0F7F2',
+    backgroundColor: theme.brandSoft,
     borderRadius: 10,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -328,11 +327,11 @@ const styles = StyleSheet.create({
   },
   spamHintText: {
     fontSize: 13,
-    color: '#5b6b63',
+    color: theme.inkMuted,
     lineHeight: 19,
   },
   spamHintBold: {
-    color: BRAND_GREEN,
+    color: theme.brand,
     fontWeight: '700',
   },
   otpContainer: {
@@ -344,47 +343,48 @@ const styles = StyleSheet.create({
     width: 48,
     height: 56,
     borderWidth: 1.5,
-    borderColor: BORDER_COLOR,
+    borderColor: theme.border,
     borderRadius: 12,
     textAlign: 'center',
     fontSize: 24,
     fontWeight: '700',
-    color: DARK_TEXT,
-    backgroundColor: WHITE,
+    color: theme.ink,
+    backgroundColor: theme.surface,
   },
   otpBoxFilled: {
-    borderColor: BRAND_GREEN,
-    backgroundColor: '#F9FAFB',
+    borderColor: theme.brand,
+    backgroundColor: theme.surfaceRaised2,
   },
   verifyButton: {
     height: 52,
-    backgroundColor: BRAND_GREEN,
+    backgroundColor: theme.brand,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
   },
   verifyButtonDisabled: {
-    backgroundColor: '#9CA3AF',
+    backgroundColor: theme.inkFaint,
   },
   verifyButtonText: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 16,
-    color: WHITE,
+    color: '#FFFFFF',
   },
   verifyButtonTextDisabled: {
-    color: '#D1D5DB',
+    color: theme.inkFaint,
   },
   resendContainer: {
     alignItems: 'center',
   },
   timerText: {
     fontSize: 14,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
   },
   resendText: {
     fontSize: 14,
-    color: BRAND_GREEN,
+    color: theme.brand,
     fontWeight: '700',
   },
-});
+  });
+}
