@@ -17,6 +17,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { Strings } from '../constants/strings';
@@ -104,6 +106,8 @@ function initialsFor(name: string, phone: string): string {
 export default function BulkSendReviewScreen({ navigation, route }: BulkSendReviewScreenProps) {
   const { type, recipients }: { type: SendType; recipients: PickedContact[] } = route.params;
   const { authorize } = useTransactionAuth();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const insets = useSafeAreaInsets();
 
   const [airtimeRows, setAirtimeRows] = useState<AirtimeRow[]>(
@@ -583,7 +587,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
     // Spinner while a recipient is either still being submitted, or submitted
     // and awaiting its background settlement.
     if ((phase === 'sending' && !result) || (result?.success && result.pending)) {
-      return <ActivityIndicator size="small" color={Colors.GRAY} />;
+      return <ActivityIndicator size="small" color={theme.inkMuted} />;
     }
     if (!result) return null;
     return (
@@ -653,7 +657,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
             <View style={styles.submissionCard}>
               <View style={styles.submissionIcon}>
                 {phase === 'sending' ? (
-                  <ActivityIndicator size="large" color={Colors.GREEN} />
+                  <ActivityIndicator size="large" color={theme.brand} />
                 ) : (
                   <Text style={styles.submissionCheck}>✓</Text>
                 )}
@@ -854,7 +858,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
                             activeOpacity={0.7}
                             accessibilityLabel={`Remove ${row.contact.name || row.contact.phone}`}
                           >
-                            <Ionicons name="trash-outline" size={16} color={Colors.RED} />
+                            <Ionicons name="trash-outline" size={16} color={theme.down} />
                             <Text style={styles.removeActionText}>Remove</Text>
                           </TouchableOpacity>
                         )}
@@ -921,7 +925,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
                             activeOpacity={0.7}
                             accessibilityLabel={`Remove ${row.contact.name || row.contact.phone}`}
                           >
-                            <Ionicons name="trash-outline" size={16} color={Colors.RED} />
+                            <Ionicons name="trash-outline" size={16} color={theme.down} />
                             <Text style={styles.removeActionText}>Remove</Text>
                           </TouchableOpacity>
                         )}
@@ -930,7 +934,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
 
                     {!bundlesReady ? (
                       <View style={styles.bundleLoadingRow}>
-                        <ActivityIndicator size="small" color={Colors.GRAY} />
+                        <ActivityIndicator size="small" color={theme.inkMuted} />
                         <Text style={styles.bundleLoadingText}>Loading plans…</Text>
                       </View>
                     ) : bundles.length === 0 ? (
@@ -1006,7 +1010,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
             <View style={styles.cashbackToggleRow}>
               <View style={styles.cashbackToggleLabel}>
                 <View style={styles.cashbackToggleBadge}>
-                  <Ionicons name="gift" size={18} color={Colors.WHITE} />
+                  <Ionicons name="gift" size={18} color="#FFFFFF" />
                 </View>
                 <View style={styles.cashbackToggleTextCol}>
                   <Text style={styles.cashbackToggleTitle}>Use your cashback</Text>
@@ -1021,8 +1025,8 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
               <Switch
                 value={useCashback}
                 onValueChange={setUseCashback}
-                trackColor={{ false: Colors.LIGHT_GRAY, true: Colors.GREEN }}
-                thumbColor={Colors.WHITE}
+                trackColor={{ false: theme.surfaceRaised, true: theme.brand }}
+                thumbColor="#FFFFFF"
               />
             </View>
           )}
@@ -1239,8 +1243,9 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   flex: { flex: 1 },
   scrollView: { flex: 1 },
   scrollContent: {
@@ -1257,8 +1262,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.M,
   },
-  backText: { fontSize: 28, fontWeight: '600', color: Colors.DARK },
-  title: { ...Typography.SCREEN_TITLE },
+  backText: { fontSize: 28, fontWeight: '600', color: theme.ink },
+  title: { ...Typography.SCREEN_TITLE, color: theme.ink },
   subtitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1267,20 +1272,20 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   addMoreButton: {
     height: Spacing.CHIP_HEIGHT,
     paddingHorizontal: Spacing.M,
     borderRadius: Spacing.CHIP_HEIGHT / 2,
     borderWidth: 1,
-    borderColor: Colors.GREEN,
+    borderColor: theme.brand,
     justifyContent: 'center',
     alignItems: 'center',
   },
   addMoreButtonText: {
     ...Typography.CAPTION,
-    color: Colors.GREEN,
+    color: theme.brand,
     fontWeight: '700',
   },
   bundleLoadingRow: {
@@ -1290,30 +1295,30 @@ const styles = StyleSheet.create({
   },
   bundleLoadingText: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginLeft: Spacing.S,
   },
   bundleEmptyText: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
-  statusSuccess: { color: Colors.GREEN, fontSize: 20, fontWeight: '700' },
-  statusFailed: { color: Colors.RED, fontSize: 20, fontWeight: '700' },
-  planSelectPlaceholder: { fontSize: 14, fontWeight: '600', color: '#9AA3A0' },
-  planSelectChevron: { fontSize: 13, color: Colors.GRAY },
+  statusSuccess: { color: theme.brand, fontSize: 20, fontWeight: '700' },
+  statusFailed: { color: theme.down, fontSize: 20, fontWeight: '700' },
+  planSelectPlaceholder: { fontSize: 14, fontWeight: '600', color: theme.inkFaint },
+  planSelectChevron: { fontSize: 13, color: theme.inkMuted },
   planModalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.L,
     paddingVertical: Spacing.M,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
+    borderBottomColor: theme.border,
   },
-  planModalTitle: { ...Typography.SCREEN_TITLE },
-  planModalSubtitle: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: 2 },
-  planModalClose: { fontSize: 22, color: Colors.DARK, paddingHorizontal: Spacing.S },
+  planModalTitle: { ...Typography.SCREEN_TITLE, color: theme.ink },
+  planModalSubtitle: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: 2 },
+  planModalClose: { fontSize: 22, color: theme.ink, paddingHorizontal: Spacing.S },
   planModalList: { paddingHorizontal: Spacing.L, paddingBottom: Spacing.XL },
-  planModalSep: { height: 1, backgroundColor: Colors.BORDER },
+  planModalSep: { height: 1, backgroundColor: theme.border },
   planModalItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1321,14 +1326,14 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.M,
   },
   planModalItemSelected: {
-    backgroundColor: Colors.GREEN_LIGHT,
+    backgroundColor: theme.brandSoft,
     marginHorizontal: -Spacing.L,
     paddingHorizontal: Spacing.L,
   },
-  planModalItemName: { ...Typography.BODY, color: Colors.DARK, flexShrink: 1 },
+  planModalItemName: { ...Typography.BODY, color: theme.ink, flexShrink: 1 },
   planModalItemWarning: {
     ...Typography.CAPTION,
-    color: Colors.RED,
+    color: theme.down,
     marginTop: 2,
   },
   planModalBadgeRow: {
@@ -1337,7 +1342,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   planModalDiscountBadge: {
-    backgroundColor: Colors.GREEN_LIGHT,
+    backgroundColor: theme.brandSoft,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 5,
@@ -1345,7 +1350,7 @@ const styles = StyleSheet.create({
   planModalDiscountBadgeText: {
     fontSize: 10,
     fontWeight: '600',
-    color: Colors.GREEN,
+    color: theme.brand,
   },
   planModalCashbackBadge: {
     backgroundColor: '#FEF3C7',
@@ -1364,21 +1369,21 @@ const styles = StyleSheet.create({
   },
   planModalItemListPrice: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     textDecorationLine: 'line-through',
   },
   planModalItemPrice: {
     ...Typography.BODY,
-    color: Colors.GREEN,
+    color: theme.brand,
     fontWeight: '700',
   },
   submissionCard: {
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.XL,
     alignItems: 'center',
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
   },
   submissionIcon: {
     width: 72,
@@ -1386,19 +1391,19 @@ const styles = StyleSheet.create({
     borderRadius: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.GREEN_LIGHT,
+    backgroundColor: theme.brandSoft,
     marginBottom: Spacing.L,
   },
-  submissionCheck: { color: Colors.GREEN, fontSize: 38, fontWeight: '700' },
+  submissionCheck: { color: theme.brand, fontSize: 38, fontWeight: '700' },
   submissionTitle: {
     ...Typography.CARD_TITLE,
-    color: Colors.DARK,
+    color: theme.ink,
     textAlign: 'center',
     marginBottom: Spacing.S,
   },
   submissionMessage: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     textAlign: 'center',
     lineHeight: 22,
   },
@@ -1409,10 +1414,10 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.L,
     marginTop: Spacing.L,
     borderTopWidth: 1,
-    borderTopColor: Colors.BORDER,
+    borderTopColor: theme.border,
   },
-  submissionProgressLabel: { ...Typography.BODY, color: Colors.GRAY },
-  submissionProgressValue: { ...Typography.BODY, color: Colors.DARK, fontWeight: '700' },
+  submissionProgressLabel: { ...Typography.BODY, color: theme.inkMuted },
+  submissionProgressValue: { ...Typography.BODY, color: theme.ink, fontWeight: '700' },
   resultSummaryRow: {
     width: '100%',
     flexDirection: 'row',
@@ -1421,30 +1426,30 @@ const styles = StyleSheet.create({
   },
   resultSummaryItem: { flex: 1, alignItems: 'center' },
   resultSummaryValue: { fontSize: 22, fontWeight: '700' },
-  resultSummaryLabel: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: 2 },
-  resultSuccess: { color: Colors.GREEN },
-  resultPending: { color: Colors.GRAY },
-  resultFailed: { color: Colors.RED },
+  resultSummaryLabel: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: 2 },
+  resultSuccess: { color: theme.brand },
+  resultPending: { color: theme.inkMuted },
+  resultFailed: { color: theme.down },
   summaryContainer: {
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.CARD_PADDING,
     marginTop: Spacing.M,
   },
-  summaryText: { ...Typography.BODY, color: Colors.DARK, textAlign: 'center' },
+  summaryText: { ...Typography.BODY, color: theme.ink, textAlign: 'center' },
   bottomContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     padding: Spacing.SCREEN_PADDING,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderTopWidth: 1,
-    borderTopColor: Colors.BORDER,
+    borderTopColor: theme.border,
   },
   // ---- Batch-wide amount control ----
   bulkAmountCard: {
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: 16,
     padding: 14,
     marginBottom: Spacing.M,
@@ -1452,11 +1457,11 @@ const styles = StyleSheet.create({
   bulkAmountLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: Colors.WHITE_80,
+    color: 'rgba(255,255,255,0.8)',
     marginBottom: 8,
   },
   bulkAmountField: {
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderRadius: 12,
     paddingHorizontal: 12,
     flexDirection: 'row',
@@ -1464,23 +1469,23 @@ const styles = StyleSheet.create({
     gap: 6,
     minHeight: 50,
   },
-  bulkAmountCurrency: { fontSize: 19, fontWeight: '800', color: Colors.GREEN },
+  bulkAmountCurrency: { fontSize: 19, fontWeight: '800', color: theme.brand },
   bulkAmountInput: {
     flex: 1,
     fontSize: 22,
     fontWeight: '800',
-    color: Colors.DARK,
+    color: theme.ink,
     paddingVertical: 10,
   },
   bulkAmountClear: {
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bulkAmountClearText: { fontSize: 11, color: Colors.GRAY, lineHeight: 14 },
+  bulkAmountClearText: { fontSize: 11, color: theme.inkMuted, lineHeight: 14 },
   bulkChipsRow: { flexDirection: 'row', gap: 6, marginTop: 10 },
   bulkChip: {
     flex: 1,
@@ -1491,15 +1496,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.24)',
   },
-  bulkChipSelected: { backgroundColor: Colors.WHITE, borderColor: Colors.WHITE },
-  bulkChipText: { fontSize: 12, fontWeight: '800', color: Colors.WHITE },
-  bulkChipTextSelected: { color: Colors.GREEN },
+  bulkChipSelected: { backgroundColor: theme.surface, borderColor: theme.surface },
+  // Unselected chip text sits on a translucent white fill over the fixed
+  // brand-green card, so it stays literal white regardless of theme.
+  bulkChipText: { fontSize: 12, fontWeight: '800', color: '#FFFFFF' },
+  bulkChipTextSelected: { color: theme.brand },
   bulkHintRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 9,
   },
-  bulkHintText: { fontSize: 11, color: Colors.WHITE_80 },
+  bulkHintText: { fontSize: 11, color: 'rgba(255,255,255,0.8)' },
 
   // ---- Recipient list ----
   listHeaderRow: {
@@ -1508,15 +1515,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.XS,
   },
-  listHeaderTitle: { ...Typography.BODY, fontWeight: '700' },
-  listHeaderAction: { fontSize: 12, fontWeight: '700', color: Colors.GREEN },
+  listHeaderTitle: { ...Typography.BODY, color: theme.ink, fontWeight: '700' },
+  listHeaderAction: { fontSize: 12, fontWeight: '700', color: theme.brand },
   recipientRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
+    borderBottomColor: theme.border,
   },
   recipientMain: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 },
   avatar: {
@@ -1526,9 +1533,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { fontSize: 14, fontWeight: '800', color: Colors.WHITE },
+  // Text is always white regardless of theme — the avatar's own background
+  // is one of AVATAR_COLORS, a fixed decorative palette unrelated to the
+  // app theme, so white stays legible against every one of them.
+  avatarText: { fontSize: 14, fontWeight: '800', color: '#FFFFFF' },
   recipientWho: { flex: 1, minWidth: 0 },
-  recipientName: { fontSize: 14, fontWeight: '700', color: Colors.DARK },
+  recipientName: { fontSize: 14, fontWeight: '700', color: theme.ink },
   recipientMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
   // The carrier is shown as its own logo AND named: sending airtime to the
   // wrong network fails at the provider after the customer has paid, and
@@ -1542,11 +1552,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
-    backgroundColor: Colors.LIGHT_GRAY,
+    borderColor: theme.border,
+    backgroundColor: theme.surfaceRaised,
   },
-  networkName: { fontSize: 11, fontWeight: '800', color: '#374151' },
-  networkChangeHint: { fontSize: 9, color: Colors.GRAY, marginLeft: 1 },
+  networkName: { fontSize: 11, fontWeight: '800', color: theme.ink },
+  networkChangeHint: { fontSize: 9, color: theme.inkMuted, marginLeft: 1 },
   networkHintRow: {
     backgroundColor: '#FEF3C7',
     borderRadius: 8,
@@ -1558,29 +1568,29 @@ const styles = StyleSheet.create({
     color: '#92400E',
     fontWeight: '600',
   },
-  recipientNumber: { fontSize: 12, color: Colors.GRAY, flexShrink: 1 },
+  recipientNumber: { fontSize: 12, color: theme.inkMuted, flexShrink: 1 },
   recipientAmountCol: { alignItems: 'flex-end' },
   recipientAmountInput: {
     minWidth: 78,
     borderWidth: 1.5,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: 10,
     paddingHorizontal: 9,
     paddingVertical: 7,
     fontSize: 13,
     fontWeight: '800',
-    color: Colors.DARK,
+    color: theme.ink,
     textAlign: 'right',
   },
   recipientAmountInputCustom: {
-    borderColor: Colors.GREEN,
-    color: Colors.GREEN,
-    backgroundColor: Colors.GREEN_LIGHT,
+    borderColor: theme.brand,
+    color: theme.brand,
+    backgroundColor: theme.brandSoft,
   },
   recipientCustomTag: {
     fontSize: 9,
     fontWeight: '800',
-    color: Colors.GREEN,
+    color: theme.brand,
     marginTop: 3,
   },
   recipientEnd: { alignItems: 'center', justifyContent: 'center' },
@@ -1588,13 +1598,13 @@ const styles = StyleSheet.create({
   // be taken for "clear this amount" rather than "remove this person". A
   // trash icon with the word, in the error colour, can only mean one thing.
   removeAction: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2 },
-  removeActionText: { fontSize: 9.5, fontWeight: '700', color: Colors.RED, marginTop: 1 },
+  removeActionText: { fontSize: 9.5, fontWeight: '700', color: theme.down, marginTop: 1 },
 
   // ---- Data recipient (name/network row + its own plan control) ----
   recipientBlock: {
     paddingVertical: 11,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
+    borderBottomColor: theme.border,
   },
   recipientBlockTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   planSelect: {
@@ -1603,20 +1613,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     borderWidth: 1.5,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  planSelectChosen: { borderColor: Colors.GREEN, backgroundColor: Colors.GREEN_LIGHT },
+  planSelectChosen: { borderColor: theme.brand, backgroundColor: theme.brandSoft },
   planSelectMain: { flex: 1, minWidth: 0 },
-  planSelectName: { fontSize: 14, fontWeight: '800', color: Colors.DARK },
-  planSelectMeta: { fontSize: 11, color: Colors.GRAY, marginTop: 2 },
-  planSelectPrice: { fontSize: 15, fontWeight: '800', color: Colors.GREEN },
+  planSelectName: { fontSize: 14, fontWeight: '800', color: theme.ink },
+  planSelectMeta: { fontSize: 11, color: theme.inkMuted, marginTop: 2 },
+  planSelectPrice: { fontSize: 15, fontWeight: '800', color: theme.brand },
 
   planModalSubtitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
-  planModalItemMeta: { fontSize: 11.5, color: Colors.GRAY, marginTop: 2 },
-  planModalItemTick: { fontSize: 15, fontWeight: '800', color: Colors.GREEN, marginLeft: 8 },
+  planModalItemMeta: { fontSize: 11.5, color: theme.inkMuted, marginTop: 2 },
+  planModalItemTick: { fontSize: 15, fontWeight: '800', color: theme.brand, marginLeft: 8 },
 
   networkModalOverlay: {
     flex: 1,
@@ -1624,7 +1634,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   networkModalSheet: {
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: Spacing.L,
@@ -1637,38 +1647,38 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 4,
   },
-  networkModalTitle: { ...Typography.CARD_TITLE },
-  networkModalSubtitle: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.M },
+  networkModalTitle: { ...Typography.CARD_TITLE, color: theme.ink },
+  networkModalSubtitle: { ...Typography.CAPTION, color: theme.inkMuted, marginBottom: Spacing.M },
   networkModalItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
+    borderBottomColor: theme.border,
   },
   networkModalItemSelected: {
-    backgroundColor: Colors.GREEN_LIGHT,
+    backgroundColor: theme.brandSoft,
     marginHorizontal: -Spacing.L,
     paddingHorizontal: Spacing.L,
   },
-  networkModalItemText: { ...Typography.BODY, color: Colors.DARK, fontWeight: '700', flex: 1 },
+  networkModalItemText: { ...Typography.BODY, color: theme.ink, fontWeight: '700', flex: 1 },
 
   footerNetworkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginBottom: Spacing.S },
   footerNetworkChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: 12,
     paddingLeft: 3,
     paddingRight: 8,
     paddingVertical: 2,
   },
-  footerNetworkChipText: { fontSize: 10.5, fontWeight: '800', color: Colors.DARK },
+  footerNetworkChipText: { fontSize: 10.5, fontWeight: '800', color: theme.ink },
   balanceAfterText: {
     fontSize: 11,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     textAlign: 'center',
     marginTop: Spacing.XS,
   },
@@ -1723,7 +1733,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   cashbackToggleApplied: {
-    color: Colors.GREEN,
+    color: theme.brand,
     fontWeight: '700',
   },
   totalRow: {
@@ -1732,24 +1742,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.M,
   },
-  totalLabel: { ...Typography.BODY, color: Colors.GRAY },
+  totalLabel: { ...Typography.BODY, color: theme.inkMuted },
   totalAmountColumn: { alignItems: 'flex-end' },
   totalListValue: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     textDecorationLine: 'line-through',
   },
-  totalValue: { ...Typography.AMOUNT_SMALL },
+  totalValue: { ...Typography.AMOUNT_SMALL, color: theme.ink },
   actionButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
   },
   actionButtonDisabled: {
-    backgroundColor: Colors.GRAY,
+    backgroundColor: theme.inkFaint,
     opacity: 0.6,
   },
   actionButtonText: { ...Typography.BUTTON_TEXT },
-});
+  });
+}

@@ -17,6 +17,8 @@ import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
 import qrcode from 'qrcode-generator';
 import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { formatNaira } from '../utils/formatCurrency';
@@ -592,6 +594,8 @@ const MODIFY_SECTION_INFO: Record<ModifySection, string> = {
 export default function NinServicesScreen({ navigation }: NinServicesScreenProps) {
   useSensitiveScreenProtection();
   const { authorize } = useTransactionAuth();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<Mode>('verify');
 
@@ -993,7 +997,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
     return (
       <View style={styles.matchRow} key={key}>
         <Text style={styles.matchLabel}>{label}</Text>
-        <Text style={[styles.matchIcon, { color: ok ? Colors.GREEN : Colors.RED }]}>
+        <Text style={[styles.matchIcon, { color: ok ? theme.brand : theme.down }]}>
           {ok ? '✓ Matches' : '✗ Mismatch'}
         </Text>
       </View>
@@ -1339,7 +1343,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 value={nin}
                 onChangeText={(t) => setNin(t.replace(/[^0-9]/g, '').slice(0, 11))}
                 placeholder="Enter 11-digit NIN"
-                placeholderTextColor={Colors.GRAY}
+                placeholderTextColor={theme.inkMuted}
                 keyboardType="number-pad"
                 maxLength={11}
                 returnKeyType="done"
@@ -1353,7 +1357,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 disabled={!canVerify}
               >
                 {verifyState === 'processing' ? (
-                  <ActivityIndicator color={Colors.WHITE} />
+                  <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <Text style={styles.primaryButtonText}>
                     Verify & Pay {formatNaira((slipTiers.find((t) => t.id === selectedTier)?.valueKobo || 0) / 100)}
@@ -1417,7 +1421,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                   disabled={generatingPdf}
                 >
                   {generatingPdf ? (
-                    <ActivityIndicator color={Colors.WHITE} />
+                    <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <Text style={styles.primaryButtonText}>Download PDF</Text>
                   )}
@@ -1474,7 +1478,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 value={validateNin}
                 onChangeText={(t) => setValidateNin(t.replace(/[^0-9]/g, '').slice(0, 11))}
                 placeholder="Enter 11-digit NIN"
-                placeholderTextColor={Colors.GRAY}
+                placeholderTextColor={theme.inkMuted}
                 keyboardType="number-pad"
                 maxLength={11}
               />
@@ -1485,7 +1489,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 value={validateDob}
                 onChangeText={(t) => setValidateDob(t.replace(/[^0-9-]/g, '').slice(0, 10))}
                 placeholder="YYYY-MM-DD"
-                placeholderTextColor={Colors.GRAY}
+                placeholderTextColor={theme.inkMuted}
                 keyboardType="numbers-and-punctuation"
                 maxLength={10}
               />
@@ -1507,7 +1511,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 disabled={!canValidate}
               >
                 {validateState === 'processing' ? (
-                  <ActivityIndicator color={Colors.WHITE} />
+                  <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <Text style={styles.primaryButtonText}>Submit Validation ({formatNaira(validatePrice)})</Text>
                 )}
@@ -1557,7 +1561,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 value={bvnNumber}
                 onChangeText={(t) => setBvnNumber(t.replace(/[^0-9]/g, '').slice(0, 11))}
                 placeholder="Enter 11-digit BVN"
-                placeholderTextColor={Colors.GRAY}
+                placeholderTextColor={theme.inkMuted}
                 keyboardType="number-pad"
                 maxLength={11}
                 returnKeyType="done"
@@ -1571,7 +1575,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 disabled={!canVerifyBvn}
               >
                 {bvnState === 'processing' ? (
-                  <ActivityIndicator color={Colors.WHITE} />
+                  <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <Text style={styles.primaryButtonText}>
                     Verify & Pay {formatNaira((bvnSlipTiers.find((t) => t.id === selectedBvnTier)?.valueKobo || 0) / 100)}
@@ -1624,7 +1628,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 disabled={generatingBvnPdf}
               >
                 {generatingBvnPdf ? (
-                  <ActivityIndicator color={Colors.WHITE} />
+                  <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <Text style={styles.primaryButtonText}>Download PDF</Text>
                 )}
@@ -1652,7 +1656,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 value={modNin}
                 onChangeText={(t) => setModNin(t.replace(/[^0-9]/g, '').slice(0, 11))}
                 placeholder="Enter 11-digit NIN"
-                placeholderTextColor={Colors.GRAY}
+                placeholderTextColor={theme.inkMuted}
                 keyboardType="number-pad"
                 maxLength={11}
               />
@@ -1663,14 +1667,14 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                 value={modSurname}
                 onChangeText={setModSurname}
                 placeholder="Current surname"
-                placeholderTextColor={Colors.GRAY}
+                placeholderTextColor={theme.inkMuted}
               />
               <TextInput
                 style={styles.input}
                 value={modFirstname}
                 onChangeText={setModFirstname}
                 placeholder="Current first name"
-                placeholderTextColor={Colors.GRAY}
+                placeholderTextColor={theme.inkMuted}
               />
               {modifyType === 'phone' ? (
                 <TextInput
@@ -1678,7 +1682,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                   value={modMiddlename}
                   onChangeText={setModMiddlename}
                   placeholder="Middle name (optional)"
-                  placeholderTextColor={Colors.GRAY}
+                  placeholderTextColor={theme.inkMuted}
                 />
               ) : (
                 <TextInput
@@ -1686,7 +1690,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                   value={modPhoneNumber}
                   onChangeText={(t) => setModPhoneNumber(t.replace(/[^0-9]/g, '').slice(0, 11))}
                   placeholder="Phone number on file"
-                  placeholderTextColor={Colors.GRAY}
+                  placeholderTextColor={theme.inkMuted}
                   keyboardType="number-pad"
                   maxLength={11}
                 />
@@ -1702,14 +1706,14 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                     value={modNewSurname}
                     onChangeText={setModNewSurname}
                     placeholder="Corrected surname"
-                    placeholderTextColor={Colors.GRAY}
+                    placeholderTextColor={theme.inkMuted}
                   />
                   <TextInput
                     style={styles.input}
                     value={modNewFirstname}
                     onChangeText={setModNewFirstname}
                     placeholder="Corrected first name"
-                    placeholderTextColor={Colors.GRAY}
+                    placeholderTextColor={theme.inkMuted}
                   />
                 </>
               )}
@@ -1719,7 +1723,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                   value={modNewPhoneNumber}
                   onChangeText={(t) => setModNewPhoneNumber(t.replace(/[^0-9]/g, '').slice(0, 11))}
                   placeholder="New phone number (0XXXXXXXXXX)"
-                  placeholderTextColor={Colors.GRAY}
+                  placeholderTextColor={theme.inkMuted}
                   keyboardType="number-pad"
                   maxLength={11}
                 />
@@ -1730,7 +1734,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
                   value={modNewAddress}
                   onChangeText={setModNewAddress}
                   placeholder="New residential address"
-                  placeholderTextColor={Colors.GRAY}
+                  placeholderTextColor={theme.inkMuted}
                 />
               )}
 
@@ -1766,7 +1770,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
               disabled={!canModify}
             >
               {modifyState === 'processing' ? (
-                <ActivityIndicator color={Colors.WHITE} />
+                <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <Text style={styles.primaryButtonText}>Submit Request ({formatNaira(modifyPrice)})</Text>
               )}
@@ -1778,8 +1782,9 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   flex: { flex: 1 },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: Spacing.SCREEN_PADDING, paddingTop: Spacing.M, paddingBottom: Spacing.XL },
@@ -1792,34 +1797,34 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: Spacing.SCREEN_PADDING,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.background,
     borderTopWidth: 1,
-    borderTopColor: Colors.BORDER,
+    borderTopColor: theme.border,
   },
   backButton: { width: 48, height: 48, justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.L },
-  backText: { fontSize: 28, fontWeight: '600', color: Colors.DARK },
-  title: { ...Typography.SCREEN_TITLE, marginBottom: Spacing.L },
+  backText: { fontSize: 28, fontWeight: '600', color: theme.ink },
+  title: { ...Typography.SCREEN_TITLE, color: theme.ink, marginBottom: Spacing.L },
   segmentedControl: {
     flexDirection: 'row',
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: Spacing.BUTTON_RADIUS,
     padding: 4,
     marginBottom: Spacing.L,
   },
   segment: { flex: 1, paddingVertical: Spacing.M, alignItems: 'center', borderRadius: Spacing.BUTTON_RADIUS - 2 },
-  segmentActive: { backgroundColor: Colors.GREEN_LIGHT },
-  segmentText: { ...Typography.BODY, color: Colors.GRAY, fontWeight: '600' },
-  segmentTextActive: { color: Colors.GREEN_DARK },
-  helperText: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.L },
-  label: { ...Typography.SECTION_HEADING, marginBottom: Spacing.M, marginTop: Spacing.S },
+  segmentActive: { backgroundColor: theme.brandSoft },
+  segmentText: { ...Typography.BODY, color: theme.inkMuted, fontWeight: '600' },
+  segmentTextActive: { color: theme.brand },
+  helperText: { ...Typography.CAPTION, color: theme.inkMuted, marginBottom: Spacing.L },
+  label: { ...Typography.SECTION_HEADING, color: theme.ink, marginBottom: Spacing.M, marginTop: Spacing.S },
   input: {
     height: Spacing.INPUT_HEIGHT,
     borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.BUTTON_RADIUS,
     paddingHorizontal: Spacing.L,
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
     marginBottom: Spacing.M,
   },
   // 2x2 grid — 4 sub-options under "NIN Modification" each need a full
@@ -1832,50 +1837,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.M,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modifySectionButtonSelected: { borderColor: Colors.GREEN, backgroundColor: Colors.GREEN_LIGHT },
-  modifySectionButtonText: { ...Typography.BODY, fontSize: 13, color: Colors.DARK, textAlign: 'center' },
-  modifySectionButtonTextSelected: { color: Colors.GREEN_DARK, fontWeight: '700' },
+  modifySectionButtonSelected: { borderColor: theme.brand, backgroundColor: theme.brandSoft },
+  modifySectionButtonText: { ...Typography.BODY, fontSize: 13, color: theme.ink, textAlign: 'center' },
+  modifySectionButtonTextSelected: { color: theme.brand, fontWeight: '700' },
   consentRow: { flexDirection: 'row', alignItems: 'center', marginVertical: Spacing.L },
   checkbox: {
     width: 22,
     height: 22,
     borderRadius: 4,
     borderWidth: 1.5,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: Spacing.M,
   },
-  checkboxChecked: { backgroundColor: Colors.GREEN, borderColor: Colors.GREEN },
-  checkmark: { color: Colors.WHITE, fontSize: 14, fontWeight: '700' },
-  consentText: { ...Typography.CAPTION, color: Colors.DARK, flex: 1 },
-  errorText: { ...Typography.ERROR, marginBottom: Spacing.M },
+  checkboxChecked: { backgroundColor: theme.brand, borderColor: theme.brand },
+  checkmark: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  consentText: { ...Typography.CAPTION, color: theme.ink, flex: 1 },
+  errorText: { ...Typography.ERROR, color: theme.down, marginBottom: Spacing.M },
   primaryButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Spacing.M,
   },
   primaryButtonDisabled: { opacity: 0.5 },
-  primaryButtonText: { ...Typography.BUTTON_TEXT, color: Colors.WHITE },
+  primaryButtonText: { ...Typography.BUTTON_TEXT, color: '#FFFFFF' },
   secondaryButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.GREEN,
+    borderColor: theme.brand,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Spacing.M,
   },
-  secondaryButtonText: { ...Typography.BUTTON_TEXT, color: Colors.GREEN },
+  secondaryButtonText: { ...Typography.BUTTON_TEXT, color: theme.brand },
   resultCard: {
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: 12,
     padding: Spacing.L,
     marginBottom: Spacing.L,
@@ -1888,7 +1893,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.L,
   },
   successBannerIcon: {
-    color: Colors.WHITE,
+    color: '#FFFFFF',
     backgroundColor: '#22A45D',
     width: 26,
     height: 26,
@@ -1900,53 +1905,56 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   successBannerText: { fontSize: 17, fontWeight: '700', color: '#22A45D' },
-  resultName: { ...Typography.SECTION_HEADING, marginBottom: Spacing.M },
+  resultName: { ...Typography.SECTION_HEADING, color: theme.ink, marginBottom: Spacing.M },
   resultRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: Spacing.S },
-  resultLabel: { ...Typography.BODY, color: Colors.GRAY },
-  resultValue: { ...Typography.BODY, color: Colors.DARK, fontWeight: '600' },
+  resultLabel: { ...Typography.BODY, color: theme.inkMuted },
+  resultValue: { ...Typography.BODY, color: theme.ink, fontWeight: '600' },
   matchCard: {
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     padding: Spacing.L,
     marginBottom: Spacing.L,
   },
-  matchTitle: { ...Typography.SECTION_HEADING, marginBottom: Spacing.M },
+  matchTitle: { ...Typography.SECTION_HEADING, color: theme.ink, marginBottom: Spacing.M },
   matchRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: Spacing.S },
-  matchLabel: { ...Typography.BODY, color: Colors.DARK },
+  matchLabel: { ...Typography.BODY, color: theme.ink },
   matchIcon: { ...Typography.BODY, fontWeight: '600' },
-  printDisclaimer: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.L, fontStyle: 'italic' },
-  stepLabel: { ...Typography.SECTION_HEADING, marginBottom: Spacing.M },
-  sampleLabel: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.S, marginTop: Spacing.L, textAlign: 'center' },
-  consentNote: { ...Typography.CAPTION, color: Colors.GRAY, textAlign: 'center', marginTop: Spacing.S },
-  readyText: { ...Typography.CAPTION, color: Colors.GREEN, fontWeight: '600', marginTop: Spacing.M, marginBottom: Spacing.M, textAlign: 'center' },
+  printDisclaimer: { ...Typography.CAPTION, color: theme.inkMuted, marginBottom: Spacing.L, fontStyle: 'italic' },
+  stepLabel: { ...Typography.SECTION_HEADING, color: theme.ink, marginBottom: Spacing.M },
+  sampleLabel: { ...Typography.CAPTION, color: theme.inkMuted, marginBottom: Spacing.S, marginTop: Spacing.L, textAlign: 'center' },
+  consentNote: { ...Typography.CAPTION, color: theme.inkMuted, textAlign: 'center', marginTop: Spacing.S },
+  readyText: { ...Typography.CAPTION, color: theme.brand, fontWeight: '600', marginTop: Spacing.M, marginBottom: Spacing.M, textAlign: 'center' },
   tierRow: { flexDirection: 'row', gap: Spacing.M, marginBottom: Spacing.M },
   tierCard: {
     flex: 1,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: 12,
     padding: Spacing.M,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
   },
-  tierCardSelected: { borderColor: Colors.GREEN, borderWidth: 2, backgroundColor: Colors.GREEN_10 },
+  tierCardSelected: { borderColor: theme.brand, borderWidth: 2, backgroundColor: theme.brandSoft },
   radio: {
     width: 18,
     height: 18,
     borderRadius: 9,
     borderWidth: 2,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     marginBottom: Spacing.S,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  radioSelected: { borderColor: Colors.GREEN },
-  radioDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: Colors.GREEN },
-  tierName: { ...Typography.BODY, fontWeight: '700', color: Colors.DARK, marginBottom: 2 },
-  tierValue: { ...Typography.CAPTION, color: Colors.GREEN, fontWeight: '700' },
-  freeNote: { ...Typography.CAPTION, color: Colors.GREEN, fontWeight: '600', marginBottom: Spacing.L, textAlign: 'center' },
-  // Regular-tier on-screen preview
+  radioSelected: { borderColor: theme.brand },
+  radioDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: theme.brand },
+  tierName: { ...Typography.BODY, fontWeight: '700', color: theme.ink, marginBottom: 2 },
+  tierValue: { ...Typography.CAPTION, color: theme.brand, fontWeight: '700' },
+  freeNote: { ...Typography.CAPTION, color: theme.brand, fontWeight: '600', marginBottom: Spacing.L, textAlign: 'center' },
+  // Regular-tier on-screen preview — colors intentionally literal (not
+  // theme-mapped): this mirrors the physical NIN slip/card's fixed printed
+  // appearance (see buildRegularSlipHtml/buildStandardSlipHtml above), so it
+  // must look the same regardless of the app's light/dark theme.
   regularPreview: {
     borderWidth: 1,
     borderColor: Colors.BORDER,
@@ -2002,16 +2010,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: Spacing.M,
-    backgroundColor: Colors.RED,
+    backgroundColor: theme.down,
     paddingHorizontal: Spacing.SCREEN_PADDING,
     paddingTop: Spacing.XL,
     paddingBottom: Spacing.L,
   },
   noticeBannerIcon: { fontSize: 26, marginTop: 2 },
   noticeBannerTextCol: { flex: 1 },
-  noticeBannerTitle: { fontSize: 15, fontWeight: '800', color: Colors.WHITE, letterSpacing: 0.3 },
+  noticeBannerTitle: { fontSize: 15, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.3 },
   noticeBannerSub: { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 4, fontWeight: '600' },
   noticeBody: { paddingHorizontal: Spacing.SCREEN_PADDING, paddingTop: Spacing.L },
+  // Warning-notice fill/border/emphasis colors below are intentionally fixed
+  // literals in both themes, same treatment as the AMBER/warning callouts
+  // elsewhere in the app.
   noticeBox: {
     flexDirection: 'row',
     gap: Spacing.M,
@@ -2026,14 +2037,14 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: Colors.RED,
+    backgroundColor: theme.down,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  noticeBoxIconText: { fontSize: 13, color: Colors.WHITE, fontWeight: '800' },
+  noticeBoxIconText: { fontSize: 13, color: '#FFFFFF', fontWeight: '800' },
   noticeBoxTextCol: { flex: 1 },
   noticeBoxTitle: { fontSize: 13.5, fontWeight: '800', color: '#991B1B', marginBottom: 4 },
-  noticeBoxText: { fontSize: 12.5, color: Colors.GRAY, lineHeight: 19 },
+  noticeBoxText: { fontSize: 12.5, color: theme.inkMuted, lineHeight: 19 },
   noticeBold: { fontWeight: '800', color: '#B91C1C' },
   noticeCheckRow: {
     flexDirection: 'row',
@@ -2046,14 +2057,15 @@ const styles = StyleSheet.create({
     padding: Spacing.M,
     marginBottom: Spacing.L,
   },
-  noticeCheckText: { flex: 1, fontSize: 12.5, color: Colors.GRAY, lineHeight: 19 },
+  noticeCheckText: { flex: 1, fontSize: 12.5, color: theme.inkMuted, lineHeight: 19 },
   noticeProceedButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    backgroundColor: Colors.RED,
+    backgroundColor: theme.down,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
   },
   noticeProceedButtonDisabled: { opacity: 0.45 },
   noticeProceedButtonText: { ...Typography.BUTTON_TEXT },
-});
+  });
+}
