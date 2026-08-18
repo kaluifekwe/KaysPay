@@ -122,7 +122,7 @@ function AdvertCarousel({ navigation, theme, styles }: { navigation: any; theme:
 }
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
-  const { theme } = useTheme();
+  const { theme, mode, toggleMode } = useTheme();
   const styles = createStyles(theme);
   const [balance, setBalance] = useState(0);
   const [cashbackBalance, setCashbackBalance] = useState(0);
@@ -261,6 +261,13 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           <Text style={styles.headerGreetingTime}>{greeting}</Text>
         </View>
         <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={styles.headerIcon}
+            onPress={toggleMode}
+            accessibilityLabel={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            <Ionicons name={mode === 'dark' ? 'sunny-outline' : 'moon-outline'} size={24} color="#FFFFFF" />
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerIcon}
             onPress={() => navigation.navigate('Notifications')}

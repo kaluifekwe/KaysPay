@@ -42,7 +42,7 @@ interface SettingsSection {
 
 export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   const { authorize } = useTransactionAuth();
-  const { theme, mode, setMode } = useTheme();
+  const { theme } = useTheme();
   const styles = createStyles(theme);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -162,13 +162,6 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           label: 'Language',
           value: 'English',
           onPress: () => {},
-        },
-        {
-          icon: 'color-palette-outline',
-          label: 'Dark Mode',
-          hasToggle: true,
-          toggleValue: mode === 'dark',
-          onToggle: (value: boolean) => setMode(value ? 'dark' : 'light'),
         },
       ],
     },
