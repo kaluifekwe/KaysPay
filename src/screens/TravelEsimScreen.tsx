@@ -16,7 +16,8 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
@@ -63,6 +64,8 @@ function formatDate(iso: string): string {
 export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) {
   useSensitiveScreenProtection();
   const { authorize } = useTransactionAuth();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const insets = useSafeAreaInsets();
 
   const {
@@ -354,7 +357,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
         value={countrySearch}
         onChangeText={setCountrySearch}
         placeholder="Search country..."
-        placeholderTextColor={Colors.GRAY}
+        placeholderTextColor={theme.inkMuted}
       />
       <View style={styles.sortRow}>
         {([
@@ -418,7 +421,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
 
           {loadingPlans ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator color={Colors.GREEN} />
+              <ActivityIndicator color={theme.brand} />
               <Text style={styles.loadingText}>Finding the best plans...</Text>
             </View>
           ) : plansError ? (
@@ -470,7 +473,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
               disabled={isPurchaseProcessing}
             >
               {isPurchaseProcessing ? (
-                <ActivityIndicator color={Colors.WHITE} />
+                <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <Text style={styles.primaryButtonText}>Buy {formatNaira(selectedPlan.priceKobo / 100)}</Text>
               )}
@@ -507,7 +510,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
           ListEmptyComponent={
             !countries && countriesLoading ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator color={Colors.GREEN} />
+                <ActivityIndicator color={theme.brand} />
                 <Text style={styles.loadingText}>Loading destinations...</Text>
               </View>
             ) : !countries && countriesError ? (
@@ -586,9 +589,10 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   keyboardView: { flex: 1 },
-  container: { flex: 1, backgroundColor: Colors.WHITE },
+  container: { flex: 1, backgroundColor: theme.background },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -597,19 +601,19 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.S,
   },
   backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  backText: { fontSize: 26, fontWeight: '600', color: Colors.DARK },
-  topTitle: { ...Typography.SECTION_HEADING, color: Colors.DARK, marginLeft: Spacing.S },
+  backText: { fontSize: 26, fontWeight: '600', color: theme.ink },
+  topTitle: { ...Typography.SECTION_HEADING, color: theme.ink, marginLeft: Spacing.S },
   listContent: { paddingHorizontal: Spacing.SCREEN_PADDING, paddingBottom: 140 },
 
   hero: {
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.L,
     marginTop: Spacing.S,
     marginBottom: Spacing.L,
   },
-  heroTitle: { ...Typography.SCREEN_TITLE, color: Colors.WHITE },
-  heroTagline: { ...Typography.CAPTION, color: Colors.WHITE, opacity: 0.9, marginTop: 4 },
+  heroTitle: { ...Typography.SCREEN_TITLE, color: '#FFFFFF' },
+  heroTagline: { ...Typography.CAPTION, color: '#FFFFFF', opacity: 0.9, marginTop: 4 },
   heroRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -622,30 +626,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.M,
     paddingVertical: 6,
   },
-  balanceText: { ...Typography.BODY, color: Colors.WHITE, fontWeight: '700' },
+  balanceText: { ...Typography.BODY, color: '#FFFFFF', fontWeight: '700' },
   heroActions: { flexDirection: 'row', gap: Spacing.L },
-  heroLink: { ...Typography.BODY, color: Colors.WHITE, fontWeight: '700' },
+  heroLink: { ...Typography.BODY, color: '#FFFFFF', fontWeight: '700' },
 
   tabs: {
     flexDirection: 'row',
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: Spacing.BUTTON_RADIUS,
     padding: 4,
     marginBottom: Spacing.L,
   },
   tab: { flex: 1, paddingVertical: Spacing.S, borderRadius: Spacing.BUTTON_RADIUS - 2, alignItems: 'center' },
-  tabActive: { backgroundColor: Colors.WHITE },
-  tabText: { ...Typography.BODY, color: Colors.GRAY, fontWeight: '600' },
-  tabTextActive: { color: Colors.GREEN_DARK },
+  tabActive: { backgroundColor: theme.surface },
+  tabText: { ...Typography.BODY, color: theme.inkMuted, fontWeight: '600' },
+  tabTextActive: { color: theme.brand },
 
   searchInput: {
     height: Spacing.INPUT_HEIGHT,
     borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.BUTTON_RADIUS,
     paddingHorizontal: Spacing.L,
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
     marginBottom: Spacing.M,
   },
   sortRow: { flexDirection: 'row', gap: Spacing.S, marginBottom: Spacing.M },
@@ -654,69 +658,69 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
   },
-  sortChipActive: { backgroundColor: Colors.GREEN_10, borderColor: Colors.GREEN },
-  sortChipText: { ...Typography.CAPTION, color: Colors.GRAY, fontWeight: '600' },
-  sortChipTextActive: { color: Colors.GREEN_DARK },
+  sortChipActive: { backgroundColor: theme.brandSoft, borderColor: theme.brand },
+  sortChipText: { ...Typography.CAPTION, color: theme.inkMuted, fontWeight: '600' },
+  sortChipTextActive: { color: theme.brand },
 
-  sectionHeader: { ...Typography.SECTION_HEADING, color: Colors.DARK, marginTop: Spacing.M, marginBottom: Spacing.S },
+  sectionHeader: { ...Typography.SECTION_HEADING, color: theme.ink, marginTop: Spacing.M, marginBottom: Spacing.S },
 
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.CARD_PADDING,
     marginBottom: Spacing.M,
   },
   rowLeft: { flex: 1 },
-  rowCode: { ...Typography.CAPTION, color: Colors.GRAY },
-  rowName: { ...Typography.CARD_TITLE, color: Colors.DARK, marginTop: 2 },
-  rowFrom: { ...Typography.BODY, color: Colors.GREEN, fontWeight: '700', marginTop: 2 },
-  rowTap: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: 2 },
+  rowCode: { ...Typography.CAPTION, color: theme.inkMuted },
+  rowName: { ...Typography.CARD_TITLE, color: theme.ink, marginTop: 2 },
+  rowFrom: { ...Typography.BODY, color: theme.brand, fontWeight: '700', marginTop: 2 },
+  rowTap: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: 2 },
   featuredBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: Colors.GREEN_10,
+    backgroundColor: theme.brandSoft,
     borderRadius: 10,
     paddingHorizontal: Spacing.S,
     paddingVertical: 2,
     marginTop: Spacing.S,
   },
-  featuredBadgeText: { ...Typography.CAPTION, color: Colors.GREEN_DARK, fontWeight: '700' },
+  featuredBadgeText: { ...Typography.CAPTION, color: theme.brand, fontWeight: '700' },
   proceedBtn: {
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: Spacing.BUTTON_RADIUS,
     paddingHorizontal: Spacing.L,
     paddingVertical: Spacing.S,
     marginLeft: Spacing.M,
   },
-  proceedText: { ...Typography.BODY, color: Colors.WHITE, fontWeight: '700' },
+  proceedText: { ...Typography.BODY, color: '#FFFFFF', fontWeight: '700' },
 
   myRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.CARD_PADDING,
     marginBottom: Spacing.M,
   },
   myFlag: { fontSize: 28, marginRight: Spacing.M },
-  mySub: { ...Typography.BODY, color: Colors.DARK, marginTop: 2 },
-  myDate: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: 2 },
-  myView: { ...Typography.CAPTION, color: Colors.GREEN, fontWeight: '700', marginLeft: Spacing.M },
-  emptyText: { ...Typography.BODY, color: Colors.GRAY, textAlign: 'center', paddingVertical: Spacing.XL },
+  mySub: { ...Typography.BODY, color: theme.ink, marginTop: 2 },
+  myDate: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: 2 },
+  myView: { ...Typography.CAPTION, color: theme.brand, fontWeight: '700', marginLeft: Spacing.M },
+  emptyText: { ...Typography.BODY, color: theme.inkMuted, textAlign: 'center', paddingVertical: Spacing.XL },
 
-  compatNote: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.M },
+  compatNote: { ...Typography.CAPTION, color: theme.inkMuted, marginBottom: Spacing.M },
   installButton: { marginTop: Spacing.M, alignSelf: 'stretch' },
   selectedCountryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.GREEN_LIGHT,
+    backgroundColor: theme.brandSoft,
     borderRadius: Spacing.BUTTON_RADIUS,
     paddingVertical: Spacing.S,
     paddingHorizontal: Spacing.M,
@@ -724,40 +728,40 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   countryFlag: { fontSize: 24 },
-  selectedCountryName: { ...Typography.BODY, color: Colors.GREEN_DARK, fontWeight: '600', marginLeft: Spacing.S },
-  label: { ...Typography.SECTION_HEADING, marginBottom: Spacing.M },
+  selectedCountryName: { ...Typography.BODY, color: theme.brand, fontWeight: '600', marginLeft: Spacing.S },
+  label: { ...Typography.SECTION_HEADING, color: theme.ink, marginBottom: Spacing.M },
   scrollContent: { paddingHorizontal: Spacing.SCREEN_PADDING, paddingTop: Spacing.M, paddingBottom: 140 },
 
   loadingContainer: { alignItems: 'center', paddingVertical: Spacing.XL },
-  loadingText: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: Spacing.M },
+  loadingText: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: Spacing.M },
   retryButton: {
     marginTop: Spacing.M,
     paddingVertical: Spacing.S,
     paddingHorizontal: Spacing.L,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.GREEN,
+    borderColor: theme.brand,
   },
-  retryButtonText: { ...Typography.BODY, color: Colors.GREEN, fontWeight: '600' },
+  retryButtonText: { ...Typography.BODY, color: theme.brand, fontWeight: '600' },
 
   plansContainer: { gap: Spacing.M },
   planCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.CARD_PADDING,
   },
-  planCardSelected: { borderColor: Colors.GREEN, borderWidth: 2, backgroundColor: Colors.GREEN_10 },
+  planCardSelected: { borderColor: theme.brand, borderWidth: 2, backgroundColor: theme.brandSoft },
   planInfo: { flex: 1 },
-  planData: { ...Typography.CARD_TITLE, color: Colors.DARK },
-  planDataSelected: { color: Colors.GREEN_DARK },
-  planDays: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: 2 },
-  planPrice: { ...Typography.AMOUNT_SMALL },
-  planPriceSelected: { color: Colors.GREEN },
+  planData: { ...Typography.CARD_TITLE, color: theme.ink },
+  planDataSelected: { color: theme.brand },
+  planDays: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: 2 },
+  planPrice: { ...Typography.AMOUNT_SMALL, color: theme.ink },
+  planPriceSelected: { color: theme.brand },
   amountError: { ...Typography.ERROR, textAlign: 'center' },
   errorContainer: { marginTop: Spacing.M },
   errorText: { ...Typography.ERROR },
@@ -767,18 +771,18 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderTopWidth: 1,
-    borderTopColor: Colors.BORDER,
+    borderTopColor: theme.border,
     paddingHorizontal: Spacing.SCREEN_PADDING,
     paddingTop: Spacing.L,
   },
   summary: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.L },
-  summaryText: { ...Typography.BODY, flex: 1 },
-  summaryAmount: { ...Typography.AMOUNT_SMALL },
+  summaryText: { ...Typography.BODY, color: theme.ink, flex: 1 },
+  summaryAmount: { ...Typography.AMOUNT_SMALL, color: theme.ink },
   primaryButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
@@ -792,22 +796,22 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Spacing.XL,
   },
-  successIconText: { fontSize: 36, color: Colors.WHITE },
-  resultTitle: { ...Typography.SCREEN_TITLE, marginBottom: Spacing.M, textAlign: 'center' },
-  resultDetail: { ...Typography.BODY, color: Colors.GRAY, marginBottom: Spacing.S, textAlign: 'center' },
+  successIconText: { fontSize: 36, color: '#FFFFFF' },
+  resultTitle: { ...Typography.SCREEN_TITLE, color: theme.ink, marginBottom: Spacing.M, textAlign: 'center' },
+  resultDetail: { ...Typography.BODY, color: theme.inkMuted, marginBottom: Spacing.S, textAlign: 'center' },
   qrContainer: { alignItems: 'center', marginTop: Spacing.L, marginBottom: Spacing.L },
   qrImage: { width: 220, height: 220, marginBottom: Spacing.M },
-  qrHint: { ...Typography.CAPTION, color: Colors.GRAY, textAlign: 'center', paddingHorizontal: Spacing.L },
-  iccidText: { ...Typography.CAPTION, color: Colors.DARK, textAlign: 'center', marginTop: Spacing.S },
+  qrHint: { ...Typography.CAPTION, color: theme.inkMuted, textAlign: 'center', paddingHorizontal: Spacing.L },
+  iccidText: { ...Typography.CAPTION, color: theme.ink, textAlign: 'center', marginTop: Spacing.S },
 
-  modalOverlay: { flex: 1, backgroundColor: Colors.OVERLAY, justifyContent: 'flex-end' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'flex-end' },
   modalSheet: {
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: Spacing.L,
@@ -815,16 +819,17 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.XL,
     alignItems: 'center',
   },
-  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.BORDER, alignSelf: 'center', marginBottom: Spacing.M },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: theme.border, alignSelf: 'center', marginBottom: Spacing.M },
   modalClose: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     justifyContent: 'center',
     alignItems: 'center',
     alignSelf: 'stretch',
     marginTop: Spacing.M,
   },
-  modalCloseText: { ...Typography.BUTTON_TEXT, color: Colors.DARK },
-});
+  modalCloseText: { ...Typography.BUTTON_TEXT, color: theme.ink },
+  });
+}

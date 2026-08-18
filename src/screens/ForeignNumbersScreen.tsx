@@ -13,7 +13,8 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { formatNaira } from '../utils/formatCurrency';
@@ -46,6 +47,8 @@ function countryFlag(code: string): string {
 export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScreenProps) {
   useSensitiveScreenProtection();
   const { authorize } = useTransactionAuth();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const insets = useSafeAreaInsets();
   const services = useMemo(() => foreignNumberService.getServices(), []);
 
@@ -345,7 +348,7 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
     return (
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.resultContainer} showsVerticalScrollIndicator={false}>
-          <ActivityIndicator size="large" color={Colors.GREEN} style={styles.waitingSpinner} />
+          <ActivityIndicator size="large" color={theme.brand} style={styles.waitingSpinner} />
           <Text style={styles.resultTitle}>Waiting for Code</Text>
           <Text style={styles.resultDetail}>{selectedService?.name} · {selectedCountry?.name}</Text>
           <View style={styles.phoneContainer}>
@@ -362,7 +365,7 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
             disabled={cancelling}
           >
             {cancelling ? (
-              <ActivityIndicator color={Colors.ERROR} size="small" />
+              <ActivityIndicator color={theme.down} size="small" />
             ) : (
               <Text style={styles.cancelButtonText}>No Code Received / Cancel</Text>
             )}
@@ -399,12 +402,12 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
               value={serviceSearch}
               onChangeText={setServiceSearch}
               placeholder={showAllServices ? 'Search all services...' : 'Search service (WhatsApp, Telegram...)'}
-              placeholderTextColor={Colors.GRAY}
+              placeholderTextColor={theme.inkMuted}
             />
 
             {showAllServices && loadingAllServices ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator color={Colors.GREEN} />
+                <ActivityIndicator color={theme.brand} />
                 <Text style={styles.loadingText}>Loading all services...</Text>
               </View>
             ) : showAllServices && allServicesError ? (
@@ -467,7 +470,7 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
 
             {loadingCountries ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator color={Colors.GREEN} />
+                <ActivityIndicator color={theme.brand} />
                 <Text style={styles.loadingText}>
                   Finding countries with {selectedService?.name} in stock...
                 </Text>
@@ -499,7 +502,7 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
                   value={countrySearch}
                   onChangeText={setCountrySearch}
                   placeholder="Search country..."
-                  placeholderTextColor={Colors.GRAY}
+                  placeholderTextColor={theme.inkMuted}
                 />
                 <View style={styles.sortRow}>
                   <Text style={styles.sortLabel}>Sort:</Text>
@@ -553,7 +556,7 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
 
             {loadingPrice ? (
               <View style={styles.loadingContainer}>
-                <ActivityIndicator color={Colors.GREEN} />
+                <ActivityIndicator color={theme.brand} />
                 <Text style={styles.loadingText}>
                   Checking {selectedService?.name} availability in {selectedCountry?.name}...
                 </Text>
@@ -600,7 +603,7 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
             disabled={purchasing}
           >
             {purchasing ? (
-              <ActivityIndicator color={Colors.WHITE} />
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
               <Text style={styles.primaryButtonText}>Get Number · {formatNaira(priceKobo / 100)}</Text>
             )}
@@ -611,10 +614,11 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.background,
   },
   scrollView: {
     flex: 1,
@@ -634,10 +638,11 @@ const styles = StyleSheet.create({
   backText: {
     fontSize: 28,
     fontWeight: '600',
-    color: Colors.DARK,
+    color: theme.ink,
   },
   title: {
     ...Typography.SCREEN_TITLE,
+    color: theme.ink,
     marginBottom: Spacing.L,
   },
   section: {
@@ -645,23 +650,24 @@ const styles = StyleSheet.create({
   },
   label: {
     ...Typography.SECTION_HEADING,
+    color: theme.ink,
     marginBottom: Spacing.M,
   },
   searchInput: {
     height: Spacing.INPUT_HEIGHT,
     borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.BUTTON_RADIUS,
     paddingHorizontal: Spacing.L,
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
     marginBottom: Spacing.M,
   },
   countryList: {
     borderRadius: Spacing.CARD_RADIUS,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
   },
   countryRow: {
     flexDirection: 'row',
@@ -670,12 +676,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.M,
     paddingVertical: Spacing.M,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
-    backgroundColor: Colors.WHITE,
+    borderBottomColor: theme.border,
+    backgroundColor: theme.surface,
   },
   countryName: {
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
     flex: 1,
   },
   countryRight: {
@@ -684,13 +690,13 @@ const styles = StyleSheet.create({
   },
   countryPrice: {
     ...Typography.BODY,
-    color: Colors.GREEN,
+    color: theme.brand,
     fontWeight: '600',
     marginRight: Spacing.M,
   },
   fromPrice: {
     ...Typography.CAPTION,
-    color: Colors.GREEN,
+    color: theme.brand,
     fontWeight: '600',
     marginRight: Spacing.M,
   },
@@ -702,7 +708,7 @@ const styles = StyleSheet.create({
   },
   sortLabel: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginRight: Spacing.S,
   },
   sortChip: {
@@ -710,45 +716,45 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.XS,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     marginRight: Spacing.S,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
   },
   sortChipActive: {
-    backgroundColor: Colors.GREEN_LIGHT,
-    borderColor: Colors.GREEN,
+    backgroundColor: theme.brandSoft,
+    borderColor: theme.brand,
   },
   sortChipText: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     fontWeight: '600',
   },
   sortChipTextActive: {
-    color: Colors.GREEN_DARK,
+    color: theme.brand,
   },
   emptyTitle: {
     ...Typography.SECTION_HEADING,
-    color: Colors.DARK,
+    color: theme.ink,
     marginBottom: Spacing.S,
     textAlign: 'center',
   },
   countryArrow: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   summaryCard: {
-    backgroundColor: Colors.GREEN_LIGHT,
+    backgroundColor: theme.brandSoft,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.CARD_PADDING,
     marginBottom: Spacing.L,
   },
   summaryRow: {
     ...Typography.CARD_TITLE,
-    color: Colors.GREEN_DARK,
+    color: theme.brand,
   },
   summaryRowSub: {
     ...Typography.CAPTION,
-    color: Colors.GREEN_DARK,
+    color: theme.brand,
     marginTop: 2,
   },
   loadingContainer: {
@@ -757,11 +763,11 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginTop: Spacing.M,
   },
   priceCard: {
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.CARD_PADDING,
     alignItems: 'center',
@@ -769,16 +775,16 @@ const styles = StyleSheet.create({
   },
   priceLabel: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginBottom: Spacing.S,
   },
   priceValue: {
     ...Typography.AMOUNT_LARGE,
-    color: Colors.GREEN,
+    color: theme.brand,
   },
   stockText: {
     ...Typography.CAPTION,
-    color: Colors.GREEN,
+    color: theme.brand,
     fontWeight: '600',
     textAlign: 'center',
     marginBottom: Spacing.M,
@@ -787,14 +793,14 @@ const styles = StyleSheet.create({
     height: Spacing.BUTTON_HEIGHT_SECONDARY,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.GREEN,
+    borderColor: theme.brand,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: Spacing.M,
   },
   secondaryButtonText: {
     ...Typography.BUTTON_TEXT,
-    color: Colors.GREEN,
+    color: theme.brand,
   },
   browseAllButton: {
     paddingVertical: Spacing.M,
@@ -803,12 +809,12 @@ const styles = StyleSheet.create({
   },
   browseAllText: {
     ...Typography.BODY,
-    color: Colors.GREEN,
+    color: theme.brand,
     fontWeight: '600',
   },
   disclaimer: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     textAlign: 'center',
   },
   amountError: {
@@ -826,15 +832,15 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderTopWidth: 1,
-    borderTopColor: Colors.BORDER,
+    borderTopColor: theme.border,
     paddingHorizontal: Spacing.SCREEN_PADDING,
     paddingTop: Spacing.L,
   },
   primaryButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
@@ -855,30 +861,31 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Spacing.XL,
   },
   successIconText: {
     fontSize: 36,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   waitingSpinner: {
     marginBottom: Spacing.XL,
   },
   resultTitle: {
     ...Typography.SCREEN_TITLE,
+    color: theme.ink,
     marginBottom: Spacing.M,
   },
   resultDetail: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginBottom: Spacing.S,
     textAlign: 'center',
   },
   codeContainer: {
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.CARD_PADDING,
     width: '100%',
@@ -887,7 +894,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.XL,
   },
   phoneContainer: {
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.CARD_PADDING,
     width: '100%',
@@ -897,22 +904,23 @@ const styles = StyleSheet.create({
   },
   codeLabel: {
     ...Typography.CAPTION,
+    color: theme.inkMuted,
     marginBottom: Spacing.S,
   },
   codeValue: {
     ...Typography.CODE,
-    color: Colors.GREEN,
+    color: theme.brand,
     letterSpacing: 2,
     fontSize: 28,
   },
   phoneValue: {
     ...Typography.CODE,
-    color: Colors.DARK,
+    color: theme.ink,
     letterSpacing: 1,
   },
   waitHint: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     textAlign: 'center',
     marginBottom: Spacing.XL,
     paddingHorizontal: Spacing.M,
@@ -922,13 +930,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.L,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.ERROR,
+    borderColor: theme.down,
     justifyContent: 'center',
     alignItems: 'center',
   },
   cancelButtonText: {
     ...Typography.BUTTON_TEXT,
-    color: Colors.ERROR,
+    color: theme.down,
     fontSize: 14,
   },
-});
+  });
+}

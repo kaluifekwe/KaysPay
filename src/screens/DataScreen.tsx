@@ -16,6 +16,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { Strings } from '../constants/strings';
@@ -63,6 +65,8 @@ function networkLabel(network: NetworkProvider): string {
 
 export default function DataScreen({ navigation }: DataScreenProps) {
   const { authorize } = useTransactionAuth();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const insets = useSafeAreaInsets();
   const [phoneNumber, setPhoneNumber] = useState('');
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkProvider | null>(null);
@@ -367,13 +371,13 @@ export default function DataScreen({ navigation }: DataScreenProps) {
                 accessibilityLabel="Choose one phone number from your contacts"
               >
                 <View style={styles.contactActionIcon}>
-                  <Ionicons name="person" size={24} color={Colors.WHITE} />
+                  <Ionicons name="person" size={24} color="#FFFFFF" />
                 </View>
                 <Text style={styles.contactActionTitle}>Choose one contact</Text>
                 <Text style={styles.contactActionDescription}>Pick a saved number</Text>
                 <View style={styles.contactActionButton}>
                   <Text style={styles.contactActionButtonText}>Choose</Text>
-                  <Ionicons name="arrow-forward" size={18} color={Colors.WHITE} />
+                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
                 </View>
               </TouchableOpacity>
 
@@ -385,13 +389,13 @@ export default function DataScreen({ navigation }: DataScreenProps) {
                 accessibilityLabel="Select multiple phone numbers from your contacts"
               >
                 <View style={styles.contactActionIcon}>
-                  <Ionicons name="people" size={24} color={Colors.WHITE} />
+                  <Ionicons name="people" size={24} color="#FFFFFF" />
                 </View>
                 <Text style={styles.contactActionTitle}>Send to many</Text>
                 <Text style={styles.contactActionDescription}>Select multiple contacts</Text>
                 <View style={styles.contactActionButton}>
                   <Text style={styles.contactActionButtonText}>Select</Text>
-                  <Ionicons name="arrow-forward" size={18} color={Colors.WHITE} />
+                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
                 </View>
               </TouchableOpacity>
             </View>
@@ -402,7 +406,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
               value={phoneNumber}
               onChangeText={handlePhoneChange}
               placeholder={Strings.PHONE_INPUT_PLACEHOLDER}
-              placeholderTextColor={Colors.GRAY}
+              placeholderTextColor={theme.inkMuted}
               keyboardType="phone-pad"
             />
             {detectedNetwork && detectedNetwork.network !== 'Unknown' && (
@@ -461,7 +465,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
               <Text style={styles.label}>Choose a Bundle</Text>
               {catalogBusy ? (
                 <View style={styles.catalogLoadingRow}>
-                  <ActivityIndicator size="small" color={Colors.GREEN} />
+                  <ActivityIndicator size="small" color={theme.brand} />
                   <Text style={styles.catalogLoadingText}>
                     {catalogTransitioning
                       ? `Loading ${networkLabel(effectiveNetwork)} bundles…`
@@ -575,7 +579,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
             <View style={styles.cashbackToggleRow}>
               <View style={styles.cashbackToggleLabel}>
                 <View style={styles.cashbackToggleBadge}>
-                  <Ionicons name="gift" size={18} color={Colors.WHITE} />
+                  <Ionicons name="gift" size={18} color="#FFFFFF" />
                 </View>
                 <View style={styles.cashbackToggleTextCol}>
                   <Text style={styles.cashbackToggleTitle}>Use your cashback</Text>
@@ -590,8 +594,8 @@ export default function DataScreen({ navigation }: DataScreenProps) {
               <Switch
                 value={useCashback}
                 onValueChange={setUseCashback}
-                trackColor={{ false: Colors.LIGHT_GRAY, true: Colors.GREEN }}
-                thumbColor={Colors.WHITE}
+                trackColor={{ false: theme.surfaceRaised, true: theme.brand }}
+                thumbColor="#FFFFFF"
               />
             </View>
           )}
@@ -611,7 +615,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
             disabled={!selectedBundle || buyState === 'processing'}
           >
             {buyState === 'processing' ? (
-              <ActivityIndicator color={Colors.WHITE} />
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
               <View style={styles.payButtonTextColumn}>
                 <Text style={styles.primaryButtonText}>Pay</Text>
@@ -627,10 +631,11 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.background,
   },
   flex: {
     flex: 1,
@@ -656,10 +661,11 @@ const styles = StyleSheet.create({
   backText: {
     fontSize: 28,
     fontWeight: '600',
-    color: Colors.DARK,
+    color: theme.ink,
   },
   title: {
     ...Typography.SCREEN_TITLE,
+    color: theme.ink,
     marginBottom: Spacing.L,
   },
   section: {
@@ -667,10 +673,12 @@ const styles = StyleSheet.create({
   },
   label: {
     ...Typography.SECTION_HEADING,
+    color: theme.ink,
     marginBottom: Spacing.M,
   },
   recipientHeading: {
     ...Typography.SECTION_HEADING,
+    color: theme.ink,
     marginBottom: Spacing.M,
   },
   contactActions: {
@@ -685,15 +693,15 @@ const styles = StyleSheet.create({
     padding: Spacing.L,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.GREEN_MID,
-    backgroundColor: Colors.GREEN_10,
+    borderColor: theme.brand,
+    backgroundColor: theme.brandSoft,
     boxShadow: '0 2px 4px rgba(15, 61, 39, 0.10)',
   },
   contactActionIcon: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -701,19 +709,19 @@ const styles = StyleSheet.create({
     ...Typography.CARD_TITLE,
     fontSize: 13,
     lineHeight: 18,
-    color: Colors.DARK,
+    color: theme.ink,
   },
   contactActionDescription: {
     ...Typography.CAPTION,
     fontSize: 11,
     lineHeight: 16,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   contactActionButton: {
     minHeight: Spacing.TOUCH_TARGET_MIN,
     marginTop: 'auto',
     borderRadius: Spacing.TOUCH_TARGET_MIN / 2,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -726,11 +734,11 @@ const styles = StyleSheet.create({
   phoneInput: {
     height: Spacing.INPUT_HEIGHT,
     borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.BUTTON_RADIUS,
     paddingHorizontal: Spacing.L,
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
   },
   detectedBadge: {
     flexDirection: 'row',
@@ -745,7 +753,7 @@ const styles = StyleSheet.create({
   },
   detectedText: {
     ...Typography.CAPTION,
-    color: Colors.GREEN,
+    color: theme.brand,
   },
   undetectedBadge: {
     marginBottom: Spacing.M,
@@ -771,13 +779,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.M,
     borderRadius: Spacing.TOUCH_TARGET_MIN / 2,
     borderWidth: 1.5,
-    borderColor: Colors.BORDER,
-    backgroundColor: Colors.WHITE,
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
   },
   networkChipText: {
     ...Typography.BODY,
     fontSize: 13,
-    color: Colors.DARK,
+    color: theme.ink,
   },
   bundleCard: {
     flexDirection: 'row',
@@ -785,7 +793,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     height: Spacing.LIST_ITEM_HEIGHT,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.CARD_RADIUS,
     paddingHorizontal: Spacing.CARD_PADDING,
     marginBottom: Spacing.M,
@@ -797,23 +805,25 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.M,
   },
   catalogLoadingText: {
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     fontSize: 12,
   },
   bundleCardSelected: {
-    borderColor: Colors.GREEN,
+    borderColor: theme.brand,
     borderWidth: 2,
-    backgroundColor: Colors.GREEN_10,
+    backgroundColor: theme.brandSoft,
   },
   bundleInfo: {
     flex: 1,
   },
   bundleName: {
     ...Typography.CARD_TITLE,
+    color: theme.ink,
     marginBottom: 2,
   },
   bundleValidity: {
     ...Typography.CAPTION,
+    color: theme.inkMuted,
   },
   badgeRow: {
     flexDirection: 'row',
@@ -821,7 +831,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   discountBadge: {
-    backgroundColor: Colors.GREEN_LIGHT,
+    backgroundColor: theme.brandSoft,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 5,
@@ -829,7 +839,7 @@ const styles = StyleSheet.create({
   discountBadgeText: {
     fontSize: 10,
     fontWeight: '600',
-    color: Colors.GREEN,
+    color: theme.brand,
   },
   cashbackBadge: {
     backgroundColor: '#FEF3C7',
@@ -847,26 +857,26 @@ const styles = StyleSheet.create({
   },
   bundleListAmount: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     textDecorationLine: 'line-through',
   },
   bundleAmount: {
     ...Typography.AMOUNT_SMALL,
-    color: Colors.DARK,
+    color: theme.ink,
   },
   bundleAmountSelected: {
-    color: Colors.GREEN,
+    color: theme.brand,
   },
   emptyState: {
     height: 80,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: Spacing.CARD_RADIUS,
   },
   emptyStateText: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     textAlign: 'center',
     paddingHorizontal: Spacing.XL,
   },
@@ -881,9 +891,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderTopWidth: 1,
-    borderTopColor: Colors.BORDER,
+    borderTopColor: theme.border,
     paddingHorizontal: Spacing.SCREEN_PADDING,
     paddingTop: Spacing.L,
   },
@@ -895,10 +905,12 @@ const styles = StyleSheet.create({
   },
   summaryText: {
     ...Typography.BODY,
+    color: theme.ink,
     flex: 1,
   },
   summaryAmount: {
     ...Typography.AMOUNT_SMALL,
+    color: theme.ink,
   },
   cashbackToggleRow: {
     flexDirection: 'row',
@@ -945,7 +957,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   cashbackToggleApplied: {
-    color: Colors.GREEN,
+    color: theme.brand,
     fontWeight: '700',
   },
   payButtonTextColumn: {
@@ -953,7 +965,7 @@ const styles = StyleSheet.create({
   },
   payButtonSubtext: {
     fontSize: 11,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
     opacity: 0.8,
     marginTop: 1,
   },
@@ -963,12 +975,12 @@ const styles = StyleSheet.create({
   },
   payHintText: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     textAlign: 'center',
   },
   primaryButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
@@ -989,28 +1001,30 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Spacing.XL,
   },
   successIconText: {
     fontSize: 36,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   resultTitle: {
     ...Typography.SCREEN_TITLE,
+    color: theme.ink,
     marginBottom: Spacing.M,
   },
   resultDetail: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginBottom: Spacing.S,
   },
   resultAmount: {
     ...Typography.AMOUNT_LARGE,
-    color: Colors.GREEN,
+    color: theme.brand,
     marginTop: Spacing.L,
     marginBottom: Spacing.XL,
   },
-});
+  });
+}
