@@ -10,6 +10,7 @@ import ServiceControlsPage from './pages/ServiceControlsPage';
 import PricingPage from './pages/PricingPage';
 import AdminsPage from './pages/AdminsPage';
 import SecurityAlertsPage from './pages/SecurityAlertsPage';
+import SettingsPage from './pages/SettingsPage';
 
 function Shell() {
   const { role, session } = useAuth();
@@ -25,6 +26,7 @@ function Shell() {
           <NavLink to="/services">Kill Switches</NavLink>
           <NavLink to="/pricing">Pricing</NavLink>
           <NavLink to="/security">Security Alerts</NavLink>
+          <NavLink to="/settings">Settings</NavLink>
           {role === 'super_admin' && <NavLink to="/admins">Admins</NavLink>}
         </nav>
         <div className="muted" style={{ fontSize: 11, marginTop: 24, wordBreak: 'break-all' }}>
@@ -40,6 +42,7 @@ function Shell() {
           <Route path="/services" element={<ServiceControlsPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/security" element={<SecurityAlertsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           {role === 'super_admin' && <Route path="/admins" element={<AdminsPage />} />}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

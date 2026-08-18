@@ -27,6 +27,10 @@ export const StorageKeys = {
   PIN_LOCKED_UNTIL: 'pin_locked_until',
   // 'light' | 'dark' — see src/components/ThemeProvider.tsx.
   THEME_MODE: 'theme_mode',
+  // Last known server value for the support WhatsApp number, so Contact
+  // Support still reaches the CURRENT number when offline rather than
+  // falling back to the build-time default — see appSettings.service.ts.
+  SUPPORT_WHATSAPP_NUMBER: 'support_whatsapp_number',
 };
 
 // Helper functions using SecureStore (max 2KB per item)

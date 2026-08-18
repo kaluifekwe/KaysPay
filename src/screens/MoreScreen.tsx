@@ -10,6 +10,7 @@ import { Spacing } from '../constants/spacing';
 import { authService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
 import { withTimeout } from '../utils/network';
+import { supportWhatsAppUrl } from '../services/appSettings.service';
 
 interface Row {
   icon: keyof typeof Ionicons.glyphMap;
@@ -71,9 +72,10 @@ export default function MoreScreen({ navigation }: any) {
   );
 
   // wa.me works whether or not WhatsApp is installed (falls back to the
-  // Play Store / WhatsApp Web), so no need to check canOpenURL first.
+  // Play Store / WhatsApp Web), so no need to check canOpenURL first. The
+  // number is owner-editable (app_settings, migration 131).
   const handleOpenSupport = useCallback(() => {
-    Linking.openURL('https://wa.me/2348028387709').catch(() =>
+    Linking.openURL(supportWhatsAppUrl()).catch(() =>
       Alert.alert('Could not open WhatsApp', 'Please make sure WhatsApp is installed.'),
     );
   }, []);

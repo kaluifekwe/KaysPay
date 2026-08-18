@@ -22,6 +22,7 @@ import { withTimeout } from '../utils/network';
 import { walletService } from '../services/wallet.service';
 import { kycService } from '../services/kyc.service';
 import { SUPPORT_EMAIL } from './LegalDocumentScreen';
+import { supportWhatsAppNumber, supportWhatsAppUrl } from '../services/appSettings.service';
 
 const ProfileScreen = ({ navigation }: any) => {
   const { theme } = useTheme();
@@ -81,10 +82,11 @@ const ProfileScreen = ({ navigation }: any) => {
   };
 
   // wa.me works whether or not WhatsApp is installed (falls back to the
-  // Play Store / WhatsApp Web), so no need to check canOpenURL first.
-  const WHATSAPP_SUPPORT_NUMBER = '2348028387709';
+  // Play Store / WhatsApp Web), so no need to check canOpenURL first. The
+  // number is owner-editable (app_settings, migration 131) — read at press
+  // time rather than captured, so a mid-session change is used immediately.
   const handleOpenSupport = () => {
-    Linking.openURL(`https://wa.me/${WHATSAPP_SUPPORT_NUMBER}`).catch(() =>
+    Linking.openURL(supportWhatsAppUrl()).catch(() =>
       Alert.alert('Could not open WhatsApp', 'Please make sure WhatsApp is installed.'),
     );
   };
@@ -92,7 +94,7 @@ const ProfileScreen = ({ navigation }: any) => {
   const handleDeleteAccount = () => {
     Alert.alert(
       'Delete Account',
-      `To delete your account, please contact us with your registered email and phone number and we'll process your request promptly.\n\nWhatsApp: +${WHATSAPP_SUPPORT_NUMBER}\nEmail: ${SUPPORT_EMAIL}`,
+      `To delete your account, please contact us with your registered email and phone number and we'll process your request promptly.\n\nWhatsApp: +${supportWhatsAppNumber()}\nEmail: ${SUPPORT_EMAIL}`,
       [
         { text: 'Contact via WhatsApp', onPress: handleOpenSupport },
         { text: 'Cancel', style: 'cancel' },

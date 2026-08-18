@@ -8,12 +8,15 @@ import { useTheme } from '../components/ThemeProvider';
 import HomeScreen from '../screens/HomeScreen';
 import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
 import MoreScreen from '../screens/MoreScreen';
+import { supportWhatsAppUrl } from '../services/appSettings.service';
 
 const Tab = createBottomTabNavigator();
 
 // The Support tab opens WhatsApp instead of showing a screen (its tabPress is
 // intercepted below), so it just needs a component that never actually renders.
-const WHATSAPP_SUPPORT_URL = 'https://wa.me/2348028387709';
+// The number itself is owner-editable (app_settings, migration 131) — read at
+// press time via supportWhatsAppUrl() rather than captured in a constant, so a
+// change picked up mid-session is used immediately.
 function SupportPlaceholder() {
   return null;
 }
@@ -72,7 +75,7 @@ export default function TabNavigator() {
           tabPress: (e) => {
             // Don't switch tabs — open WhatsApp support instead.
             e.preventDefault();
-            Linking.openURL(WHATSAPP_SUPPORT_URL).catch(() => {});
+            Linking.openURL(supportWhatsAppUrl()).catch(() => {});
           },
         }}
       />
