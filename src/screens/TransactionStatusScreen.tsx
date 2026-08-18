@@ -2,7 +2,8 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { formatNaira } from '../utils/formatCurrency';
 import { supabase } from '../lib/supabase';
 import { vtuService, type NetworkProvider, type DataBundle, type ExamType, type VTUResult } from '../services/vtu.service';
@@ -67,6 +68,8 @@ async function runRequest(req: PurchaseRequest, key: string): Promise<FullResult
 // button first. A slow provider response returns 'pending' and the screen polls
 // the transaction until it settles.
 export default function TransactionStatusScreen({ navigation, route }: Props) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const p = (route.params || {}) as Params;
   const [status, setStatus] = useState<TxStatus>(p.request ? 'processing' : p.status || 'processing');
   const [txId, setTxId] = useState<string | undefined>(p.transactionId);
@@ -285,12 +288,12 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
 
   const visual =
     priceChanged
-      ? { color: Colors.WARNING, icon: 'refresh' as const, label: 'Price Updated' }
+      ? { color: theme.gold, icon: 'refresh' as const, label: 'Price Updated' }
       : status === 'success'
       ? { color: SUCCESS_GREEN, icon: 'checkmark' as const, label: 'Successful' }
       : status === 'failed'
-      ? { color: Colors.RED, icon: 'close' as const, label: 'Failed' }
-      : { color: Colors.WARNING, icon: 'time' as const, label: 'Processing' };
+      ? { color: theme.down, icon: 'close' as const, label: 'Failed' }
+      : { color: theme.gold, icon: 'time' as const, label: 'Processing' };
 
   const showReceipt = status === 'success' && !!p.electricity;
 
@@ -298,7 +301,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={goHome} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="chevron-back" size={26} color={Colors.DARK} />
+          <Ionicons name="chevron-back" size={26} color={theme.ink} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{p.title || 'Transaction'}</Text>
         <View style={{ width: 26 }} />
@@ -306,14 +309,14 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
 
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <View style={[styles.iconCircle, { backgroundColor: visual.color }]}>
-          <Ionicons name={visual.icon} size={42} color={Colors.WHITE} />
+          <Ionicons name={visual.icon} size={42} color="#FFFFFF" />
         </View>
         <Text style={styles.statusLabel}>{visual.label}</Text>
         <Text style={styles.amount}>{formatNaira(currentAmount ?? p.amount ?? 0)}</Text>
 
         {status === 'success' && cashbackEarned ? (
           <View style={styles.cashbackEarnedRow}>
-            <Ionicons name="gift" size={16} color={Colors.AMBER} />
+            <Ionicons name="gift" size={16} color={theme.gold} />
             <Text style={styles.cashbackEarnedText}>
               You earned {formatNaira(cashbackEarned)} cashback
             </Text>
@@ -322,7 +325,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
 
         {status === 'processing' ? (
           <View style={styles.spinnerRow}>
-            <ActivityIndicator size="small" color={Colors.GRAY} />
+            <ActivityIndicator size="small" color={theme.inkMuted} />
             <Text style={styles.processingHint}>Confirming your order…</Text>
           </View>
         ) : null}
@@ -392,7 +395,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
               disabled={generatingPdf}
             >
               {generatingPdf ? (
-                <ActivityIndicator color={Colors.GREEN} size="small" />
+                <ActivityIndicator color={theme.brand} size="small" />
               ) : (
                 <Text style={styles.receiptButtonText}>Download Receipt</Text>
               )}
@@ -416,7 +419,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
             }}
           >
             <Text style={styles.viewDetailText}>View Detail</Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.PURPLE} />
+            <Ionicons name="chevron-forward" size={16} color="#7C3AED" />
           </TouchableOpacity>
         ) : null}
       </ScrollView>
@@ -432,8 +435,9 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -441,7 +445,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 14,
   },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: Colors.DARK },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: theme.ink },
   body: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 20 },
   iconCircle: {
     width: 84,
@@ -451,22 +455,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 20,
   },
-  statusLabel: { fontSize: 24, fontWeight: '700', color: Colors.DARK, marginBottom: 8 },
-  amount: { fontSize: 40, fontWeight: '800', color: Colors.DARK, marginBottom: 18 },
+  statusLabel: { fontSize: 24, fontWeight: '700', color: theme.ink, marginBottom: 8 },
+  amount: { fontSize: 40, fontWeight: '800', color: theme.ink, marginBottom: 18 },
   cashbackEarnedRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#FEF3C7',
+    backgroundColor: theme.goldSoft,
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 20,
     marginTop: -8,
     marginBottom: 18,
   },
-  cashbackEarnedText: { fontSize: 13, fontWeight: '700', color: '#92640A' },
+  cashbackEarnedText: { fontSize: 13, fontWeight: '700', color: theme.gold },
   spinnerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
-  processingHint: { marginLeft: 8, color: Colors.GRAY, fontSize: 14 },
+  processingHint: { marginLeft: 8, color: theme.inkMuted, fontSize: 14 },
   detailBlock: { width: '100%', marginTop: 8 },
   detailRow: {
     flexDirection: 'row',
@@ -474,31 +478,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
+    borderBottomColor: theme.border,
   },
-  detailLabel: { fontSize: 15, color: Colors.GRAY },
-  detailValue: { fontSize: 15, color: Colors.DARK, fontWeight: '600' },
+  detailLabel: { fontSize: 15, color: theme.inkMuted },
+  detailValue: { fontSize: 15, color: theme.ink, fontWeight: '600' },
   tokenValue: { maxWidth: '60%', textAlign: 'right' },
-  note: { marginTop: 18, fontSize: 14, color: Colors.GRAY, textAlign: 'center', lineHeight: 20 },
+  note: { marginTop: 18, fontSize: 14, color: theme.inkMuted, textAlign: 'center', lineHeight: 20 },
   receiptRow: { flexDirection: 'row', gap: 12, marginTop: 22, width: '100%' },
   receiptButton: {
     flex: 1,
     borderWidth: 1.5,
-    borderColor: Colors.GREEN,
+    borderColor: theme.brand,
     borderRadius: 12,
     paddingVertical: 13,
     alignItems: 'center',
   },
   receiptButtonDisabled: { opacity: 0.6 },
-  receiptButtonText: { color: Colors.GREEN, fontSize: 15, fontWeight: '700' },
+  receiptButtonText: { color: theme.brand, fontSize: 15, fontWeight: '700' },
   viewDetail: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 24 },
-  viewDetailText: { color: Colors.PURPLE, fontSize: 16, fontWeight: '700', marginRight: 4 },
+  viewDetailText: { color: '#7C3AED', fontSize: 16, fontWeight: '700', marginRight: 4 },
   doneButton: {
     margin: 20,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
   },
-  doneText: { color: Colors.WHITE, fontSize: 16, fontWeight: '700' },
-});
+  doneText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  });
+}

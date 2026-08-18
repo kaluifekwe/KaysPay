@@ -13,7 +13,8 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
 import { useCachedData } from '../hooks/useCachedData';
@@ -34,11 +35,14 @@ const ICONS: Record<NotificationType, keyof typeof Ionicons.glyphMap> = {
 // Derived purely from already-fetched fields (title/type) — a failed
 // transaction previously looked visually identical to a successful one,
 // which was the main thing making the list read as generic/unpolished.
-function accentColor(item: AppNotification): string {
-  if (item.title.toLowerCase().includes('failed')) return Colors.ERROR;
-  if (item.type === 'withdrawal') return Colors.BLUE;
-  if (item.type === 'system') return Colors.GRAY;
-  return Colors.GREEN;
+// '#3B82F6' (withdrawal's blue accent) is a literal, not a theme token —
+// it's legible on both a white and a near-black card without needing to
+// flip shade, unlike the brand/gold/error colors which do adapt per theme.
+function accentColor(theme: AppTheme, item: AppNotification): string {
+  if (item.title.toLowerCase().includes('failed')) return theme.down;
+  if (item.type === 'withdrawal') return '#3B82F6';
+  if (item.type === 'system') return theme.inkMuted;
+  return theme.brand;
 }
 
 function timestampLabel(iso: string): string {
@@ -47,6 +51,8 @@ function timestampLabel(iso: string): string {
 }
 
 export default function NotificationsScreen({ navigation }: { navigation: any }) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const { data, loading, refresh } = useCachedData<AppNotification[]>('notifications', () =>
     notificationService.getNotifications(),
   );
@@ -124,7 +130,7 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
 
   const renderNotification = ({ item }: { item: AppNotification }) => {
     const isSelected = selectedIds.has(item.id);
-    const color = accentColor(item);
+    const color = accentColor(theme, item);
     return (
       <TouchableOpacity
         style={[styles.notificationCard, !item.read && styles.unreadCard, isSelected && styles.selectedCard]}
@@ -166,11 +172,11 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
   const renderEmpty = () =>
     loading ? (
       <View style={styles.emptyContainer}>
-        <ActivityIndicator color={Colors.GREEN} />
+        <ActivityIndicator color={theme.brand} />
       </View>
     ) : (
       <View style={styles.emptyContainer}>
-        <Ionicons name="notifications-outline" size={56} color={Colors.GRAY} style={styles.emptyIcon} />
+        <Ionicons name="notifications-outline" size={56} color={theme.inkMuted} style={styles.emptyIcon} />
         <Text style={styles.emptyTitle}>No Notifications</Text>
         <Text style={styles.emptyBody}>You're all caught up! New notifications will appear here.</Text>
       </View>
@@ -178,13 +184,13 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.WHITE} />
+      <StatusBar barStyle={theme.mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
       <View style={styles.header}>
         {selectionMode ? (
           <>
             <View style={styles.headerLeft}>
               <TouchableOpacity onPress={clearSelection} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                <Ionicons name="close" size={26} color={Colors.DARK} />
+                <Ionicons name="close" size={26} color={theme.ink} />
               </TouchableOpacity>
               <Text style={styles.screenTitle}>{selectedIds.size} selected</Text>
             </View>
@@ -193,7 +199,7 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               style={styles.trashButton}
             >
-              <Ionicons name="trash-outline" size={22} color={Colors.ERROR} />
+              <Ionicons name="trash-outline" size={22} color={theme.down} />
             </TouchableOpacity>
           </>
         ) : (
@@ -203,7 +209,7 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
                 onPress={() => (navigation?.canGoBack?.() ? navigation.goBack() : navigation?.navigate?.('HomeTabs'))}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
-                <Ionicons name="chevron-back" size={26} color={Colors.DARK} />
+                <Ionicons name="chevron-back" size={26} color={theme.ink} />
               </TouchableOpacity>
               <Text style={styles.screenTitle}>Notifications</Text>
             </View>
@@ -222,7 +228,7 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
         contentContainerStyle={notifications.length === 0 ? styles.listEmpty : styles.listContent}
         ListEmptyComponent={renderEmpty}
         refreshControl={
-          <RefreshControl refreshing={loading && notifications.length > 0} onRefresh={refresh} colors={[Colors.GREEN]} tintColor={Colors.GREEN} />
+          <RefreshControl refreshing={loading && notifications.length > 0} onRefresh={refresh} colors={[theme.brand]} tintColor={theme.brand} />
         }
         showsVerticalScrollIndicator={false}
       />
@@ -238,8 +244,8 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
             <View style={styles.modalHandle} />
             {detailItem && (
               <>
-                <View style={[styles.modalIcon, { backgroundColor: `${accentColor(detailItem)}1A` }]}>
-                  <Ionicons name={ICONS[detailItem.type] || 'notifications-outline'} size={28} color={accentColor(detailItem)} />
+                <View style={[styles.modalIcon, { backgroundColor: `${accentColor(theme, detailItem)}1A` }]}>
+                  <Ionicons name={ICONS[detailItem.type] || 'notifications-outline'} size={28} color={accentColor(theme, detailItem)} />
                 </View>
                 <Text style={styles.modalTitle}>{detailItem.title}</Text>
                 <Text style={styles.modalTime}>{formatDateTimeFull(detailItem.createdAt)}</Text>
@@ -249,7 +255,7 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
                   activeOpacity={0.7}
                   onPress={() => deleteIds([detailItem.id], () => setDetailItem(null))}
                 >
-                  <Ionicons name="trash-outline" size={16} color={Colors.ERROR} />
+                  <Ionicons name="trash-outline" size={16} color={theme.down} />
                   <Text style={styles.modalDeleteText}>Delete</Text>
                 </TouchableOpacity>
               </>
@@ -264,10 +270,11 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2F4F3',
+    backgroundColor: theme.background,
   },
   header: {
     flexDirection: 'row',
@@ -275,9 +282,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.L,
     paddingVertical: Spacing.M,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
+    borderBottomColor: theme.border,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -286,7 +293,7 @@ const styles = StyleSheet.create({
   },
   screenTitle: {
     ...Typography.SCREEN_TITLE,
-    color: Colors.DARK,
+    color: theme.ink,
   },
   markAllButton: {
     paddingHorizontal: Spacing.S,
@@ -294,7 +301,7 @@ const styles = StyleSheet.create({
   },
   markAllText: {
     ...Typography.CAPTION,
-    color: Colors.GREEN,
+    color: theme.brand,
     fontWeight: '600',
   },
   listContent: {
@@ -310,12 +317,12 @@ const styles = StyleSheet.create({
   notificationCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.CARD_PADDING,
     marginBottom: Spacing.L,
     borderWidth: 1,
-    borderColor: '#EDF0EE',
+    borderColor: theme.hairline,
     shadowColor: '#0F1A14',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
@@ -323,11 +330,11 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   unreadCard: {
-    backgroundColor: Colors.GREEN_LIGHT,
-    borderColor: Colors.GREEN_MID,
+    backgroundColor: theme.brandSoft,
+    borderColor: theme.brand,
   },
   selectedCard: {
-    borderColor: Colors.GREEN,
+    borderColor: theme.brand,
     borderWidth: 2,
   },
   checkbox: {
@@ -335,17 +342,17 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 11,
     borderWidth: 2,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: Spacing.M,
   },
   checkboxChecked: {
-    borderColor: Colors.GREEN,
-    backgroundColor: Colors.GREEN,
+    borderColor: theme.brand,
+    backgroundColor: theme.brand,
   },
   checkboxTick: {
-    color: Colors.WHITE,
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
   },
@@ -373,7 +380,7 @@ const styles = StyleSheet.create({
   },
   notificationTitle: {
     ...Typography.CARD_TITLE,
-    color: Colors.DARK,
+    color: theme.ink,
     flex: 1,
   },
   unreadTitle: {
@@ -383,17 +390,17 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     marginLeft: Spacing.S,
   },
   notificationBody: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginBottom: Spacing.XS,
   },
   timestamp: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   emptyContainer: {
     alignItems: 'center',
@@ -404,21 +411,21 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     ...Typography.SECTION_HEADING,
-    color: Colors.DARK,
+    color: theme.ink,
     marginBottom: Spacing.S,
   },
   emptyBody: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     textAlign: 'center',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: Colors.OVERLAY,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   modalSheet: {
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: Spacing.L,
@@ -429,32 +436,32 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.BORDER,
+    backgroundColor: theme.border,
     marginBottom: Spacing.L,
   },
   modalIcon: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#EAF4EE',
+    backgroundColor: theme.brandSoft,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Spacing.M,
   },
   modalTitle: {
     ...Typography.SECTION_HEADING,
-    color: Colors.DARK,
+    color: theme.ink,
     textAlign: 'center',
   },
   modalTime: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginTop: 4,
     marginBottom: Spacing.M,
   },
   modalBody: {
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: Spacing.L,
@@ -469,13 +476,13 @@ const styles = StyleSheet.create({
   },
   modalDeleteText: {
     ...Typography.CAPTION,
-    color: Colors.ERROR,
+    color: theme.down,
     fontWeight: '600',
   },
   modalClose: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     borderRadius: Spacing.BUTTON_RADIUS,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     justifyContent: 'center',
     alignItems: 'center',
     alignSelf: 'stretch',
@@ -483,6 +490,7 @@ const styles = StyleSheet.create({
   },
   modalCloseText: {
     ...Typography.BUTTON_TEXT,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
-});
+  });
+}

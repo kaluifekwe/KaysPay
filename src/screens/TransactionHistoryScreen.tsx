@@ -11,7 +11,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { walletService } from '../services/wallet.service';
@@ -50,16 +51,16 @@ const getTransactionIcon = (direction: 'credit' | 'debit') => {
   return direction === 'credit' ? '↓' : '↑';
 };
 
-const getStatusColor = (status: string) => {
+const getStatusColor = (theme: AppTheme, status: string) => {
   switch (status) {
     case 'successful':
-      return Colors.SUCCESS;
+      return theme.up;
     case 'pending':
-      return Colors.AMBER;
+      return theme.gold;
     case 'failed':
-      return Colors.ERROR;
+      return theme.down;
     default:
-      return Colors.GRAY;
+      return theme.inkMuted;
   }
 };
 
@@ -112,6 +113,8 @@ const formatTimestamp = (timestamp: string): string => {
 
 const TransactionHistoryScreen: React.FC = () => {
   const navigation = useNavigation();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [refreshing, setRefreshing] = useState(false);
 
   // Shows the last-known transaction list immediately (even on a bad
@@ -168,13 +171,13 @@ const TransactionHistoryScreen: React.FC = () => {
       <View
         style={[
           styles.iconContainer,
-          { backgroundColor: item.direction === 'credit' ? Colors.GREEN_LIGHT : Colors.LIGHT_GRAY },
+          { backgroundColor: item.direction === 'credit' ? theme.brandSoft : theme.surfaceRaised },
         ]}
       >
         <Text
           style={[
             styles.icon,
-            { color: item.direction === 'credit' ? Colors.GREEN : Colors.DARK },
+            { color: item.direction === 'credit' ? theme.brand : theme.ink },
           ]}
         >
           {getTransactionIcon(item.direction)}
@@ -192,7 +195,7 @@ const TransactionHistoryScreen: React.FC = () => {
         <Text
           style={[
             styles.amount,
-            { color: item.direction === 'credit' ? Colors.GREEN : Colors.RED },
+            { color: item.direction === 'credit' ? theme.up : theme.down },
           ]}
         >
           {item.direction === 'credit' ? '+' : '-'}{formatNaira(item.amount)}
@@ -203,11 +206,11 @@ const TransactionHistoryScreen: React.FC = () => {
       <View
         style={[
           styles.statusBadge,
-          { backgroundColor: getStatusColor(item.status) + '20' },
+          { backgroundColor: getStatusColor(theme, item.status) + '20' },
         ]}
       >
         <Text
-          style={[styles.statusText, { color: getStatusColor(item.status) }]}
+          style={[styles.statusText, { color: getStatusColor(theme, item.status) }]}
         >
           {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
         </Text>
@@ -239,7 +242,7 @@ const TransactionHistoryScreen: React.FC = () => {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor={Colors.WHITE} />
+        <StatusBar barStyle={theme.mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
@@ -250,7 +253,7 @@ const TransactionHistoryScreen: React.FC = () => {
           <Text style={styles.title}>Transaction History</Text>
         </View>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.GREEN} />
+          <ActivityIndicator size="large" color={theme.brand} />
           <Text style={styles.loadingText}>Loading transactions...</Text>
         </View>
       </SafeAreaView>
@@ -261,7 +264,7 @@ const TransactionHistoryScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.WHITE} />
+      <StatusBar barStyle={theme.mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
       <View style={styles.header}>
         <TouchableOpacity
@@ -293,8 +296,8 @@ const TransactionHistoryScreen: React.FC = () => {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              colors={[Colors.GREEN]}
-              tintColor={Colors.GREEN}
+              colors={[theme.brand]}
+              tintColor={theme.brand}
             />
           }
           showsVerticalScrollIndicator={false}
@@ -310,10 +313,11 @@ const TransactionHistoryScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
   },
   header: {
     flexDirection: 'row',
@@ -321,16 +325,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.SCREEN_PADDING,
     paddingVertical: Spacing.M,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
+    borderBottomColor: theme.border,
   },
   staleBanner: {
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     paddingVertical: Spacing.S,
     alignItems: 'center',
   },
   staleBannerText: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   backButton: {
     width: 48,
@@ -342,11 +346,11 @@ const styles = StyleSheet.create({
   backButtonText: {
     fontSize: 28,
     fontWeight: '600',
-    color: Colors.DARK,
+    color: theme.ink,
   },
   title: {
     ...Typography.SCREEN_TITLE,
-    color: Colors.DARK,
+    color: theme.ink,
   },
   listContent: {
     paddingBottom: Spacing.XL,
@@ -356,7 +360,7 @@ const styles = StyleSheet.create({
   },
   dateGroupTitle: {
     ...Typography.SECTION_HEADING,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     paddingHorizontal: Spacing.SCREEN_PADDING,
     paddingTop: Spacing.L,
     paddingBottom: Spacing.S,
@@ -367,7 +371,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.SCREEN_PADDING,
     paddingVertical: Spacing.M,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
+    borderBottomColor: theme.border,
   },
   iconContainer: {
     width: 40,
@@ -386,12 +390,12 @@ const styles = StyleSheet.create({
   },
   transactionType: {
     ...Typography.CARD_TITLE,
-    color: Colors.DARK,
+    color: theme.ink,
     marginBottom: 2,
   },
   recipientPhone: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   amountContainer: {
     alignItems: 'flex-end',
@@ -403,7 +407,7 @@ const styles = StyleSheet.create({
   },
   timestamp: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   statusBadge: {
     paddingHorizontal: Spacing.S,
@@ -428,25 +432,25 @@ const styles = StyleSheet.create({
   },
   emptyStateTitle: {
     ...Typography.SCREEN_TITLE,
-    color: Colors.DARK,
+    color: theme.ink,
     marginBottom: Spacing.S,
   },
   emptyStateText: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     textAlign: 'center',
     lineHeight: 24,
   },
   retryButton: {
     marginTop: Spacing.L,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     paddingHorizontal: Spacing.XL,
     paddingVertical: Spacing.M,
     borderRadius: Spacing.BUTTON_RADIUS,
   },
   retryButtonText: {
     ...Typography.BUTTON_TEXT,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   loadingContainer: {
     flex: 1,
@@ -455,9 +459,10 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginTop: Spacing.M,
   },
-});
+  });
+}
 
 export default TransactionHistoryScreen;

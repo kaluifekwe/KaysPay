@@ -13,9 +13,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Spacing } from '../constants/spacing';
-import { Typography } from '../constants/typography';
 import { formatNaira } from '../utils/formatCurrency';
 import { supabase } from '../lib/supabase';
 import { withTimeout } from '../utils/network';
@@ -23,12 +23,9 @@ import { walletService } from '../services/wallet.service';
 import { kycService } from '../services/kyc.service';
 import { SUPPORT_EMAIL } from './LegalDocumentScreen';
 
-const BRAND_GREEN = '#1A5C3A';
-const DARK_TEXT = '#0F1A14';
-const GRAY_TEXT = '#6B7280';
-const WHITE = '#FFFFFF';
-
 const ProfileScreen = ({ navigation }: any) => {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [userName, setUserName] = useState('User');
   const [userEmail, setUserEmail] = useState('');
   const [userPhone, setUserPhone] = useState('');
@@ -125,7 +122,7 @@ const ProfileScreen = ({ navigation }: any) => {
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={WHITE} />
+      <StatusBar barStyle={theme.mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
 
       <ScrollView
         style={styles.scrollView}
@@ -192,7 +189,7 @@ const ProfileScreen = ({ navigation }: any) => {
                 activeOpacity={0.7}
               >
                 <View style={styles.linkLeft}>
-                  <Ionicons name={link.icon} size={20} color={Colors.GREEN} style={styles.linkIcon} />
+                  <Ionicons name={link.icon} size={20} color={theme.brand} style={styles.linkIcon} />
                   <Text style={styles.linkLabel}>{link.label}</Text>
                 </View>
                 <View style={styles.linkRight}>
@@ -219,10 +216,11 @@ const ProfileScreen = ({ navigation }: any) => {
   );
 };
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: WHITE,
+    backgroundColor: theme.background,
   },
   scrollView: {
     flex: 1,
@@ -241,7 +239,7 @@ const styles = StyleSheet.create({
   backButtonText: {
     fontSize: 28,
     fontWeight: '600',
-    color: DARK_TEXT,
+    color: theme.ink,
   },
   header: {
     alignItems: 'center',
@@ -256,21 +254,21 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: BRAND_GREEN,
+    backgroundColor: theme.brand,
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 36,
-    color: WHITE,
+    color: '#FFFFFF',
   },
   avatarImage: {
     width: 96,
     height: 96,
     borderRadius: 48,
     borderWidth: 3,
-    borderColor: BRAND_GREEN,
+    borderColor: theme.brand,
   },
   cameraIcon: {
     position: 'absolute',
@@ -279,11 +277,11 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: BRAND_GREEN,
+    backgroundColor: theme.brand,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: WHITE,
+    borderColor: '#FFFFFF',
   },
   cameraIconText: {
     fontSize: 14,
@@ -291,28 +289,28 @@ const styles = StyleSheet.create({
   userName: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 22,
-    color: DARK_TEXT,
+    color: theme.ink,
     marginBottom: 4,
   },
   phoneNumber: {
     fontSize: 15,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
     marginBottom: 2,
   },
   emailText: {
     fontSize: 13,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
     marginBottom: 4,
   },
   memberSince: {
     fontSize: 12,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
   },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#F3F4F6',
+    backgroundColor: theme.surfaceRaised,
     borderRadius: 12,
     padding: 16,
     marginBottom: 24,
@@ -324,18 +322,18 @@ const styles = StyleSheet.create({
   statDivider: {
     width: 1,
     height: 32,
-    backgroundColor: '#D1D5DB',
+    backgroundColor: theme.border,
     marginHorizontal: 12,
   },
   statValue: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 18,
-    color: DARK_TEXT,
+    color: theme.ink,
     marginBottom: 4,
   },
   statLabel: {
     fontSize: 12,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
     textAlign: 'center',
   },
   section: {
@@ -344,14 +342,14 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 16,
-    color: DARK_TEXT,
+    color: theme.ink,
     marginBottom: 12,
   },
   linksContainer: {
-    backgroundColor: WHITE,
+    backgroundColor: theme.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: theme.border,
   },
   linkItem: {
     flexDirection: 'row',
@@ -362,7 +360,7 @@ const styles = StyleSheet.create({
   },
   linkItemBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: theme.border,
   },
   linkLeft: {
     flexDirection: 'row',
@@ -374,33 +372,33 @@ const styles = StyleSheet.create({
   },
   linkLabel: {
     fontSize: 15,
-    color: DARK_TEXT,
+    color: theme.ink,
   },
   linkChevron: {
     fontSize: 18,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
   },
   linkRight: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   kycBadge: {
-    backgroundColor: '#FEF3C7',
+    backgroundColor: theme.goldSoft,
     borderRadius: 10,
     paddingHorizontal: 8,
     paddingVertical: 3,
     marginRight: 8,
   },
   kycBadgeVerified: {
-    backgroundColor: '#D6F0E3',
+    backgroundColor: theme.brandSoft,
   },
   kycBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#B45309',
+    color: theme.gold,
   },
   kycBadgeTextVerified: {
-    color: BRAND_GREEN,
+    color: theme.brand,
   },
   referralSection: {
     alignItems: 'center',
@@ -408,7 +406,7 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   referralButton: {
-    backgroundColor: BRAND_GREEN,
+    backgroundColor: theme.brand,
     borderRadius: 12,
     height: 52,
     width: '100%',
@@ -419,7 +417,7 @@ const styles = StyleSheet.create({
   referralButtonText: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 16,
-    color: WHITE,
+    color: '#FFFFFF',
   },
   referralCodeContainer: {
     flexDirection: 'row',
@@ -427,13 +425,13 @@ const styles = StyleSheet.create({
   },
   referralCodeLabel: {
     fontSize: 13,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
     marginRight: 8,
   },
   referralCode: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 15,
-    color: DARK_TEXT,
+    color: theme.ink,
   },
   deleteAccountButton: {
     alignItems: 'center',
@@ -443,8 +441,9 @@ const styles = StyleSheet.create({
   deleteAccountText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#DC2626',
+    color: theme.down,
   },
-});
+  });
+}
 
 export default ProfileScreen;
