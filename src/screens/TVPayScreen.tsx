@@ -16,7 +16,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import ProviderLogo from '../components/ProviderLogo';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
 import { vtuService, type SavedBillingAccount, type TVBouquet, type TVProvider } from '../services/vtu.service';
@@ -38,6 +39,8 @@ function formatDueDate(value: string): string {
 export default function TVPayScreen({ navigation, route }: any) {
   const provider = route.params.provider as TVProvider;
   const { authorize } = useTransactionAuth();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const verifyRequestRef = useRef(0);
@@ -292,7 +295,7 @@ export default function TVPayScreen({ navigation, route }: any) {
               // the blank manual-entry box below never flashes on screen
               // before a saved smartcard that is about to appear anyway.
               <View style={styles.savedAccountsLoadingRow}>
-                <ActivityIndicator size="small" color={Colors.GRAY} />
+                <ActivityIndicator size="small" color={theme.inkMuted} />
                 <Text style={styles.savedAccountsLoadingText}>Checking for saved smartcards…</Text>
               </View>
             ) : savedAccounts.length > 0 ? (
@@ -316,7 +319,7 @@ export default function TVPayScreen({ navigation, route }: any) {
                         <Ionicons
                           name={selectedSavedAccount?.id === account.id ? 'checkmark' : 'card-outline'}
                           size={20}
-                          color={selectedSavedAccount?.id === account.id ? Colors.WHITE : Colors.GREEN}
+                          color={selectedSavedAccount?.id === account.id ? '#FFFFFF' : theme.brand}
                         />
                       </View>
                       <View style={styles.savedAccountCopy}>
@@ -328,7 +331,7 @@ export default function TVPayScreen({ navigation, route }: any) {
                       ) : null}
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.removeSavedButton} onPress={() => handleRemoveSavedAccount(account)} activeOpacity={0.75}>
-                      <Ionicons name="trash-outline" size={18} color={Colors.ERROR} />
+                      <Ionicons name="trash-outline" size={18} color={theme.down} />
                       <Text style={styles.removeSavedText}>Remove</Text>
                     </TouchableOpacity>
                   </View>
@@ -340,7 +343,7 @@ export default function TVPayScreen({ navigation, route }: any) {
                     onPress={handleUseAnotherSmartcard}
                     activeOpacity={0.75}
                   >
-                    <Ionicons name="add" size={22} color={Colors.GREEN} />
+                    <Ionicons name="add" size={22} color={theme.brand} />
                     <Text style={styles.useAnotherText}>Use another smartcard</Text>
                   </TouchableOpacity>
                 ) : null}
@@ -352,7 +355,7 @@ export default function TVPayScreen({ navigation, route }: any) {
                 value={smartcardNumber}
                 onChangeText={handleSmartcardChange}
                 placeholder="Enter smartcard number"
-                placeholderTextColor={Colors.GRAY}
+                placeholderTextColor={theme.inkMuted}
                 keyboardType="number-pad"
                 maxLength={13}
               />
@@ -360,7 +363,7 @@ export default function TVPayScreen({ navigation, route }: any) {
 
             {verifyState === 'checking' && (
               <View style={styles.statusRow}>
-                <ActivityIndicator size="small" color={Colors.GREEN} />
+                <ActivityIndicator size="small" color={theme.brand} />
                 <Text style={styles.statusText}>Verifying smartcard…</Text>
               </View>
             )}
@@ -371,7 +374,7 @@ export default function TVPayScreen({ navigation, route }: any) {
               <View style={styles.verifiedCard}>
                 <View style={styles.verifiedHeading}>
                   <View style={styles.verifiedIcon}>
-                    <Ionicons name="checkmark" size={16} color={Colors.WHITE} />
+                    <Ionicons name="checkmark" size={16} color={'#FFFFFF'} />
                   </View>
                   <Text style={styles.verifiedTitle}>Account verified</Text>
                 </View>
@@ -416,7 +419,7 @@ export default function TVPayScreen({ navigation, route }: any) {
               <Text style={styles.label}>Choose a Bouquet</Text>
               {catalogLoading ? (
                 <View style={styles.statusRow}>
-                  <ActivityIndicator size="small" color={Colors.GREEN} />
+                  <ActivityIndicator size="small" color={theme.brand} />
                   <Text style={styles.statusText}>Loading current prices…</Text>
                 </View>
               ) : bouquets.length === 0 ? (
@@ -468,8 +471,9 @@ export default function TVPayScreen({ navigation, route }: any) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.WHITE },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   flex: { flex: 1 },
   scrollContent: {
     paddingHorizontal: Spacing.SCREEN_PADDING,
@@ -477,15 +481,15 @@ const styles = StyleSheet.create({
     paddingBottom: 190,
   },
   backButton: { width: 48, height: 48, justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.M },
-  backText: { fontSize: 28, fontWeight: '600', color: Colors.DARK },
+  backText: { fontSize: 28, fontWeight: '600', color: theme.ink },
   headingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.XL },
   headingText: { flex: 1, marginLeft: Spacing.M },
-  title: { ...Typography.SCREEN_TITLE, fontSize: 22, marginBottom: 4 },
-  subtitle: { ...Typography.CAPTION, color: Colors.GRAY },
+  title: { ...Typography.SCREEN_TITLE, color: theme.ink, fontSize: 22, marginBottom: 4 },
+  subtitle: { ...Typography.CAPTION, color: theme.inkMuted },
   section: { marginBottom: Spacing.XL },
-  label: { ...Typography.SECTION_HEADING, marginBottom: Spacing.M },
+  label: { ...Typography.SECTION_HEADING, color: theme.ink, marginBottom: Spacing.M },
   savedAccounts: { marginBottom: Spacing.M, gap: Spacing.M },
-  savedLabel: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.S },
+  savedLabel: { ...Typography.CAPTION, color: theme.inkMuted, marginBottom: Spacing.S },
   savedAccountsLoadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -493,54 +497,54 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.M,
     marginBottom: Spacing.M,
   },
-  savedAccountsLoadingText: { ...Typography.CAPTION, color: Colors.GRAY },
-  savedAccount: { minHeight: 72, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: Colors.BORDER, borderRadius: Spacing.BUTTON_RADIUS, backgroundColor: Colors.WHITE },
-  savedAccountSelected: { borderColor: Colors.GREEN, backgroundColor: Colors.GREEN_10 },
+  savedAccountsLoadingText: { ...Typography.CAPTION, color: theme.inkMuted },
+  savedAccount: { minHeight: 72, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: theme.border, borderRadius: Spacing.BUTTON_RADIUS, backgroundColor: '#FFFFFF' },
+  savedAccountSelected: { borderColor: theme.brand, backgroundColor: theme.brandSoft },
   savedAccountSelect: { flex: 1, minHeight: 70, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S, flexDirection: 'row', alignItems: 'center', gap: Spacing.M },
-  savedAccountIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.GREEN_LIGHT },
-  savedAccountIconSelected: { backgroundColor: Colors.GREEN },
+  savedAccountIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.brandSoft },
+  savedAccountIconSelected: { backgroundColor: theme.brand },
   savedAccountCopy: { flex: 1 },
-  selectedBadge: { ...Typography.CAPTION, color: Colors.GREEN_DARK, fontWeight: '700', backgroundColor: Colors.GREEN_LIGHT, borderRadius: 12, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S },
+  selectedBadge: { ...Typography.CAPTION, color: theme.brand, fontWeight: '700', backgroundColor: theme.brandSoft, borderRadius: 12, paddingHorizontal: Spacing.M, paddingVertical: Spacing.S },
   removeSavedButton: { minWidth: 76, minHeight: 70, justifyContent: 'center', alignItems: 'center', gap: Spacing.XS, paddingHorizontal: Spacing.S },
-  removeSavedText: { ...Typography.CAPTION, color: Colors.ERROR, fontWeight: '600' },
-  savedNumber: { ...Typography.BODY, color: Colors.DARK, fontWeight: '600' },
-  savedName: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: 2 },
-  useAnotherButton: { minHeight: Spacing.TOUCH_TARGET_MIN, borderWidth: 1, borderStyle: 'dashed', borderColor: Colors.GREEN_MID, borderRadius: Spacing.BUTTON_RADIUS, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: Spacing.M },
-  useAnotherText: { ...Typography.BODY, color: Colors.GREEN, fontWeight: '700' },
-  cachedPreview: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: Spacing.S },
+  removeSavedText: { ...Typography.CAPTION, color: theme.down, fontWeight: '600' },
+  savedNumber: { ...Typography.BODY, color: theme.ink, fontWeight: '600' },
+  savedName: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: 2 },
+  useAnotherButton: { minHeight: Spacing.TOUCH_TARGET_MIN, borderWidth: 1, borderStyle: 'dashed', borderColor: theme.brand, borderRadius: Spacing.BUTTON_RADIUS, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: Spacing.M },
+  useAnotherText: { ...Typography.BODY, color: theme.brand, fontWeight: '700' },
+  cachedPreview: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: Spacing.S },
   input: {
     height: Spacing.INPUT_HEIGHT,
     borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.BUTTON_RADIUS,
     paddingHorizontal: Spacing.L,
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
   },
   statusRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', marginTop: Spacing.S },
-  statusText: { ...Typography.BODY, color: Colors.GRAY, marginLeft: Spacing.S },
-  verifiedCard: { marginTop: Spacing.M, padding: Spacing.L, borderRadius: Spacing.CARD_RADIUS, backgroundColor: Colors.GREEN_LIGHT },
+  statusText: { ...Typography.BODY, color: theme.inkMuted, marginLeft: Spacing.S },
+  verifiedCard: { marginTop: Spacing.M, padding: Spacing.L, borderRadius: Spacing.CARD_RADIUS, backgroundColor: theme.brandSoft },
   verifiedHeading: { flexDirection: 'row', alignItems: 'center', gap: Spacing.M },
-  verifiedIcon: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.GREEN },
-  verifiedTitle: { ...Typography.BODY, color: Colors.GREEN_DARK, fontWeight: '700' },
-  verifiedName: { ...Typography.BODY, color: Colors.DARK, marginTop: Spacing.M },
+  verifiedIcon: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.brand },
+  verifiedTitle: { ...Typography.BODY, color: theme.brand, fontWeight: '700' },
+  verifiedName: { ...Typography.BODY, color: theme.ink, marginTop: Spacing.M },
   verifiedFacts: { flexDirection: 'row', gap: Spacing.L, marginTop: Spacing.L },
   verifiedFact: { flex: 1 },
-  verifiedFactLabel: { ...Typography.CAPTION, color: Colors.GRAY, marginBottom: Spacing.S },
-  verifiedFactValue: { ...Typography.CARD_TITLE, color: Colors.DARK },
-  verifiedDetail: { ...Typography.CAPTION, color: Colors.GREEN_DARK, marginTop: Spacing.M },
-  statusExplanation: { ...Typography.CAPTION, color: Colors.DARK, marginTop: Spacing.S },
+  verifiedFactLabel: { ...Typography.CAPTION, color: theme.inkMuted, marginBottom: Spacing.S },
+  verifiedFactValue: { ...Typography.CARD_TITLE, color: theme.ink },
+  verifiedDetail: { ...Typography.CAPTION, color: theme.brand, marginTop: Spacing.M },
+  statusExplanation: { ...Typography.CAPTION, color: theme.ink, marginTop: Spacing.S },
   verifyError: { ...Typography.ERROR, marginTop: Spacing.S },
   tryAgainButton: {
     minHeight: Spacing.TOUCH_TARGET_MIN,
     marginTop: Spacing.M,
     borderWidth: 1,
-    borderColor: Colors.GREEN,
+    borderColor: theme.brand,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  tryAgainText: { ...Typography.BUTTON_TEXT, color: Colors.GREEN },
+  tryAgainText: { ...Typography.BUTTON_TEXT, color: theme.brand },
   bouquetCard: {
     minHeight: Spacing.LIST_ITEM_HEIGHT,
     flexDirection: 'row',
@@ -550,17 +554,17 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.M,
     marginBottom: Spacing.M,
     borderWidth: 1,
-    borderColor: Colors.BORDER,
+    borderColor: theme.border,
     borderRadius: Spacing.CARD_RADIUS,
   },
-  bouquetCardSelected: { borderColor: Colors.GREEN, borderWidth: 2, backgroundColor: Colors.GREEN_10 },
+  bouquetCardSelected: { borderColor: theme.brand, borderWidth: 2, backgroundColor: theme.brandSoft },
   bouquetInfo: { flex: 1, paddingRight: Spacing.M },
-  bouquetName: { ...Typography.CARD_TITLE, marginBottom: 2 },
-  bouquetProvider: { ...Typography.CAPTION },
-  bouquetAmount: { ...Typography.AMOUNT_SMALL, color: Colors.DARK },
-  bouquetAmountSelected: { color: Colors.GREEN },
-  emptyState: { padding: Spacing.L, borderRadius: Spacing.CARD_RADIUS, backgroundColor: Colors.LIGHT_GRAY },
-  emptyText: { ...Typography.BODY, color: Colors.GRAY, textAlign: 'center' },
+  bouquetName: { ...Typography.CARD_TITLE, color: theme.ink, marginBottom: 2 },
+  bouquetProvider: { ...Typography.CAPTION, color: theme.inkMuted },
+  bouquetAmount: { ...Typography.AMOUNT_SMALL, color: theme.ink },
+  bouquetAmountSelected: { color: theme.brand },
+  emptyState: { padding: Spacing.L, borderRadius: Spacing.CARD_RADIUS, backgroundColor: theme.surfaceRaised },
+  emptyText: { ...Typography.BODY, color: theme.inkMuted, textAlign: 'center' },
   bottomBar: {
     position: 'absolute',
     left: 0,
@@ -569,14 +573,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.SCREEN_PADDING,
     paddingTop: Spacing.L,
     borderTopWidth: 1,
-    borderTopColor: Colors.BORDER,
-    backgroundColor: Colors.WHITE,
+    borderTopColor: theme.border,
+    backgroundColor: '#FFFFFF',
   },
   summary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.M },
-  summaryText: { ...Typography.BODY, flex: 1, paddingRight: Spacing.M },
-  summaryAmount: { ...Typography.AMOUNT_SMALL },
-  payHint: { ...Typography.CAPTION, color: Colors.GRAY, textAlign: 'center', marginBottom: Spacing.M },
-  payButton: { height: Spacing.BUTTON_HEIGHT_PRIMARY, borderRadius: Spacing.BUTTON_RADIUS, backgroundColor: Colors.GREEN, justifyContent: 'center', alignItems: 'center' },
+  summaryText: { ...Typography.BODY, color: theme.ink, flex: 1, paddingRight: Spacing.M },
+  summaryAmount: { ...Typography.AMOUNT_SMALL, color: theme.brand },
+  payHint: { ...Typography.CAPTION, color: theme.inkMuted, textAlign: 'center', marginBottom: Spacing.M },
+  payButton: { height: Spacing.BUTTON_HEIGHT_PRIMARY, borderRadius: Spacing.BUTTON_RADIUS, backgroundColor: theme.brand, justifyContent: 'center', alignItems: 'center' },
   payButtonDisabled: { opacity: 0.5 },
   payButtonText: { ...Typography.BUTTON_TEXT },
-});
+  });
+}

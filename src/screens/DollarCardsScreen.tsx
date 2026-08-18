@@ -3,13 +3,14 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
+  ScrollView,
   Alert,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 
@@ -67,6 +68,8 @@ const MOCK_TRANSACTIONS: CardTransaction[] = [
 ];
 
 export default function DollarCardsScreen({ navigation }: DollarCardsScreenProps) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [isFrozen, setIsFrozen] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [transactions, setTransactions] = useState<CardTransaction[]>([]);
@@ -147,13 +150,13 @@ export default function DollarCardsScreen({ navigation }: DollarCardsScreenProps
         <View
           style={[
             styles.transactionIcon,
-            { backgroundColor: item.type === 'credit' ? Colors.GREEN_LIGHT : Colors.LIGHT_GRAY },
+            { backgroundColor: item.type === 'credit' ? theme.brandSoft : theme.surfaceRaised },
           ]}
         >
           <Text
             style={[
               styles.transactionIconText,
-              { color: item.type === 'credit' ? Colors.GREEN : Colors.DARK },
+              { color: item.type === 'credit' ? theme.brand : theme.ink },
             ]}
           >
             {item.type === 'credit' ? '+' : '-'}
@@ -168,7 +171,7 @@ export default function DollarCardsScreen({ navigation }: DollarCardsScreenProps
         <Text
           style={[
             styles.transactionAmount,
-            { color: item.type === 'credit' ? Colors.GREEN : Colors.DARK },
+            { color: item.type === 'credit' ? theme.brand : theme.ink },
           ]}
         >
           {item.type === 'credit' ? '+' : '-'}
@@ -180,10 +183,10 @@ export default function DollarCardsScreen({ navigation }: DollarCardsScreenProps
             {
               color:
                 item.status === 'completed'
-                  ? Colors.SUCCESS
+                  ? theme.up
                   : item.status === 'pending'
-                  ? Colors.AMBER
-                  : Colors.ERROR,
+                  ? theme.gold
+                  : theme.down,
             },
           ]}
         >
@@ -244,8 +247,8 @@ export default function DollarCardsScreen({ navigation }: DollarCardsScreenProps
             activeOpacity={0.7}
             onPress={handleFundCard}
           >
-            <View style={[styles.quickActionIcon, { backgroundColor: Colors.GREEN_LIGHT }]}>
-              <Text style={[styles.quickActionIconText, { color: Colors.GREEN }]}>$</Text>
+            <View style={[styles.quickActionIcon, { backgroundColor: theme.brandSoft }]}>
+              <Text style={[styles.quickActionIconText, { color: theme.brand }]}>$</Text>
             </View>
             <Text style={styles.quickActionLabel}>Fund Card</Text>
           </TouchableOpacity>
@@ -258,13 +261,13 @@ export default function DollarCardsScreen({ navigation }: DollarCardsScreenProps
             <View
               style={[
                 styles.quickActionIcon,
-                { backgroundColor: isFrozen ? Colors.GREEN_LIGHT : Colors.LIGHT_GRAY },
+                { backgroundColor: isFrozen ? theme.brandSoft : theme.surfaceRaised },
               ]}
             >
               <Text
                 style={[
                   styles.quickActionIconText,
-                  { color: isFrozen ? Colors.GREEN : Colors.DARK },
+                  { color: isFrozen ? theme.brand : theme.ink },
                 ]}
               >
                 {isFrozen ? '>' : '|'}
@@ -280,8 +283,8 @@ export default function DollarCardsScreen({ navigation }: DollarCardsScreenProps
             activeOpacity={0.7}
             onPress={handleCardDetails}
           >
-            <View style={[styles.quickActionIcon, { backgroundColor: Colors.LIGHT_GRAY }]}>
-              <Text style={[styles.quickActionIconText, { color: Colors.DARK }]}>i</Text>
+            <View style={[styles.quickActionIcon, { backgroundColor: theme.surfaceRaised }]}>
+              <Text style={[styles.quickActionIconText, { color: theme.ink }]}>i</Text>
             </View>
             <Text style={styles.quickActionLabel}>Details</Text>
           </TouchableOpacity>
@@ -292,7 +295,7 @@ export default function DollarCardsScreen({ navigation }: DollarCardsScreenProps
             onPress={handleConvertUsdt}
           >
             <View style={[styles.quickActionIcon, { backgroundColor: '#EDE9FE' }]}>
-              <Text style={[styles.quickActionIconText, { color: Colors.PURPLE }]}>₮</Text>
+              <Text style={[styles.quickActionIconText, { color: '#7C3AED' }]}>₮</Text>
               <View style={styles.comingSoonBadge}>
                 <Text style={styles.comingSoonBadgeText}>Soon</Text>
               </View>
@@ -324,7 +327,7 @@ export default function DollarCardsScreen({ navigation }: DollarCardsScreenProps
               <Text
                 style={[
                   styles.detailsValue,
-                  { color: isFrozen ? Colors.AMBER : Colors.GREEN },
+                  { color: isFrozen ? theme.gold : theme.brand },
                 ]}
               >
                 {isFrozen ? 'Frozen' : 'Active'}
@@ -346,7 +349,7 @@ export default function DollarCardsScreen({ navigation }: DollarCardsScreenProps
 
           {isLoading ? (
             <View style={styles.emptyContainer}>
-              <ActivityIndicator color={Colors.GREEN} size="small" />
+              <ActivityIndicator color={theme.brand} size="small" />
             </View>
           ) : transactions.length === 0 ? (
             <View style={styles.emptyContainer}>
@@ -371,10 +374,11 @@ export default function DollarCardsScreen({ navigation }: DollarCardsScreenProps
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.background,
   },
   scrollView: {
     flex: 1,
@@ -394,17 +398,21 @@ const styles = StyleSheet.create({
   backText: {
     fontSize: 28,
     fontWeight: '600',
-    color: Colors.DARK,
+    color: theme.ink,
   },
   title: {
     ...Typography.SCREEN_TITLE,
+    color: theme.ink,
     marginBottom: Spacing.XL,
   },
   cardContainer: {
     marginBottom: Spacing.XL,
   },
+  // Deliberately a fixed dark card mockup (like a real bank card) in both
+  // themes, not theme-reactive — same reasoning as the receipt/PDF-matching
+  // surfaces elsewhere: it's a physical-card visual, not a neutral app surface.
   card: {
-    backgroundColor: Colors.DARK,
+    backgroundColor: '#0F1A14',
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.CARD_PADDING,
     minHeight: 200,
@@ -419,11 +427,11 @@ const styles = StyleSheet.create({
     fontFamily: 'Helvetica-Bold',
     fontSize: 18,
     fontWeight: '700',
-    color: Colors.WHITE,
+    color: '#FFFFFF',
     letterSpacing: 2,
   },
   frozenBadge: {
-    backgroundColor: Colors.AMBER,
+    backgroundColor: theme.gold,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 4,
@@ -432,14 +440,14 @@ const styles = StyleSheet.create({
     fontFamily: 'Helvetica-Bold',
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.WHITE,
+    color: '#FFFFFF',
     letterSpacing: 1,
   },
   cardNumber: {
     fontFamily: 'Helvetica-Mono',
     fontSize: 20,
     lineHeight: 26,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
     letterSpacing: 2,
     marginBottom: Spacing.XL,
   },
@@ -451,14 +459,14 @@ const styles = StyleSheet.create({
   cardDetailLabel: {
     fontFamily: 'Helvetica',
     fontSize: 9,
-    color: Colors.WHITE_80,
+    color: 'rgba(255,255,255,0.8)',
     letterSpacing: 1,
     marginBottom: Spacing.XS,
   },
   cardDetailValue: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 13,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   cardBalance: {
     borderTopWidth: 1,
@@ -468,14 +476,14 @@ const styles = StyleSheet.create({
   balanceLabel: {
     fontFamily: 'Helvetica',
     fontSize: 11,
-    color: Colors.WHITE_80,
+    color: 'rgba(255,255,255,0.8)',
     marginBottom: Spacing.XS,
   },
   balanceAmount: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 24,
     lineHeight: 30,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   quickActions: {
     flexDirection: 'row',
@@ -504,7 +512,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -6,
     right: -10,
-    backgroundColor: Colors.AMBER,
+    backgroundColor: theme.gold,
     borderRadius: 8,
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -512,21 +520,22 @@ const styles = StyleSheet.create({
   comingSoonBadgeText: {
     fontSize: 8,
     fontWeight: '700',
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   quickActionLabel: {
     ...Typography.CAPTION,
-    color: Colors.DARK,
+    color: theme.ink,
     textAlign: 'center',
   },
   detailsContainer: {
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.CARD_PADDING,
     marginBottom: Spacing.XL,
   },
   detailsTitle: {
     ...Typography.SECTION_HEADING,
+    color: theme.ink,
     marginBottom: Spacing.L,
   },
   detailsRow: {
@@ -537,19 +546,20 @@ const styles = StyleSheet.create({
   },
   detailsLabel: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   detailsValue: {
     ...Typography.CARD_TITLE,
+    color: theme.ink,
   },
   detailsDivider: {
     height: 1,
-    backgroundColor: Colors.BORDER,
+    backgroundColor: theme.border,
     marginVertical: Spacing.XS,
   },
   createButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
@@ -563,6 +573,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...Typography.SECTION_HEADING,
+    color: theme.ink,
     marginBottom: Spacing.L,
   },
   emptyContainer: {
@@ -573,7 +584,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Spacing.L,
@@ -581,19 +592,21 @@ const styles = StyleSheet.create({
   emptyIcon: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 28,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   emptyTitle: {
     ...Typography.CARD_TITLE,
+    color: theme.ink,
     marginBottom: Spacing.S,
   },
   emptySubtitle: {
     ...Typography.CAPTION,
+    color: theme.inkMuted,
     textAlign: 'center',
     paddingHorizontal: Spacing.XL,
   },
   transactionList: {
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: Spacing.CARD_RADIUS,
     overflow: 'hidden',
   },
@@ -604,7 +617,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.CARD_PADDING,
     paddingVertical: Spacing.L,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.BORDER,
+    borderBottomColor: theme.border,
   },
   transactionLeft: {
     flexDirection: 'row',
@@ -629,10 +642,12 @@ const styles = StyleSheet.create({
   },
   transactionDescription: {
     ...Typography.CARD_TITLE,
+    color: theme.ink,
     marginBottom: Spacing.XS,
   },
   transactionDate: {
     ...Typography.CAPTION,
+    color: theme.inkMuted,
   },
   transactionRight: {
     alignItems: 'flex-end',
@@ -645,4 +660,5 @@ const styles = StyleSheet.create({
     ...Typography.CAPTION,
     fontWeight: '500',
   },
-});
+  });
+}
