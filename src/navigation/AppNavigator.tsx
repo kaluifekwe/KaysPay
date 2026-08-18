@@ -19,6 +19,7 @@ import TVPayScreen from '../screens/TVPayScreen';
 import NinServicesScreen from '../screens/NinServicesScreen';
 import TravelEsimScreen from '../screens/TravelEsimScreen';
 import WalletFundingScreen from '../screens/WalletFundingScreen';
+import TransferScreen from '../screens/TransferScreen';
 import CryptoScreen from '../screens/CryptoScreen';
 import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
 import ForeignNumbersScreen from '../screens/ForeignNumbersScreen';
@@ -59,6 +60,7 @@ function MainStackScreen() {
       <MainStack.Screen name="NinServices" component={NinServicesScreen} />
       <MainStack.Screen name="TravelEsim" component={TravelEsimScreen} />
       <MainStack.Screen name="WalletFunding" component={WalletFundingScreen} />
+      <MainStack.Screen name="Transfer" component={TransferScreen} />
       <MainStack.Screen name="Crypto" component={CryptoScreen} />
       <MainStack.Screen name="TransactionHistory" component={TransactionHistoryScreen} />
       <MainStack.Screen name="ForeignNumber" component={ForeignNumbersScreen} />

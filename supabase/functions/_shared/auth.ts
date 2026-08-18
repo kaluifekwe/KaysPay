@@ -194,7 +194,7 @@ export async function isDeviceSessionAllowed(
 /** Server-controlled provider switch. Missing/failed controls fail closed. */
 export async function isServiceEnabled(
   supabase: ReturnType<typeof adminClient>,
-  service: "vtu" | "esim" | "foreign_number" | "identity" | "nin_modification",
+  service: "vtu" | "esim" | "foreign_number" | "identity" | "nin_modification" | "transfer",
 ): Promise<boolean> {
   const { data, error } = await supabase.rpc("is_service_enabled", {
     p_service: service,

@@ -312,10 +312,11 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             </TouchableOpacity>
           </View>
           <View style={styles.walletButtons}>
-            {/* Withdraw removed with Paystack (owner 2026-07-28) — payout
-                gateway (Monnify/Budpay) not yet integrated. Fund only for now. */}
             <TouchableOpacity style={styles.walletButton} onPress={() => navigation.navigate('WalletFunding')}>
               <Text style={styles.walletButtonText}>{Strings.HOME_FUND_WALLET}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.walletButtonSecondary} onPress={() => navigation.navigate('Transfer')}>
+              <Text style={styles.walletButtonTextSecondary}>{Strings.HOME_TRANSFER}</Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -139,3 +139,44 @@ export function listFlutterwaveCharges(
   });
   return callFlutterwave(supabase, `/charges?${query.toString()}`, "GET");
 }
+
+/** NG bank list for the Transfer bank picker — {id, code, name}[] once unwrapped. */
+export function listFlutterwaveBanks(supabase: ReturnType<typeof adminClient>) {
+  return callFlutterwave(supabase, "/banks?country=NG", "GET");
+}
+
+/** Resolves an account number to its registered holder name before a transfer. */
+export function resolveFlutterwaveAccount(
+  supabase: ReturnType<typeof adminClient>,
+  params: { accountNumber: string; bankCode: string },
+) {
+  return callFlutterwave(supabase, "/banks/account-resolve", "POST", {
+    account: { code: params.bankCode, number: params.accountNumber },
+    currency: "NGN",
+  });
+}
+
+/**
+ * Sends NGN straight to an external bank account — the payout leg of
+ * Transfer. `action: "instant"` per Flutterwave's direct-transfer flow.
+ * `idempotencyKey` is KaysPay's own transaction id, so a retried request
+ * (network blip, client re-submit) can never double-send.
+ */
+export function createDirectBankTransfer(
+  supabase: ReturnType<typeof adminClient>,
+  params: { amountKobo: number; accountNumber: string; bankCode: string; reference: string; narration: string },
+  idempotencyKey: string,
+) {
+  return callFlutterwave(supabase, "/direct-transfers", "POST", {
+    action: "instant",
+    reference: params.reference,
+    narration: params.narration,
+    payment_instruction: {
+      source_currency: "NGN",
+      amount: { applies_to: "source_currency", value: Math.round(params.amountKobo / 100) },
+      recipient: { bank: { account_number: params.accountNumber, code: params.bankCode } },
+      destination_currency: "NGN",
+    },
+    type: "bank",
+  }, idempotencyKey);
+}
