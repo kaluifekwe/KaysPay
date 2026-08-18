@@ -607,14 +607,20 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   // Whether the "NIN Modification" tab shows at all — driven by the admin's
   // nin_modification kill switch (migration 113), read fresh on open so
   // toggling it off hides the whole tab instead of only rejecting the
-  // submit. Defaults true so a network hiccup never hides a working
-  // feature; nin-modify/nin-validate still enforce the switch server-side
-  // regardless of what this shows.
-  const [modificationAvailable, setModificationAvailable] = useState(true);
+  // submit. Starts hidden (not defaulted true) so a currently-disabled
+  // feature doesn't flash into view before the fetch below confirms it's
+  // off; the fetch's failure branch below still fails open to true so a
+  // network hiccup never hides a working feature. nin-modify/nin-validate
+  // still enforce the switch server-side regardless of what this shows.
+  const [modificationAvailable, setModificationAvailable] = useState(false);
 
   useEffect(() => {
     ninService.getServicePricing().then((result) => {
-      if (!result) return;
+      if (!result) {
+        // Network hiccup — fail open rather than hiding a working feature.
+        setModificationAvailable(true);
+        return;
+      }
       const { prices, ninModificationEnabled } = result;
       setModificationAvailable(ninModificationEnabled);
       // If the fetch resolves after the user already tapped into a now-hidden
