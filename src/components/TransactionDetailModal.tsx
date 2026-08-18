@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform, Image, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from './ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { formatNaira } from '../utils/formatCurrency';
@@ -35,16 +36,16 @@ export interface TransactionDetailItem {
   metadata?: Record<string, any> | null;
 }
 
-function getStatusColor(status: string) {
+function getStatusColor(theme: AppTheme, status: string) {
   switch (status) {
     case 'successful':
-      return Colors.SUCCESS;
+      return theme.up;
     case 'pending':
-      return Colors.AMBER;
+      return theme.gold;
     case 'failed':
-      return Colors.ERROR;
+      return theme.down;
     default:
-      return Colors.GRAY;
+      return theme.inkMuted;
   }
 }
 
@@ -138,6 +139,8 @@ export default function TransactionDetailModal({
   transaction: TransactionDetailItem | null;
   onClose: () => void;
 }) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -472,8 +475,8 @@ export default function TransactionDetailModal({
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Status</Text>
-              <View style={[styles.statusBadge, { backgroundColor: getStatusColor(transaction.status) + '20' }]}>
-                <Text style={[styles.statusText, { color: getStatusColor(transaction.status) }]}>
+              <View style={[styles.statusBadge, { backgroundColor: getStatusColor(theme, transaction.status) + '20' }]}>
+                <Text style={[styles.statusText, { color: getStatusColor(theme, transaction.status) }]}>
                   {transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1)}
                 </Text>
               </View>
@@ -513,7 +516,7 @@ export default function TransactionDetailModal({
                   disabled={generatingPdf}
                 >
                   {generatingPdf ? (
-                    <ActivityIndicator color={Colors.WHITE} />
+                    <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <Text style={styles.receiptButtonText}>Download Receipt (PDF)</Text>
                   )}
@@ -536,7 +539,7 @@ export default function TransactionDetailModal({
                   disabled={generatingPdf}
                 >
                   {generatingPdf ? (
-                    <ActivityIndicator color={Colors.WHITE} />
+                    <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <Text style={styles.receiptButtonText}>Download Receipt (PDF)</Text>
                   )}
@@ -573,7 +576,7 @@ export default function TransactionDetailModal({
                   disabled={generatingPdf}
                 >
                   {generatingPdf ? (
-                    <ActivityIndicator color={Colors.WHITE} />
+                    <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <Text style={styles.receiptButtonText}>Download Receipt (PDF)</Text>
                   )}
@@ -597,7 +600,7 @@ export default function TransactionDetailModal({
                   disabled={generatingPdf}
                 >
                   {generatingPdf ? (
-                    <ActivityIndicator color={Colors.WHITE} />
+                    <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <Text style={styles.receiptButtonText}>Download BVN Slip (PDF)</Text>
                   )}
@@ -621,7 +624,7 @@ export default function TransactionDetailModal({
                   disabled={generatingPdf}
                 >
                   {generatingPdf ? (
-                    <ActivityIndicator color={Colors.WHITE} />
+                    <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <Text style={styles.receiptButtonText}>Download NIN Slip (PDF)</Text>
                   )}
@@ -645,7 +648,7 @@ export default function TransactionDetailModal({
                   disabled={generatingPdf}
                 >
                   {generatingPdf ? (
-                    <ActivityIndicator color={Colors.WHITE} />
+                    <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <Text style={styles.receiptButtonText}>Download Receipt (PDF)</Text>
                   )}
@@ -719,14 +722,15 @@ export default function TransactionDetailModal({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: Colors.OVERLAY,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     overflow: 'hidden',
@@ -765,7 +769,7 @@ const styles = StyleSheet.create({
   brandName: {
     ...Typography.BODY,
     fontWeight: '800',
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   scrollContent: {
     paddingHorizontal: Spacing.L,
@@ -774,13 +778,13 @@ const styles = StyleSheet.create({
   },
   label: {
     ...Typography.SECTION_HEADING,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
     textAlign: 'center',
     opacity: 0.85,
   },
   amount: {
     ...Typography.SCREEN_TITLE,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
     textAlign: 'center',
     marginTop: Spacing.S,
   },
@@ -800,18 +804,18 @@ const styles = StyleSheet.create({
   },
   rowLabel: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
   rowValue: {
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
     fontWeight: '600',
     flexShrink: 1,
     textAlign: 'right',
     marginLeft: Spacing.M,
   },
   reasonBox: {
-    backgroundColor: Colors.LIGHT_GRAY,
+    backgroundColor: theme.surfaceRaised,
     borderRadius: 12,
     padding: Spacing.M,
     marginTop: Spacing.M,
@@ -821,31 +825,31 @@ const styles = StyleSheet.create({
   },
   receiptButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     borderRadius: Spacing.BUTTON_RADIUS,
     justifyContent: 'center',
     alignItems: 'center',
   },
   receiptButtonDisabled: { opacity: 0.5 },
-  receiptButtonText: { ...Typography.BUTTON_TEXT, color: Colors.WHITE },
+  receiptButtonText: { ...Typography.BUTTON_TEXT, color: '#FFFFFF' },
   receiptButtonSecondary: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     borderRadius: Spacing.BUTTON_RADIUS,
     borderWidth: 1,
-    borderColor: Colors.GREEN,
+    borderColor: theme.brand,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: Spacing.S,
   },
-  receiptButtonSecondaryText: { ...Typography.BUTTON_TEXT, color: Colors.GREEN },
+  receiptButtonSecondaryText: { ...Typography.BUTTON_TEXT, color: theme.brand },
   reasonLabel: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginBottom: 4,
   },
   reasonText: {
     ...Typography.BODY,
-    color: Colors.DARK,
+    color: theme.ink,
   },
   detailSection: {
     marginTop: Spacing.L,
@@ -855,7 +859,7 @@ const styles = StyleSheet.create({
   },
   qrWrap: {
     alignItems: 'center',
-    backgroundColor: Colors.WHITE,
+    backgroundColor: '#FFFFFF',
     paddingVertical: Spacing.M,
     marginBottom: Spacing.S,
   },
@@ -865,32 +869,33 @@ const styles = StyleSheet.create({
   },
   esimHint: {
     ...Typography.CAPTION,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     marginTop: Spacing.S,
     marginBottom: Spacing.M,
   },
   sectionTitle: {
     ...Typography.SECTION_HEADING,
-    color: Colors.DARK,
+    color: theme.ink,
     marginBottom: Spacing.S,
   },
   pinValue: {
     fontSize: 18,
     fontWeight: '700',
-    color: Colors.DARK,
+    color: theme.ink,
     letterSpacing: 1,
     lineHeight: 28,
   },
   closeButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     borderRadius: Spacing.BUTTON_RADIUS,
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: Spacing.M,
   },
   closeButtonText: {
     ...Typography.BUTTON_TEXT,
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
-});
+  });
+}

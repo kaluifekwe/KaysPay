@@ -19,7 +19,8 @@ import {
   AppState,
 } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { Colors } from '../constants/colors';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from './ThemeProvider';
 import { Spacing } from '../constants/spacing';
 import { Typography } from '../constants/typography';
 import { authService, PINLockStatus } from '../services/auth.service';
@@ -97,6 +98,8 @@ export function useTransactionAuth() {
 const PIN_LENGTH = 4;
 
 export function TransactionAuthProvider({ children }: { children: React.ReactNode }) {
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [visible, setVisible] = useState(false);
   const [options, setOptions] = useState<AuthorizeOptions>({});
   const [pin, setPin] = useState('');
@@ -425,7 +428,7 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
 
             <View style={styles.statusRow}>
               {checking ? (
-                <ActivityIndicator color={Colors.GREEN} />
+                <ActivityIndicator color={theme.brand} />
               ) : locked ? (
                 <Text style={styles.error}>
                   Too many incorrect attempts. Try again in {Math.floor(lockRemainingSeconds / 60)}:{String(lockRemainingSeconds % 60).padStart(2, '0')}.
@@ -512,14 +515,15 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
 
 const KEY_SIZE = 64;
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: Colors.OVERLAY,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   card: {
-    backgroundColor: Colors.WHITE,
+    backgroundColor: theme.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: Spacing.XL,
@@ -528,17 +532,17 @@ const styles = StyleSheet.create({
   },
   title: {
     ...Typography.HEADING,
-    color: Colors.DARK,
+    color: theme.ink,
     textAlign: 'center',
   },
   amount: {
     ...Typography.SCREEN_TITLE,
-    color: Colors.GREEN,
+    color: theme.brand,
     marginTop: Spacing.S,
   },
   subtitle: {
     ...Typography.BODY,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
     textAlign: 'center',
     marginTop: Spacing.S,
   },
@@ -553,11 +557,11 @@ const styles = StyleSheet.create({
     height: 16,
     borderRadius: 8,
     borderWidth: 2,
-    borderColor: Colors.GREEN,
+    borderColor: theme.brand,
     marginHorizontal: Spacing.M,
   },
   dotFilled: {
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
   },
   statusRow: {
     height: 24,
@@ -566,7 +570,7 @@ const styles = StyleSheet.create({
   },
   error: {
     ...Typography.CAPTION,
-    color: Colors.RED,
+    color: theme.down,
     textAlign: 'center',
   },
   hint: {
@@ -587,18 +591,18 @@ const styles = StyleSheet.create({
     marginVertical: Spacing.S,
   },
   keyPressed: {
-    backgroundColor: Colors.GREEN,
+    backgroundColor: theme.brand,
   },
   keyText: {
     fontSize: 26,
-    color: Colors.DARK,
+    color: theme.ink,
     fontWeight: '500',
   },
   keyTextPressed: {
-    color: Colors.WHITE,
+    color: '#FFFFFF',
   },
   keyDisabled: {
-    color: Colors.BORDER,
+    color: theme.hairline,
   },
   cancel: {
     marginTop: Spacing.S,
@@ -614,11 +618,12 @@ const styles = StyleSheet.create({
   },
   forgotPinText: {
     ...Typography.BODY,
-    color: Colors.GREEN,
+    color: theme.brand,
     fontWeight: '700',
   },
   cancelText: {
     ...Typography.BUTTON_TEXT,
-    color: Colors.GRAY,
+    color: theme.inkMuted,
   },
-});
+  });
+}
