@@ -14,6 +14,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
+// This whole screen is a fixed brand-green marketing carousel (the first
+// thing anyone sees, before any theme preference exists) — same reasoning as
+// AppPrivacyGate's coverSplash and the physical-card mockups elsewhere: its
+// white text/buttons/dots are designed around always sitting on this dark
+// green backdrop, not a neutral surface that should track the app theme.
+// Deliberately NOT converted to theme tokens.
 const BRAND_GREEN = '#1A5C3A';
 const DARK_BG = '#0F1A14';
 const SCREEN_BG = '#123626';

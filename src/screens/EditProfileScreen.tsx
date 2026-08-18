@@ -20,13 +20,8 @@ import { kycService } from '../services/kyc.service';
 import { authService } from '../services/auth.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
-
-const BRAND_GREEN = '#1A5C3A';
-const DARK_TEXT = '#0F1A14';
-const GRAY_TEXT = '#6B7280';
-const WHITE = '#FFFFFF';
-const BORDER_COLOR = '#E5E7EB';
-const RED = '#DC2626';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 
 type ChangeField = 'phone' | 'email';
 
@@ -45,6 +40,8 @@ function displayPhone(raw: string): string {
 export default function EditProfileScreen({ navigation }: any) {
   useSensitiveScreenProtection();
   const { authorize } = useTransactionAuth();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -203,7 +200,7 @@ export default function EditProfileScreen({ navigation }: any) {
     return (
       <SafeAreaView edges={['top']} style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator color={BRAND_GREEN} size="large" />
+          <ActivityIndicator color={theme.brand} size="large" />
         </View>
       </SafeAreaView>
     );
@@ -249,7 +246,7 @@ export default function EditProfileScreen({ navigation }: any) {
               value={fullName}
               onChangeText={setFullName}
               placeholder="Your full name"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={theme.inkMuted}
               autoCapitalize="words"
               autoCorrect={false}
             />
@@ -263,7 +260,7 @@ export default function EditProfileScreen({ navigation }: any) {
             value={address}
             onChangeText={setAddress}
             placeholder="e.g. 12 Awolowo Road, Ikeja"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={theme.inkMuted}
             multiline
             numberOfLines={2}
           />
@@ -276,7 +273,7 @@ export default function EditProfileScreen({ navigation }: any) {
           activeOpacity={0.8}
         >
           {saving ? (
-            <ActivityIndicator color={WHITE} size="small" />
+            <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
             <Text style={styles.saveButtonText}>Save Changes</Text>
           )}
@@ -297,7 +294,7 @@ export default function EditProfileScreen({ navigation }: any) {
                 value={fieldInput}
                 onChangeText={setFieldInput}
                 placeholder="e.g. 0803xxxxxxx"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={theme.inkMuted}
                 keyboardType="phone-pad"
                 autoFocus
               />
@@ -311,7 +308,7 @@ export default function EditProfileScreen({ navigation }: any) {
                   disabled={submittingField}
                 >
                   {submittingField ? (
-                    <ActivityIndicator color={WHITE} size="small" />
+                    <ActivityIndicator color="#FFFFFF" size="small" />
                   ) : (
                     <Text style={styles.confirmInlineText}>{phone ? 'Change' : 'Add'}</Text>
                   )}
@@ -337,7 +334,7 @@ export default function EditProfileScreen({ navigation }: any) {
                 value={fieldInput}
                 onChangeText={setFieldInput}
                 placeholder="you@example.com"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={theme.inkMuted}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -353,7 +350,7 @@ export default function EditProfileScreen({ navigation }: any) {
                   disabled={submittingField}
                 >
                   {submittingField ? (
-                    <ActivityIndicator color={WHITE} size="small" />
+                    <ActivityIndicator color="#FFFFFF" size="small" />
                   ) : (
                     <Text style={styles.confirmInlineText}>Change</Text>
                   )}
@@ -387,7 +384,7 @@ export default function EditProfileScreen({ navigation }: any) {
               value={otpCode}
               onChangeText={(t) => setOtpCode(t.replace(/[^\d]/g, '').slice(0, 6))}
               placeholder="000000"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={theme.inkMuted}
               keyboardType="number-pad"
               maxLength={6}
               autoFocus
@@ -400,7 +397,7 @@ export default function EditProfileScreen({ navigation }: any) {
               activeOpacity={0.8}
             >
               {otpSubmitting ? (
-                <ActivityIndicator color={WHITE} size="small" />
+                <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
                 <Text style={styles.saveButtonText}>Confirm</Text>
               )}
@@ -415,10 +412,11 @@ export default function EditProfileScreen({ navigation }: any) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: WHITE,
+    backgroundColor: theme.background,
   },
   loadingContainer: {
     flex: 1,
@@ -431,7 +429,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: BORDER_COLOR,
+    borderBottomColor: theme.border,
   },
   backButton: {
     width: 44,
@@ -442,12 +440,12 @@ const styles = StyleSheet.create({
   backButtonText: {
     fontSize: 28,
     fontWeight: '600',
-    color: DARK_TEXT,
+    color: theme.ink,
   },
   headerTitle: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 18,
-    color: DARK_TEXT,
+    color: theme.ink,
     flex: 1,
     textAlign: 'center',
   },
@@ -462,16 +460,16 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   fieldCard: {
-    backgroundColor: WHITE,
+    backgroundColor: theme.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: BORDER_COLOR,
+    borderColor: theme.border,
     padding: 16,
     marginBottom: 16,
   },
   fieldLabel: {
     fontSize: 12,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
     fontWeight: '600',
     marginBottom: 8,
     textTransform: 'uppercase',
@@ -479,7 +477,7 @@ const styles = StyleSheet.create({
   },
   fieldValue: {
     fontSize: 16,
-    color: DARK_TEXT,
+    color: theme.ink,
     fontWeight: '500',
   },
   valueRow: {
@@ -490,16 +488,16 @@ const styles = StyleSheet.create({
   changeLink: {
     fontSize: 14,
     fontWeight: '700',
-    color: BRAND_GREEN,
+    color: theme.brand,
   },
   input: {
     height: 48,
     borderWidth: 1.5,
-    borderColor: BORDER_COLOR,
+    borderColor: theme.border,
     borderRadius: 10,
     paddingHorizontal: 14,
     fontSize: 15,
-    color: DARK_TEXT,
+    color: theme.ink,
   },
   multilineInput: {
     height: 72,
@@ -508,7 +506,7 @@ const styles = StyleSheet.create({
   },
   helperText: {
     fontSize: 12,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
     marginTop: 8,
     lineHeight: 17,
   },
@@ -526,13 +524,13 @@ const styles = StyleSheet.create({
   cancelInlineText: {
     fontSize: 14,
     fontWeight: '600',
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
   },
   confirmInlineButton: {
     height: 40,
     minWidth: 80,
     borderRadius: 10,
-    backgroundColor: BRAND_GREEN,
+    backgroundColor: theme.brand,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 16,
@@ -540,27 +538,27 @@ const styles = StyleSheet.create({
   confirmInlineText: {
     fontSize: 14,
     fontWeight: '700',
-    color: WHITE,
+    color: '#FFFFFF',
   },
   divider: {
     height: 1,
-    backgroundColor: BORDER_COLOR,
+    backgroundColor: theme.border,
     marginVertical: 20,
   },
   sectionHeading: {
     fontSize: 14,
     fontWeight: '700',
-    color: DARK_TEXT,
+    color: theme.ink,
     marginBottom: 4,
   },
   sectionSubtext: {
     fontSize: 12,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
     marginBottom: 16,
     lineHeight: 17,
   },
   saveButton: {
-    backgroundColor: BRAND_GREEN,
+    backgroundColor: theme.brand,
     height: 52,
     borderRadius: 12,
     justifyContent: 'center',
@@ -572,7 +570,7 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     fontSize: 15,
-    color: WHITE,
+    color: '#FFFFFF',
     fontWeight: '700',
   },
   otpOverlay: {
@@ -582,19 +580,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   otpCard: {
-    backgroundColor: WHITE,
+    backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 24,
   },
   otpTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: DARK_TEXT,
+    color: theme.ink,
     textAlign: 'center',
   },
   otpSubtitle: {
     fontSize: 13,
-    color: GRAY_TEXT,
+    color: theme.inkMuted,
     textAlign: 'center',
     marginTop: 8,
     marginBottom: 20,
@@ -603,17 +601,17 @@ const styles = StyleSheet.create({
   otpInput: {
     height: 56,
     borderWidth: 1.5,
-    borderColor: BORDER_COLOR,
+    borderColor: theme.border,
     borderRadius: 10,
     fontSize: 24,
     fontWeight: '700',
     textAlign: 'center',
     letterSpacing: 8,
-    color: DARK_TEXT,
+    color: theme.ink,
   },
   otpError: {
     fontSize: 13,
-    color: RED,
+    color: theme.down,
     textAlign: 'center',
     marginTop: 10,
   },
@@ -623,4 +621,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-});
+  });
+}

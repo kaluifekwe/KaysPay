@@ -16,18 +16,8 @@ import { authService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
 import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
-
-const BRAND_GREEN = '#1A5C3A';
-const DARK_TEXT = '#0F1A14';
-const GRAY_TEXT = '#6B7280';
-const LABEL_COLOR = '#374151';
-const BORDER_COLOR = '#E5E7EB';
-const ERROR_RED = '#DC2626';
-const WHITE = '#FFFFFF';
-const SCREEN_BG = '#F8FAF9';
-const INPUT_BG = '#FFFFFF';
-const FOCUS_BG = '#FAFFFE';
-const BACK_BTN_BG = '#F3F4F6';
+import { AppTheme } from '../constants/theme';
+import { useTheme } from '../components/ThemeProvider';
 
 const NIGERIAN_PREFIXES = [
   '0703', '0706', '0802', '0803', '0805', '0806', '0807', '0808', '0809', '0810',
@@ -60,16 +50,16 @@ function detectNetwork(phone: string): string | null {
 // Lightweight strength signal — rewards length + character variety. Purely
 // advisory (we still only *require* 6+ chars); it nudges users toward a
 // stronger password without blocking a valid one.
-function passwordStrength(pw: string): { label: string; color: string; pct: number } {
+function passwordStrength(pw: string, theme: AppTheme): { label: string; color: string; pct: number } {
   let score = 0;
   if (pw.length >= 8) score++;
   if (pw.length >= 12) score++;
   if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score++;
   if (/\d/.test(pw)) score++;
   if (/[^A-Za-z0-9]/.test(pw)) score++;
-  if (score <= 1) return { label: 'Weak', color: '#DC2626', pct: 33 };
-  if (score <= 3) return { label: 'Fair', color: '#F59E0B', pct: 66 };
-  return { label: 'Strong', color: '#16A34A', pct: 100 };
+  if (score <= 1) return { label: 'Weak', color: theme.down, pct: 33 };
+  if (score <= 3) return { label: 'Fair', color: theme.gold, pct: 66 };
+  return { label: 'Strong', color: theme.brand, pct: 100 };
 }
 
 const Icons = {
@@ -86,6 +76,8 @@ interface RegistrationScreenProps {
 
 export default function RegistrationScreen({ navigation }: RegistrationScreenProps) {
   useSensitiveScreenProtection();
+  const { theme } = useTheme();
+  const styles = createStyles(theme);
   const [step, setStep] = useState<1 | 2>(1);
 
   // Step 1
@@ -446,7 +438,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                   <TextInput
                     style={styles.input}
                     placeholder="e.g. Amina Bello"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={theme.inkMuted}
                     value={fullName}
                     onChangeText={setFullName}
                     onFocus={() => setFocusedField('fullName')}
@@ -467,7 +459,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                     ref={emailRef}
                     style={styles.input}
                     placeholder="example@gmail.com"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={theme.inkMuted}
                     value={email}
                     onChangeText={setEmail}
                     onFocus={() => setFocusedField('email')}
@@ -490,7 +482,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                     ref={phoneRef}
                     style={styles.input}
                     placeholder="e.g. 0803 123 4567 or +1 415 555 2671"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={theme.inkMuted}
                     value={phone}
                     onChangeText={handlePhoneChange}
                     onFocus={() => setFocusedField('phone')}
@@ -530,7 +522,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                   <TextInput
                     style={styles.input}
                     placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={theme.inkMuted}
                     value={password}
                     onChangeText={setPassword}
                     onFocus={() => setFocusedField('password')}
@@ -553,12 +545,12 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                       <View
                         style={[
                           styles.strengthFill,
-                          { width: `${passwordStrength(password).pct}%`, backgroundColor: passwordStrength(password).color },
+                          { width: `${passwordStrength(password, theme).pct}%`, backgroundColor: passwordStrength(password, theme).color },
                         ]}
                       />
                     </View>
-                    <Text style={[styles.strengthLabel, { color: passwordStrength(password).color }]}>
-                      {passwordStrength(password).label}
+                    <Text style={[styles.strengthLabel, { color: passwordStrength(password, theme).color }]}>
+                      {passwordStrength(password, theme).label}
                     </Text>
                   </View>
                 )}
@@ -572,7 +564,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                     ref={confirmPasswordRef}
                     style={styles.input}
                     placeholder="Re-enter your password"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={theme.inkMuted}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
                     onFocus={() => setFocusedField('confirmPassword')}
@@ -634,46 +626,47 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: SCREEN_BG },
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   keyboardView: { flex: 1 },
   header: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, zIndex: 10 },
   backButton: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: BACK_BTN_BG,
+    width: 44, height: 44, borderRadius: 22, backgroundColor: theme.surfaceRaised,
     justifyContent: 'center', alignItems: 'center', marginBottom: 16,
   },
-  backArrow: { fontSize: 22, color: DARK_TEXT, fontWeight: '600' },
-  title: { fontFamily: 'Helvetica-Bold', fontSize: 26, color: DARK_TEXT, marginBottom: 4 },
-  subtitle: { fontSize: 14, color: GRAY_TEXT, marginBottom: 16 },
+  backArrow: { fontSize: 22, color: theme.ink, fontWeight: '600' },
+  title: { fontFamily: 'Helvetica-Bold', fontSize: 26, color: theme.ink, marginBottom: 4 },
+  subtitle: { fontSize: 14, color: theme.inkMuted, marginBottom: 16 },
   progressContainer: { marginTop: 4 },
   progressLabelRow: { marginBottom: 8 },
-  progressLabel: { fontSize: 11, color: '#9CA3AF' },
-  progressBar: { height: 4, backgroundColor: '#E5E7EB', borderRadius: 2, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: BRAND_GREEN, borderRadius: 2 },
+  progressLabel: { fontSize: 11, color: theme.inkMuted },
+  progressBar: { height: 4, backgroundColor: theme.surfaceRaised, borderRadius: 2, overflow: 'hidden' },
+  progressFill: { height: '100%', backgroundColor: theme.brand, borderRadius: 2 },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 40 },
   formCard: {
-    backgroundColor: WHITE, borderRadius: 16, padding: 20,
+    backgroundColor: theme.surface, borderRadius: 16, padding: 20,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
   fieldContainer: { marginBottom: 20 },
-  label: { fontSize: 13, color: LABEL_COLOR, fontWeight: '500', marginBottom: 6 },
-  required: { color: ERROR_RED },
+  label: { fontSize: 13, color: theme.ink, fontWeight: '500', marginBottom: 6 },
+  required: { color: theme.down },
   inputWrapper: {
     flexDirection: 'row', alignItems: 'center', height: 56, borderWidth: 1.5,
-    borderColor: BORDER_COLOR, borderRadius: 12, paddingHorizontal: 16, backgroundColor: INPUT_BG,
+    borderColor: theme.border, borderRadius: 12, paddingHorizontal: 16, backgroundColor: theme.surface,
   },
-  inputFocused: { borderColor: BRAND_GREEN, backgroundColor: FOCUS_BG, borderWidth: 2 },
-  inputError: { borderColor: ERROR_RED },
-  inputValid: { borderColor: BRAND_GREEN },
+  inputFocused: { borderColor: theme.brand, backgroundColor: theme.surfaceRaised2, borderWidth: 2 },
+  inputError: { borderColor: theme.down },
+  inputValid: { borderColor: theme.brand },
   fieldIcon: { fontSize: 18, marginRight: 10, opacity: 0.5 },
-  input: { flex: 1, fontSize: 15, color: DARK_TEXT, padding: 0 },
-  validIcon: { fontSize: 18, color: BRAND_GREEN, fontWeight: '700', marginLeft: 8 },
-  errorIcon: { fontSize: 18, color: ERROR_RED, fontWeight: '700', marginLeft: 8 },
-  errorText: { fontSize: 11, color: ERROR_RED, marginTop: 6, marginLeft: 4 },
-  hintText: { fontSize: 11, color: '#9CA3AF', marginTop: 6, marginLeft: 4 },
+  input: { flex: 1, fontSize: 15, color: theme.ink, padding: 0 },
+  validIcon: { fontSize: 18, color: theme.brand, fontWeight: '700', marginLeft: 8 },
+  errorIcon: { fontSize: 18, color: theme.down, fontWeight: '700', marginLeft: 8 },
+  errorText: { fontSize: 11, color: theme.down, marginTop: 6, marginLeft: 4 },
+  hintText: { fontSize: 11, color: theme.inkMuted, marginTop: 6, marginLeft: 4 },
   strengthRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, marginLeft: 4 },
-  strengthTrack: { flex: 1, height: 5, borderRadius: 3, backgroundColor: '#E5E7EB', overflow: 'hidden', marginRight: 10 },
+  strengthTrack: { flex: 1, height: 5, borderRadius: 3, backgroundColor: theme.surfaceRaised, overflow: 'hidden', marginRight: 10 },
   strengthFill: { height: '100%', borderRadius: 3 },
   strengthLabel: { fontSize: 11, fontWeight: '700', width: 54, textAlign: 'right' },
   networkBadge: {
@@ -684,20 +677,21 @@ const styles = StyleSheet.create({
   networkText: { fontSize: 12, fontWeight: '600' },
   pinContainer: { flexDirection: 'row', justifyContent: 'space-between' },
   pinBox: {
-    width: 60, height: 64, borderWidth: 1.5, borderColor: BORDER_COLOR, borderRadius: 12,
-    textAlign: 'center', fontSize: 22, fontFamily: 'Helvetica-Bold', backgroundColor: INPUT_BG, color: DARK_TEXT,
+    width: 60, height: 64, borderWidth: 1.5, borderColor: theme.border, borderRadius: 12,
+    textAlign: 'center', fontSize: 22, fontFamily: 'Helvetica-Bold', backgroundColor: theme.surface, color: theme.ink,
   },
-  pinBoxFilled: { borderColor: BRAND_GREEN, backgroundColor: FOCUS_BG },
+  pinBoxFilled: { borderColor: theme.brand, backgroundColor: theme.surfaceRaised2 },
   createButton: {
-    height: 56, backgroundColor: BRAND_GREEN, borderRadius: 14, flexDirection: 'row',
+    height: 56, backgroundColor: theme.brand, borderRadius: 14, flexDirection: 'row',
     justifyContent: 'center', alignItems: 'center', marginTop: 8, marginBottom: 4,
   },
   createButtonDisabled: { opacity: 0.6 },
-  createButtonText: { fontFamily: 'Helvetica-Bold', fontSize: 16, color: WHITE },
-  createButtonArrow: { fontSize: 18, color: WHITE, marginLeft: 8 },
+  createButtonText: { fontFamily: 'Helvetica-Bold', fontSize: 16, color: '#FFFFFF' },
+  createButtonArrow: { fontSize: 18, color: '#FFFFFF', marginLeft: 8 },
   loginLink: { alignItems: 'center', marginTop: 20, marginBottom: 20 },
-  loginLinkText: { fontSize: 14, color: GRAY_TEXT },
-  loginLinkBold: { color: BRAND_GREEN, fontWeight: '700', textDecorationLine: 'underline' },
-  terms: { fontSize: 11, color: '#9CA3AF', textAlign: 'center', lineHeight: 16, marginTop: 4 },
-  termsLink: { color: BRAND_GREEN, fontWeight: '600' },
-});
+  loginLinkText: { fontSize: 14, color: theme.inkMuted },
+  loginLinkBold: { color: theme.brand, fontWeight: '700', textDecorationLine: 'underline' },
+  terms: { fontSize: 11, color: theme.inkMuted, textAlign: 'center', lineHeight: 16, marginTop: 4 },
+  termsLink: { color: theme.brand, fontWeight: '600' },
+  });
+}
