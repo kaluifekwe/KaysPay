@@ -10,7 +10,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-const VALID_SERVICES = ["vtu", "esim", "foreign_number", "identity", "nin_modification"];
+const VALID_SERVICES = ["vtu", "esim", "foreign_number", "identity", "nin_modification", "transfer"];
 
 serve(async (req) => {
   const cors = handleCors(req);

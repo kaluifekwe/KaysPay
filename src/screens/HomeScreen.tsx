@@ -312,11 +312,14 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             </TouchableOpacity>
           </View>
           <View style={styles.walletButtons}>
+            {/* Transfer (wallet -> bank) is parked (owner 2026-08-18, see
+                migration 130): crypto sells will pay out directly to the
+                customer's bank via Quidax Ramp's off-ramp, so the wallet is
+                spend-only and needs no cash-out path. The screen and its
+                backend stay in the repo behind the 'transfer' kill switch;
+                restore this button if general withdrawal is ever wanted. */}
             <TouchableOpacity style={styles.walletButton} onPress={() => navigation.navigate('WalletFunding')}>
               <Text style={styles.walletButtonText}>{Strings.HOME_FUND_WALLET}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.walletButtonSecondary} onPress={() => navigation.navigate('Transfer')}>
-              <Text style={styles.walletButtonTextSecondary}>{Strings.HOME_TRANSFER}</Text>
             </TouchableOpacity>
           </View>
         </View>
