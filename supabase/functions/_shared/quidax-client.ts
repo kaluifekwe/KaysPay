@@ -172,6 +172,41 @@ export interface QuidaxTicker {
   ask: number;
 }
 
+export interface QuidaxFullTicker extends QuidaxTicker {
+  /** Price 24h ago — absent for thin/illiquid pairs, per Quidax's own docs. */
+  open: number | null;
+}
+
+/**
+ * Every market's ticker in one call — confirmed shape from Quidax's own
+ * "List Market Tickers" reference (docs.quidax.io/reference/list-market-
+ * tickers): `{ <market>: { ticker: { buy, sell, last, low, high, open, vol },
+ * at } }`. Thin markets can omit fields other than buy/sell, so every read
+ * here tolerates a missing value rather than assuming the full set.
+ */
+export async function getAllMarketTickers(): Promise<Record<string, QuidaxFullTicker>> {
+  const { status, data } = await callQuidax(`/markets/tickers`, "GET");
+  if (status >= 400 || data?.status !== "success") {
+    throw new QuidaxError(data?.message || "Could not fetch market prices", status);
+  }
+  const out: Record<string, QuidaxFullTicker> = {};
+  for (const [market, entry] of Object.entries<any>(data.data ?? {})) {
+    const ticker = entry?.ticker;
+    const last = Number(ticker?.last);
+    if (!Number.isFinite(last) || last <= 0) continue;
+    const bid = Number(ticker?.buy);
+    const ask = Number(ticker?.sell);
+    const open = Number(ticker?.open);
+    out[market] = {
+      last,
+      bid: Number.isFinite(bid) && bid > 0 ? bid : last,
+      ask: Number.isFinite(ask) && ask > 0 ? ask : last,
+      open: Number.isFinite(open) && open > 0 ? open : null,
+    };
+  }
+  return out;
+}
+
 /**
  * Live market price for a pair (e.g. "usdtngn"), straight from Quidax's own
  * order book. This is the real crypto market rate — deliberately NOT the

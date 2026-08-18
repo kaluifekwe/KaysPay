@@ -1,14 +1,29 @@
 import { supabase } from '../lib/supabase';
 import { withTimeout, invokeWithRetry } from '../utils/network';
 
-// Crypto buy/sell/withdraw — built ahead of Yellow Card's approval so the
-// app-side pieces are ready to go live the moment their API access lands.
-// Buy/sell are pure internal ledger swaps (see supabase/functions/crypto-
-// buy and crypto-sell) and work today; withdrawal to an external wallet
-// needs a real on-chain broadcast and returns a clear "not available yet"
-// error until then — see supabase/functions/crypto-withdraw.
+// Crypto buy/sell/withdraw, all against the customer's own Quidax
+// sub-account — KaysPay never fronts liquidity. Buy pays Quidax's Ramp
+// product via bank transfer (supabase/functions/crypto-buy); Sell and
+// Withdraw spend the sub-account balance directly through Quidax's
+// exchange API (crypto-sell, crypto-withdraw).
 export type CryptoAsset = 'USDT';
 export type CryptoNetwork = 'TRC20' | 'ERC20' | 'BEP20';
+
+// Coins Buy supports beyond USDT — kept in sync with the curated list in
+// supabase/functions/_shared/crypto-assets.ts. Each goes through a two-leg
+// purchase (NGN -> USDT -> swap, see crypto-buy/crypto-quidax-webhook) and
+// lands in the KaysPay crypto account only — no external-wallet delivery
+// for these yet, only USDT keeps that option.
+export type SwapAssetCode = 'BTC' | 'ETH' | 'SOL' | 'XRP' | 'TRX' | 'LTC' | 'DOGE' | 'ADA';
+export type BuyAsset = 'USDT' | SwapAssetCode;
+
+export interface MarketCoin {
+  code: BuyAsset;
+  name: string;
+  stablecoin: boolean;
+  priceNgn: number;
+  change24hPct: number | null;
+}
 
 export const CRYPTO_NETWORKS: { key: CryptoNetwork; label: string }[] = [
   { key: 'TRC20', label: 'TRC-20 (Tron)' },
@@ -76,7 +91,11 @@ export interface CryptoBuyResult {
   success: boolean;
   error?: string;
   transactionId?: string;
+  asset?: BuyAsset;
   estimatedCrypto?: number;
+  // True when this purchase still needs a second leg (USDT -> the target
+  // coin) after the bank transfer clears — every asset except USDT.
+  pendingSwap?: boolean;
   destinationType?: 'kayspay_account' | 'external_wallet';
   destinationAddress?: string;
   payment?: CryptoBuyPayment;
@@ -172,15 +191,42 @@ export const cryptoService = {
   },
 
   /**
+   * Live prices for the coin picker — one call covering every supported
+   * coin's current NGN price and 24h change, straight from Quidax's own
+   * order book. Purely informational: crypto-buy re-derives its own price
+   * server-side at purchase time.
+   */
+  async getMarkets(): Promise<{ coins: MarketCoin[]; usdtNgnRate: number | null } | null> {
+    try {
+      const { data, error } = await withTimeout(supabase.functions.invoke('crypto-markets', { body: {} }));
+      if (error || !data?.success) return null;
+      const coins: MarketCoin[] = (data.coins ?? []).map((c: any) => ({
+        code: c.code,
+        name: c.name,
+        stablecoin: !!c.stablecoin,
+        priceNgn: Number(c.price_ngn) || 0,
+        change24hPct: c.change_24h_pct != null ? Number(c.change_24h_pct) : null,
+      }));
+      return { coins, usdtNgnRate: data.usdt_ngn_rate != null ? Number(data.usdt_ngn_rate) : null };
+    } catch {
+      return null;
+    }
+  },
+
+  /**
    * Starts a purchase: Quidax issues a single-use bank account for the
-   * customer to transfer Naira into, and delivers the USDT either to their
-   * own KaysPay crypto account (default) or a `destination` wallet they
-   * supply. Doesn't complete synchronously — the caller shows the returned
-   * bank details and waits for the transfer + webhook, same as any
+   * customer to transfer Naira into. For USDT, Quidax delivers it either to
+   * their own KaysPay crypto account (default) or a `destination` wallet
+   * they supply. For any other supported coin, the USDT always lands in the
+   * customer's own account first and is then swapped for the target coin
+   * (`pendingSwap` in the result) — see crypto-buy/crypto-quidax-webhook.
+   * Doesn't complete synchronously — the caller shows the returned bank
+   * details and waits for the transfer + webhook(s), same as any
    * bank-transfer funding flow already in the app.
    */
   async buy(
-    ngnAmount: number,
+    asset: BuyAsset,
+    usdtAmount: number,
     authToken: string,
     destination?: { network: CryptoNetwork; address: string },
   ): Promise<CryptoBuyResult> {
@@ -190,8 +236,8 @@ export const cryptoService = {
         () => withTimeout(
           supabase.functions.invoke('crypto-buy', {
             body: {
-              asset: 'USDT',
-              ngn_amount: ngnAmount,
+              asset,
+              usd_amount: usdtAmount,
               auth_token: authToken,
               idempotency_key: idempotencyKey,
               ...(destination
@@ -214,7 +260,9 @@ export const cryptoService = {
       return {
         success: true,
         transactionId: data.transaction_id,
+        asset: data.asset,
         estimatedCrypto: Number(data.estimated_crypto) || 0,
+        pendingSwap: !!data.pending_swap,
         destinationType: data.destination_type === 'external_wallet' ? 'external_wallet' : 'kayspay_account',
         destinationAddress: data.destination_address,
         payment: data.payment

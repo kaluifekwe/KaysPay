@@ -28,6 +28,8 @@ import {
   type SavedCryptoAddress,
   type QuidaxWalletBalance,
   type CryptoBuyPayment,
+  type BuyAsset,
+  type MarketCoin,
 } from '../services/crypto.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import ResultStatusView, { type ResultStatus } from '../components/ResultStatusView';
@@ -61,6 +63,12 @@ const TAB_LABELS: Record<Tab, string> = {
 
 function formatUsdt(n: number): string {
   return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDT`;
+}
+
+// Non-stablecoin amounts need more precision (a BTC amount is usually
+// < 0.01) than USDT's 2-6dp is built for.
+function formatCoin(n: number, code: string): string {
+  return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 })} ${code}`;
 }
 
 export default function CryptoScreen({ navigation }: CryptoScreenProps) {
@@ -97,12 +105,21 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionAmountNgn, setActionAmountNgn] = useState<number | null>(null);
 
-  const [buyNgn, setBuyNgn] = useState('');
+  // Buy is a 4-step flow: pick a coin from live prices, set a USDT budget,
+  // review the quote, then (USDT only) choose where it's delivered.
+  const [buyStep, setBuyStep] = useState<'pick' | 'amount' | 'review' | 'destination'>('pick');
+  const [markets, setMarkets] = useState<MarketCoin[]>([]);
+  const [marketsLoading, setMarketsLoading] = useState(false);
+  const [usdtNgnRate, setUsdtNgnRate] = useState<number | null>(null);
+  const [selectedBuyAsset, setSelectedBuyAsset] = useState<BuyAsset | null>(null);
+  const [buyUsdt, setBuyUsdt] = useState('');
   // Where a purchase should be delivered: the customer's own KaysPay crypto
   // account (default), or an external wallet they supply — same address/
   // network validation as Withdraw, since a wrong entry here is even less
   // recoverable (Quidax delivers straight out of the purchase, with no
-  // KaysPay-side balance to recover it from).
+  // KaysPay-side balance to recover it from). Only offered for USDT — every
+  // other coin needs a swap leg first, so it always lands in the KaysPay
+  // account (see crypto.service.ts's buy() doc comment).
   const [buyToExternal, setBuyToExternal] = useState(false);
   const [buyDestNetwork, setBuyDestNetwork] = useState<CryptoNetwork>('TRC20');
   const [buyDestAddress, setBuyDestAddress] = useState('');
@@ -115,6 +132,8 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     payment: CryptoBuyPayment;
     estimatedCrypto: number;
     destinationType: 'kayspay_account' | 'external_wallet';
+    asset: BuyAsset;
+    pendingSwap: boolean;
   } | null>(null);
   const [sellUsdt, setSellUsdt] = useState('');
 
@@ -149,6 +168,42 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  const loadMarkets = useCallback(async () => {
+    setMarketsLoading(true);
+    const result = await cryptoService.getMarkets();
+    setMarketsLoading(false);
+    if (result) {
+      setMarkets(result.coins);
+      setUsdtNgnRate(result.usdtNgnRate);
+    }
+  }, []);
+
+  // Fetched lazily — only once the customer actually opens Buy, and only
+  // the first time, since prices only need to be fresh while this screen
+  // is actually up for a purchase.
+  useEffect(() => {
+    if (tab === 'buy' && markets.length === 0 && !marketsLoading) {
+      loadMarkets();
+    }
+  }, [tab, markets.length, marketsLoading, loadMarkets]);
+
+  const handleSelectTab = useCallback((t: Tab) => {
+    setTab(t);
+    if (t === 'buy') {
+      setBuyStep('pick');
+      setSelectedBuyAsset(null);
+      setBuyUsdt('');
+      setBuyToExternal(false);
+    }
+  }, []);
+
+  const handlePickBuyAsset = useCallback((code: BuyAsset) => {
+    setSelectedBuyAsset(code);
+    setBuyUsdt('');
+    setBuyToExternal(false);
+    setBuyStep('amount');
+  }, []);
 
   const quidaxUsdt = quidaxWallets.find((w) => w.currency === 'USDT');
   // Sell and Withdraw both spend the real balance held in the user's own
@@ -198,11 +253,17 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     setBuyDestVerified(false);
   }, [buyDestAddress, buyDestNetwork]);
 
-  const numericBuyNgn = parseFloat(buyNgn);
+  const numericBuyUsdt = parseFloat(buyUsdt);
   const numericSellUsdt = parseFloat(sellUsdt);
   const numericWdAmount = parseFloat(wdAmount);
 
-  const buyUsdtEstimate = buyRate && numericBuyNgn > 0 ? numericBuyNgn / buyRate : null;
+  const selectedMarket = markets.find((m) => m.code === selectedBuyAsset) || null;
+  const buyNgnEstimate = usdtNgnRate && numericBuyUsdt > 0 ? numericBuyUsdt * usdtNgnRate : null;
+  // Only meaningful for a swap-target coin — for USDT itself the "coin" IS
+  // the USDT amount, so this is left null and the screens show buyNgnEstimate.
+  const buyCoinEstimate = selectedMarket && !selectedMarket.stablecoin && buyNgnEstimate != null && selectedMarket.priceNgn > 0
+    ? buyNgnEstimate / selectedMarket.priceNgn
+    : null;
   const sellNgnEstimate = sellRate && numericSellUsdt > 0 ? numericSellUsdt * sellRate : null;
 
   const wdAddressValid = wdAddress.trim().length > 0 && isValidCryptoAddress(wdNetwork, wdAddress);
@@ -215,7 +276,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     ? `This doesn't look like a valid ${buyDestNetwork} address.`
     : null;
 
-  const canBuy = Number.isFinite(numericBuyNgn) && numericBuyNgn > 0
+  const canBuy = !!selectedBuyAsset && Number.isFinite(numericBuyUsdt) && numericBuyUsdt > 0
     && (!buyToExternal || (buyDestAddressValid && buyDestVerified));
   const canSell = Number.isFinite(numericSellUsdt) && numericSellUsdt >= 1 && numericSellUsdt <= 2000
     && quidaxUsdtBalance != null && numericSellUsdt <= quidaxUsdtBalance;
@@ -223,15 +284,20 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     && quidaxUsdtBalance != null && numericWdAmount <= quidaxUsdtBalance && wdAddressValid && wdVerified;
 
   const handleBuy = useCallback(async () => {
-    if (!canBuy) return;
+    if (!canBuy || !selectedBuyAsset) return;
     const subtitle = buyToExternal
       ? `To ${buyDestNetwork} wallet ${buyDestAddress.trim()}`
       : 'To your KaysPay crypto account';
-    const authResult = await authorize({ title: 'Confirm Crypto Purchase', amount: numericBuyNgn, subtitle });
+    const authResult = await authorize({
+      title: `Confirm ${selectedBuyAsset} Purchase`,
+      amount: buyNgnEstimate ?? undefined,
+      subtitle,
+    });
     if (!authResult) return;
     setBuyLoading(true);
     const result = await cryptoService.buy(
-      numericBuyNgn,
+      selectedBuyAsset,
+      numericBuyUsdt,
       authResult.token,
       buyToExternal ? { network: buyDestNetwork, address: buyDestAddress.trim() } : undefined,
     );
@@ -241,8 +307,12 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
         payment: result.payment,
         estimatedCrypto: result.estimatedCrypto ?? 0,
         destinationType: result.destinationType ?? 'kayspay_account',
+        asset: result.asset ?? selectedBuyAsset,
+        pendingSwap: !!result.pendingSwap,
       });
-      setBuyNgn('');
+      setBuyStep('pick');
+      setSelectedBuyAsset(null);
+      setBuyUsdt('');
       setBuyDestAddress('');
       setBuyDestVerified(false);
       loadAll();
@@ -250,7 +320,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       setActionError(result.error || 'Purchase failed. Please try again.');
       setActionState('failed');
     }
-  }, [canBuy, numericBuyNgn, buyToExternal, buyDestNetwork, buyDestAddress, authorize, loadAll]);
+  }, [canBuy, selectedBuyAsset, numericBuyUsdt, buyToExternal, buyDestNetwork, buyDestAddress, authorize, loadAll, buyNgnEstimate]);
 
   const handleSell = useCallback(async () => {
     if (!canSell) return;
@@ -316,7 +386,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   }, [pendingBuyPayment]);
 
   if (pendingBuyPayment) {
-    const { payment, estimatedCrypto, destinationType } = pendingBuyPayment;
+    const { payment, estimatedCrypto, destinationType, asset, pendingSwap } = pendingBuyPayment;
     return (
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <StatusBar barStyle="dark-content" backgroundColor={Colors.WHITE} />
@@ -369,9 +439,9 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
           </View>
 
           <Text style={styles.hintText}>
-            You'll receive about {formatUsdt(estimatedCrypto)} into{' '}
-            {destinationType === 'external_wallet' ? 'your external wallet' : 'your KaysPay crypto account'} once the
-            transfer clears.
+            {pendingSwap
+              ? `You'll receive about ${formatCoin(estimatedCrypto, asset)} into your KaysPay crypto account — first as USDT once the transfer clears, then automatically converted to ${asset}.`
+              : `You'll receive about ${formatUsdt(estimatedCrypto)} into ${destinationType === 'external_wallet' ? 'your external wallet' : 'your KaysPay crypto account'} once the transfer clears.`}
           </Text>
 
           <View style={styles.confirmWarningBox}>
@@ -433,7 +503,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
           <View style={styles.actionsRow}>
             {(['deposit', 'buy', 'sell', 'withdraw'] as Tab[]).map((t) => (
-              <TouchableOpacity key={t} style={styles.actionItem} onPress={() => setTab(t)} activeOpacity={0.75}>
+              <TouchableOpacity key={t} style={styles.actionItem} onPress={() => handleSelectTab(t)} activeOpacity={0.75}>
                 <View style={[styles.actionIcon, tab === t && styles.actionIconActive]}>
                   <Ionicons name={TAB_ICONS[t]} size={20} color={Colors.GREEN} />
                 </View>
@@ -495,24 +565,149 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
               </View>
             )}
 
-            {tab === 'buy' && (
+            {tab === 'buy' && buyStep === 'pick' && (
               <View>
-                <Text style={styles.hintText}>
-                  Transfer Naira from your own bank — Quidax delivers the USDT once it clears.
-                </Text>
+                <Text style={styles.hintText}>Pick a coin — live prices from Quidax's own market.</Text>
+                {marketsLoading && markets.length === 0 ? (
+                  <ActivityIndicator color={Colors.GREEN} style={{ marginTop: Spacing.L }} />
+                ) : (
+                  <View style={styles.coinList}>
+                    {markets.map((m) => (
+                      <TouchableOpacity
+                        key={m.code}
+                        style={styles.coinRow}
+                        onPress={() => handlePickBuyAsset(m.code)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.coinIcon}>
+                          <Text style={styles.coinIconText}>{m.code.slice(0, 1)}</Text>
+                        </View>
+                        <View style={styles.coinMid}>
+                          <Text style={styles.coinName}>{m.name}</Text>
+                          <Text style={styles.coinTicker}>{m.code}{m.stablecoin ? ' · Stablecoin' : ''}</Text>
+                        </View>
+                        <View style={styles.coinRight}>
+                          <Text style={styles.coinPrice}>{formatNaira(m.priceNgn)}</Text>
+                          {m.change24hPct != null && (
+                            <Text style={[styles.coinChange, { color: m.change24hPct >= 0 ? Colors.GREEN : Colors.RED }]}>
+                              {m.change24hPct >= 0 ? '+' : ''}{m.change24hPct.toFixed(2)}%
+                            </Text>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                    {!marketsLoading && markets.length === 0 && (
+                      <Text style={styles.errorText}>Could not load live prices. Pull down to try again.</Text>
+                    )}
+                  </View>
+                )}
+              </View>
+            )}
 
-                <Text style={styles.label}>Amount (Naira)</Text>
+            {tab === 'buy' && buyStep === 'amount' && selectedBuyAsset && (
+              <View>
+                <TouchableOpacity style={styles.backLink} onPress={() => setBuyStep('pick')}>
+                  <Ionicons name="chevron-back" size={16} color={Colors.GRAY} />
+                  <Text style={styles.backLinkText}>Change coin</Text>
+                </TouchableOpacity>
+
+                <View style={styles.coinSummaryRow}>
+                  <View style={styles.coinIcon}><Text style={styles.coinIconText}>{selectedBuyAsset.slice(0, 1)}</Text></View>
+                  <View>
+                    <Text style={styles.coinName}>{selectedMarket?.name ?? selectedBuyAsset}</Text>
+                    {selectedMarket && <Text style={styles.coinTicker}>{formatNaira(selectedMarket.priceNgn)}</Text>}
+                  </View>
+                </View>
+
+                <Text style={styles.label}>Amount to spend (USDT)</Text>
                 <TextInput
                   style={styles.input}
-                  value={buyNgn}
-                  onChangeText={(t) => setBuyNgn(t.replace(/[^0-9.]/g, ''))}
-                  placeholder="e.g. 50000"
+                  value={buyUsdt}
+                  onChangeText={(t) => setBuyUsdt(t.replace(/[^0-9.]/g, ''))}
+                  placeholder="e.g. 50"
                   placeholderTextColor={Colors.GRAY}
                   keyboardType="decimal-pad"
+                  autoFocus
                 />
-                {buyUsdtEstimate != null && (
-                  <Text style={styles.estimateText}>≈ {formatUsdt(buyUsdtEstimate)}</Text>
+                {buyNgnEstimate != null && (
+                  <Text style={styles.estimateText}>
+                    ≈ {formatNaira(buyNgnEstimate)}
+                    {buyCoinEstimate != null ? ` · ${formatCoin(buyCoinEstimate, selectedBuyAsset)}` : ''}
+                  </Text>
                 )}
+
+                <TouchableOpacity
+                  style={[styles.primaryButton, !canBuy && styles.primaryButtonDisabled]}
+                  onPress={() => setBuyStep('review')}
+                  disabled={!canBuy}
+                >
+                  <Text style={styles.primaryButtonText}>Review Purchase</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {tab === 'buy' && buyStep === 'review' && selectedBuyAsset && (
+              <View>
+                <TouchableOpacity style={styles.backLink} onPress={() => setBuyStep('amount')}>
+                  <Ionicons name="chevron-back" size={16} color={Colors.GRAY} />
+                  <Text style={styles.backLinkText}>Edit amount</Text>
+                </TouchableOpacity>
+
+                <Text style={styles.hintText}>You'll receive — estimated</Text>
+                <Text style={styles.reviewBig}>
+                  {selectedMarket?.stablecoin
+                    ? formatUsdt(numericBuyUsdt || 0)
+                    : buyCoinEstimate != null ? formatCoin(buyCoinEstimate, selectedBuyAsset) : '—'}
+                </Text>
+
+                <View style={styles.feeBreakdown}>
+                  <View style={styles.payDetailRow}>
+                    <Text style={styles.feeLabel}>Pay (budget)</Text>
+                    <Text style={styles.feeLabel}>{formatUsdt(numericBuyUsdt || 0)}</Text>
+                  </View>
+                  {selectedMarket && !selectedMarket.stablecoin && (
+                    <View style={styles.payDetailRow}>
+                      <Text style={styles.feeLabel}>Rate</Text>
+                      <Text style={styles.feeLabel}>1 {selectedBuyAsset} = {formatNaira(selectedMarket.priceNgn)}</Text>
+                    </View>
+                  )}
+                  <View style={styles.payDetailRow}>
+                    <Text style={styles.feeLabel}>Naira equivalent</Text>
+                    <Text style={styles.feeLabel}>{buyNgnEstimate != null ? formatNaira(buyNgnEstimate) : '—'}</Text>
+                  </View>
+                </View>
+
+                {!selectedMarket?.stablecoin && (
+                  <View style={styles.confirmBox}>
+                    <Text style={styles.confirmText}>
+                      Delivered to your KaysPay crypto account. Rate is re-quoted the moment your transfer clears and
+                      the conversion to {selectedBuyAsset} executes — the final amount may differ slightly from this estimate.
+                    </Text>
+                  </View>
+                )}
+
+                {selectedMarket?.stablecoin ? (
+                  <TouchableOpacity style={styles.primaryButton} onPress={() => setBuyStep('destination')}>
+                    <Text style={styles.primaryButtonText}>Continue</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.primaryButton, (!canBuy || buyLoading) && styles.primaryButtonDisabled]}
+                    onPress={handleBuy}
+                    disabled={!canBuy || buyLoading}
+                  >
+                    {buyLoading ? <ActivityIndicator color={Colors.WHITE} /> : <Text style={styles.primaryButtonText}>Confirm & Pay</Text>}
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {tab === 'buy' && buyStep === 'destination' && selectedBuyAsset && (
+              <View>
+                <TouchableOpacity style={styles.backLink} onPress={() => setBuyStep('review')}>
+                  <Ionicons name="chevron-back" size={16} color={Colors.GRAY} />
+                  <Text style={styles.backLinkText}>Back to review</Text>
+                </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.destinationToggleRow}
@@ -579,7 +774,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   {buyLoading ? (
                     <ActivityIndicator color={Colors.WHITE} />
                   ) : (
-                    <Text style={styles.primaryButtonText}>Buy USDT</Text>
+                    <Text style={styles.primaryButtonText}>Confirm & Pay</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -877,5 +1072,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: Spacing.L,
     marginBottom: Spacing.XL,
+  },
+
+  coinList: { gap: Spacing.XS, marginTop: Spacing.M },
+  coinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.M,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.BORDER,
+  },
+  coinIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: Colors.GREEN_10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: Spacing.M,
+  },
+  coinIconText: { ...Typography.BODY, color: Colors.GREEN_DARK, fontWeight: '700' },
+  coinMid: { flex: 1 },
+  coinName: { ...Typography.BODY, color: Colors.DARK, fontWeight: '600' },
+  coinTicker: { ...Typography.CAPTION, color: Colors.GRAY, marginTop: 2 },
+  coinRight: { alignItems: 'flex-end' },
+  coinPrice: { ...Typography.BODY, color: Colors.DARK, fontWeight: '600' },
+  coinChange: { ...Typography.CAPTION, fontWeight: '600', marginTop: 2 },
+
+  backLink: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.M },
+  backLinkText: { ...Typography.CAPTION, color: Colors.GRAY, marginLeft: 2 },
+
+  coinSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.LIGHT_GRAY,
+    borderRadius: Spacing.CARD_RADIUS,
+    padding: Spacing.M,
+    marginBottom: Spacing.L,
+  },
+  reviewBig: {
+    fontSize: 30,
+    fontWeight: '700',
+    color: Colors.DARK,
+    marginTop: Spacing.S,
+    marginBottom: Spacing.M,
   },
 });

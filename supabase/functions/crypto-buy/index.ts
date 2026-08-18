@@ -12,6 +12,7 @@ import {
 import { getUsdNgnRate } from "../_shared/esim-catalog.ts";
 import { createDepositAddress, getMarketTicker, isQuidaxConfigured } from "../_shared/quidax-client.ts";
 import { getOrCreateCryptoAccount } from "../_shared/crypto-account.ts";
+import { findSwapAsset } from "../_shared/crypto-assets.ts";
 import {
   confirmOnRamp,
   getBuyLimits,
@@ -105,7 +106,9 @@ serve(async (req: Request) => {
     }, 429);
   }
 
-  if (String(body.asset || "USDT") !== "USDT") {
+  const asset = String(body.asset || "USDT").trim().toUpperCase();
+  const swapAsset = asset === "USDT" ? null : findSwapAsset(asset);
+  if (asset !== "USDT" && !swapAsset) {
     return json({ success: false, error: "Unsupported asset" }, 400);
   }
 
@@ -113,11 +116,21 @@ serve(async (req: Request) => {
   // of the customer's own KaysPay crypto account. Validated the same way a
   // withdrawal address is, and rejected outright rather than silently
   // falling back to the KaysPay account — a customer who typed an address
-  // must never have it quietly ignored.
+  // must never have it quietly ignored. Only offered for USDT — every other
+  // supported coin needs a second leg (a swap, settled after this request
+  // returns) before the coin exists in the customer's account at all, so
+  // there's nothing to send externally yet. v1 keeps that as a manual
+  // Withdraw afterward rather than an auto-chained 3rd leg.
   const externalNetworkKey = String(body.destination_network || "").trim();
   const externalAddress = String(body.destination_address || "").trim();
   let external: { network: string; quidaxNetwork: string; address: string } | null = null;
   if (externalNetworkKey || externalAddress) {
+    if (swapAsset) {
+      return json({
+        success: false,
+        error: `${swapAsset.name} purchases are delivered to your KaysPay crypto account only for now.`,
+      }, 400);
+    }
     const pattern = EXTERNAL_ADDRESS_PATTERNS[externalNetworkKey];
     const quidaxNetwork = EXTERNAL_NETWORK_MAP[externalNetworkKey];
     if (!pattern || !quidaxNetwork) {
@@ -166,10 +179,27 @@ serve(async (req: Request) => {
   const merchantReference = String(body.idempotency_key || "").trim()
     || `kspbuy_${user.id.replace(/-/g, "").slice(0, 12)}_${Date.now()}`;
 
+  // For a swap-target coin, this leg always delivers USDT (Ramp only ever
+  // moves NGN<->USDT) — the coin itself doesn't exist yet, it's produced by
+  // the swap leg once this USDT lands (see crypto-quidax-webhook). The
+  // number shown here is therefore a live estimate, re-priced for real at
+  // swap time, same "estimate now, settle for real later" shape as the NGN
+  // buy amount always was.
+  let estimatedSwapCoin: number | null = null;
+  if (swapAsset) {
+    try {
+      const coinTicker = await getMarketTicker(`${swapAsset.quidaxCode}usdt`);
+      estimatedSwapCoin = ngnAmount / askRate / coinTicker.ask;
+    } catch (e) {
+      console.error(`crypto-buy: ${swapAsset.quidaxCode}usdt ticker failed:`, e instanceof Error ? e.message : e);
+    }
+  }
+
   try {
     // Delivery target: an external wallet the customer supplied, or — by
-    // default — their own KaysPay crypto account, so the purchase lands in
-    // the same balance Sell and Withdraw already read.
+    // default, and always for a swap-target coin — their own KaysPay crypto
+    // account, so the purchase lands in the same balance Sell and Withdraw
+    // already read.
     const deliveryNetwork = external?.quidaxNetwork ?? DELIVERY_NETWORK;
     let deliveryAddress: string;
     if (external) {
@@ -206,8 +236,9 @@ serve(async (req: Request) => {
       p_user_id: user.id,
       p_merchant_reference: merchantReference,
       p_ngn_kobo: Math.round(ngnAmount * 100),
-      p_estimated_micro: Math.round(initiated.toAmount * 1_000_000),
+      p_estimated_micro: Math.round((swapAsset ? (estimatedSwapCoin ?? 0) : initiated.toAmount) * 1_000_000),
       p_rate: askRate,
+      p_asset: asset,
       p_metadata: {
         quidax_public_id: initiated.publicId,
         quidax_reference: initiated.reference,
@@ -228,8 +259,11 @@ serve(async (req: Request) => {
     return json({
       success: true,
       transaction_id: txId,
-      asset: "USDT",
-      estimated_crypto: initiated.toAmount,
+      asset,
+      // For a swap-target coin this is a live estimate only — the real
+      // swap (and its own re-quote) runs after this USDT settles.
+      estimated_crypto: swapAsset ? estimatedSwapCoin : initiated.toAmount,
+      pending_swap: !!swapAsset,
       rate: askRate,
       destination_type: external ? "external_wallet" : "kayspay_account",
       destination_address: deliveryAddress,
