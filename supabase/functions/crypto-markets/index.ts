@@ -49,6 +49,13 @@ serve(async (req: Request) => {
           stablecoin: coin.stablecoin,
           price_ngn: direct.last,
           change_24h_pct: changePct != null && Number.isFinite(changePct) ? Math.round(changePct * 100) / 100 : null,
+          // Real reference points from today's order book, in the same NGN
+          // scale as price_ngn — not a tick history (Quidax's ticker doesn't
+          // offer one), just enough to shape an honest sparkline rather than
+          // a flat line or fabricated data.
+          open_ngn: direct.open,
+          low_ngn: direct.low ?? null,
+          high_ngn: direct.high ?? null,
         };
       }
 
@@ -59,12 +66,16 @@ serve(async (req: Request) => {
       // NGN change — USDT/NGN itself moves far less over 24h than most
       // altcoins do — rather than fabricating a number with no real source.
       const changePct = viaUsdt.open ? ((viaUsdt.last - viaUsdt.open) / viaUsdt.open) * 100 : null;
+      const toNgn = coin.quidaxCode === "usdt" ? 1 : usdtNgn.last;
       return {
         code: coin.code,
         name: coin.name,
         stablecoin: coin.stablecoin,
         price_ngn: priceNgn,
         change_24h_pct: changePct != null && Number.isFinite(changePct) ? Math.round(changePct * 100) / 100 : null,
+        open_ngn: viaUsdt.open != null ? viaUsdt.open * toNgn : null,
+        low_ngn: viaUsdt.low != null ? viaUsdt.low * toNgn : null,
+        high_ngn: viaUsdt.high != null ? viaUsdt.high * toNgn : null,
       };
     }).filter((c): c is NonNullable<typeof c> => c !== null);
 

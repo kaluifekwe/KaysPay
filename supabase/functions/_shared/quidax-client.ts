@@ -175,6 +175,8 @@ export interface QuidaxTicker {
 export interface QuidaxFullTicker extends QuidaxTicker {
   /** Price 24h ago — absent for thin/illiquid pairs, per Quidax's own docs. */
   open: number | null;
+  low: number | null;
+  high: number | null;
 }
 
 /**
@@ -197,11 +199,15 @@ export async function getAllMarketTickers(): Promise<Record<string, QuidaxFullTi
     const bid = Number(ticker?.buy);
     const ask = Number(ticker?.sell);
     const open = Number(ticker?.open);
+    const low = Number(ticker?.low);
+    const high = Number(ticker?.high);
     out[market] = {
       last,
       bid: Number.isFinite(bid) && bid > 0 ? bid : last,
       ask: Number.isFinite(ask) && ask > 0 ? ask : last,
       open: Number.isFinite(open) && open > 0 ? open : null,
+      low: Number.isFinite(low) && low > 0 ? low : null,
+      high: Number.isFinite(high) && high > 0 ? high : null,
     };
   }
   return out;

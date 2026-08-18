@@ -23,6 +23,12 @@ export interface MarketCoin {
   stablecoin: boolean;
   priceNgn: number;
   change24hPct: number | null;
+  // Real reference points from today's order book (not a tick history —
+  // Quidax's ticker doesn't offer one) used to shape the coin list's
+  // sparkline honestly rather than with fabricated data.
+  openNgn: number | null;
+  lowNgn: number | null;
+  highNgn: number | null;
 }
 
 export const CRYPTO_NETWORKS: { key: CryptoNetwork; label: string }[] = [
@@ -206,6 +212,9 @@ export const cryptoService = {
         stablecoin: !!c.stablecoin,
         priceNgn: Number(c.price_ngn) || 0,
         change24hPct: c.change_24h_pct != null ? Number(c.change_24h_pct) : null,
+        openNgn: c.open_ngn != null ? Number(c.open_ngn) : null,
+        lowNgn: c.low_ngn != null ? Number(c.low_ngn) : null,
+        highNgn: c.high_ngn != null ? Number(c.high_ngn) : null,
       }));
       return { coins, usdtNgnRate: data.usdt_ngn_rate != null ? Number(data.usdt_ngn_rate) : null };
     } catch {

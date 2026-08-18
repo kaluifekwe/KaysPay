@@ -68,6 +68,64 @@ const HERO_BG = DARK.raised;
 const HERO_TEXT_MUTED = DARK.inkMuted;
 const HERO_ERROR = DARK.down;
 
+// The coin picker's "Popular" filter — a subset of the full curated list,
+// not a separate data source. "All" always means the full 9 coins Buy
+// actually supports (not Quidax's wider ~50-asset universe — this app only
+// offers what it can actually deliver end to end).
+const POPULAR_BUY_CODES: BuyAsset[] = ['USDT', 'BTC', 'ETH', 'SOL', 'XRP'];
+type CoinFilter = 'popular' | 'gainers' | 'all';
+
+// A tiny connected-line sparkline built from pure Views (no react-native-svg
+// in this project — same constraint QrCodeView.tsx already works around).
+// Quidax's ticker has no intraday tick history, only today's open/low/high/
+// last, so this shapes an honest little trend line from those 4 real
+// reference points rather than either omitting the chart or fabricating
+// fake tick data to fill it.
+function Sparkline({ open, low, high, last, up }: {
+  open: number | null; low: number | null; high: number | null; last: number;
+  up: boolean;
+}) {
+  const w = 46;
+  const h = 16;
+  const pts = [open ?? last, low ?? last, ((low ?? last) + (high ?? last)) / 2, high ?? last, last]
+    .filter((n): n is number => Number.isFinite(n));
+  if (pts.length < 2) return <View style={{ width: w, height: h }} />;
+  const max = Math.max(...pts);
+  const min = Math.min(...pts);
+  const span = max - min || 1;
+  const coords = pts.map((p, i) => ({
+    x: (i / (pts.length - 1)) * w,
+    y: h - ((p - min) / span) * h,
+  }));
+  const color = up ? DARK.up : DARK.down;
+  return (
+    <View style={{ width: w, height: h }}>
+      {coords.slice(0, -1).map((p, i) => {
+        const next = coords[i + 1];
+        const dx = next.x - p.x;
+        const dy = next.y - p.y;
+        const length = Math.sqrt(dx * dx + dy * dy) || 0.01;
+        const angle = Math.atan2(dy, dx);
+        return (
+          <View
+            key={i}
+            style={{
+              position: 'absolute',
+              left: p.x,
+              top: p.y,
+              width: length,
+              height: 1.6,
+              backgroundColor: color,
+              transform: [{ translateY: -0.8 }, { rotate: `${angle}rad` }],
+              transformOrigin: '0 50%',
+            }}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
 const TAB_ICONS: Record<Tab, keyof typeof Ionicons.glyphMap> = {
   deposit: 'arrow-down-circle-outline',
   buy: 'add-circle-outline',
@@ -130,6 +188,8 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [buyStep, setBuyStep] = useState<'pick' | 'amount' | 'review' | 'destination'>('pick');
   const [markets, setMarkets] = useState<MarketCoin[]>([]);
   const [marketsLoading, setMarketsLoading] = useState(false);
+  const [coinSearch, setCoinSearch] = useState('');
+  const [coinFilter, setCoinFilter] = useState<CoinFilter>('popular');
   const [usdtNgnRate, setUsdtNgnRate] = useState<number | null>(null);
   const [selectedBuyAsset, setSelectedBuyAsset] = useState<BuyAsset | null>(null);
   const [buyUsdt, setBuyUsdt] = useState('');
@@ -278,6 +338,19 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const numericWdAmount = parseFloat(wdAmount);
 
   const selectedMarket = markets.find((m) => m.code === selectedBuyAsset) || null;
+
+  const visibleMarkets = markets
+    .filter((m) => {
+      if (!coinSearch.trim()) return true;
+      const q = coinSearch.trim().toLowerCase();
+      return m.code.toLowerCase().includes(q) || m.name.toLowerCase().includes(q);
+    })
+    .filter((m) => {
+      if (coinFilter === 'gainers') return (m.change24hPct ?? 0) > 0;
+      if (coinFilter === 'popular') return POPULAR_BUY_CODES.includes(m.code);
+      return true;
+    })
+    .sort((a, b) => (coinFilter === 'gainers' ? (b.change24hPct ?? 0) - (a.change24hPct ?? 0) : 0));
   const buyNgnEstimate = usdtNgnRate && numericBuyUsdt > 0 ? numericBuyUsdt * usdtNgnRate : null;
   // Only meaningful for a swap-target coin — for USDT itself the "coin" IS
   // the USDT amount, so this is left null and the screens show buyNgnEstimate.
@@ -587,37 +660,74 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
             {tab === 'buy' && buyStep === 'pick' && (
               <View>
-                <Text style={styles.hintText}>Pick a coin — live prices from Quidax's own market.</Text>
+                <View style={styles.search}>
+                  <Ionicons name="search" size={15} color={DARK.inkFaint} />
+                  <TextInput
+                    style={styles.searchInput}
+                    value={coinSearch}
+                    onChangeText={setCoinSearch}
+                    placeholder="Search coin or ticker"
+                    placeholderTextColor={DARK.inkFaint}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+
+                <View style={styles.seg}>
+                  {(['popular', 'gainers', 'all'] as CoinFilter[]).map((f) => (
+                    <TouchableOpacity
+                      key={f}
+                      style={[styles.segOpt, coinFilter === f && styles.segOptOn]}
+                      onPress={() => setCoinFilter(f)}
+                    >
+                      <Text style={[styles.segOptText, coinFilter === f && styles.segOptTextOn]}>
+                        {f === 'popular' ? 'Popular' : f === 'gainers' ? 'Gainers' : 'All'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <Text style={styles.sectionLabel}>Live markets</Text>
+
                 {marketsLoading && markets.length === 0 ? (
                   <ActivityIndicator color={DARK.brand} style={{ marginTop: Spacing.L }} />
                 ) : (
                   <View style={styles.coinList}>
-                    {markets.map((m) => (
-                      <TouchableOpacity
-                        key={m.code}
-                        style={styles.coinRow}
-                        onPress={() => handlePickBuyAsset(m.code)}
-                        activeOpacity={0.7}
-                      >
-                        <View style={styles.coinIcon}>
-                          <Text style={styles.coinIconText}>{m.code.slice(0, 1)}</Text>
-                        </View>
-                        <View style={styles.coinMid}>
-                          <Text style={styles.coinName}>{m.name}</Text>
-                          <Text style={styles.coinTicker}>{m.code}{m.stablecoin ? ' · Stablecoin' : ''}</Text>
-                        </View>
-                        <View style={styles.coinRight}>
-                          <Text style={styles.coinPrice}>{formatNaira(m.priceNgn)}</Text>
-                          {m.change24hPct != null && (
-                            <Text style={[styles.coinChange, { color: m.change24hPct >= 0 ? DARK.up : DARK.down }]}>
-                              {m.change24hPct >= 0 ? '+' : ''}{m.change24hPct.toFixed(2)}%
-                            </Text>
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                    {!marketsLoading && markets.length === 0 && (
-                      <Text style={styles.errorText}>Could not load live prices. Pull down to try again.</Text>
+                    {visibleMarkets.map((m) => {
+                      const up = (m.change24hPct ?? 0) >= 0;
+                      return (
+                        <TouchableOpacity
+                          key={m.code}
+                          style={styles.coinRow}
+                          onPress={() => handlePickBuyAsset(m.code)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.coinIcon}>
+                            <Text style={styles.coinIconText}>{m.code.slice(0, 1)}</Text>
+                          </View>
+                          <View style={styles.coinMid}>
+                            <View style={styles.coinNameRow}>
+                              <Text style={styles.coinName}>{m.name}</Text>
+                              {m.stablecoin && <Text style={styles.coinTag}>STABLE</Text>}
+                            </View>
+                            <Text style={styles.coinTicker}>{m.code}</Text>
+                            <Sparkline open={m.openNgn} low={m.lowNgn} high={m.highNgn} last={m.priceNgn} up={up} />
+                          </View>
+                          <View style={styles.coinRight}>
+                            <Text style={styles.coinPrice}>{formatNaira(m.priceNgn)}</Text>
+                            {m.change24hPct != null && (
+                              <Text style={[styles.coinChange, { color: up ? DARK.up : DARK.down }]}>
+                                {up ? '+' : ''}{m.change24hPct.toFixed(2)}%
+                              </Text>
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                    {!marketsLoading && visibleMarkets.length === 0 && (
+                      <Text style={styles.errorText}>
+                        {markets.length === 0 ? 'Could not load live prices. Pull down to try again.' : 'No coins match.'}
+                      </Text>
                     )}
                   </View>
                 )}
@@ -1104,7 +1214,45 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.XL,
   },
 
-  coinList: { gap: Spacing.XS, marginTop: Spacing.M },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.S,
+    backgroundColor: DARK.raised,
+    borderWidth: 1,
+    borderColor: DARK.hairline,
+    borderRadius: 13,
+    paddingHorizontal: Spacing.M,
+    height: Spacing.INPUT_HEIGHT,
+  },
+  searchInput: { flex: 1, ...Typography.BODY, color: DARK.ink, padding: 0 },
+
+  seg: {
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: DARK.raised,
+    borderWidth: 1,
+    borderColor: DARK.hairline,
+    borderRadius: 12,
+    padding: 4,
+    marginTop: Spacing.M,
+  },
+  segOpt: { flex: 1, alignItems: 'center', paddingVertical: Spacing.S, borderRadius: 9 },
+  segOptOn: { backgroundColor: DARK.raised2 },
+  segOptText: { ...Typography.CAPTION, color: DARK.inkFaint, fontWeight: '600' },
+  segOptTextOn: { color: DARK.ink },
+
+  sectionLabel: {
+    ...Typography.CAPTION,
+    fontFamily: MONO,
+    color: DARK.inkFaint,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginTop: Spacing.L,
+    marginBottom: Spacing.XS,
+  },
+
+  coinList: { gap: Spacing.XS },
   coinRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1122,9 +1270,22 @@ const styles = StyleSheet.create({
     marginRight: Spacing.M,
   },
   coinIconText: { ...Typography.BODY, fontFamily: MONO, color: DARK.brand, fontWeight: '700' },
-  coinMid: { flex: 1 },
+  coinMid: { flex: 1, gap: 3 },
+  coinNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   coinName: { ...Typography.BODY, color: DARK.ink, fontWeight: '600' },
-  coinTicker: { ...Typography.CAPTION, color: DARK.inkFaint, marginTop: 2 },
+  coinTag: {
+    ...Typography.CAPTION,
+    fontFamily: MONO,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    color: DARK.gold,
+    backgroundColor: DARK.goldSoft,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 999,
+  },
+  coinTicker: { ...Typography.CAPTION, fontFamily: MONO, color: DARK.inkFaint },
   coinRight: { alignItems: 'flex-end' },
   coinPrice: { ...Typography.BODY, fontFamily: MONO, color: DARK.ink, fontWeight: '600' },
   coinChange: { ...Typography.CAPTION, fontFamily: MONO, fontWeight: '600', marginTop: 2 },
