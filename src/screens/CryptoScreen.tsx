@@ -307,6 +307,14 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   }, 0);
   const usdtRateForTotal = usdtNgnRate ?? rate ?? null;
   const totalCryptoUsdt = usdtRateForTotal && usdtRateForTotal > 0 ? totalCryptoNgn / usdtRateForTotal : null;
+  // The live 1 USDT -> NGN quote shown under the hero total, same rate the
+  // old "Deposited USDT" hero used to display.
+  const liveUsdtRate = rate ?? usdtNgnRate ?? null;
+  const heroUsdtDisplay = heldWallets.length === 0
+    ? formatUsdt(0)
+    : totalCryptoUsdt != null
+      ? formatUsdt(totalCryptoUsdt)
+      : '—';
 
   // Any network change invalidates whatever address is on screen — never
   // show a TRC20 address after the user switched to BEP20.
@@ -613,12 +621,13 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             ) : (
               <>
                 <Text style={styles.heroValue}>
-                  {balanceVisible ? formatNaira(totalCryptoNgn) : '₦ ••••••••'}
+                  {!balanceVisible && heroUsdtDisplay !== '—' ? '•••• USDT' : heroUsdtDisplay}
                 </Text>
                 <Text style={styles.heroSub}>
                   {heldWallets.length > 0
-                    ? `≈ ${balanceVisible ? formatUsdt(totalCryptoUsdt ?? 0) : '•••• USDT'} across ${heldWallets.length} asset${heldWallets.length === 1 ? '' : 's'}`
+                    ? `${balanceVisible ? `≈ ${formatNaira(totalCryptoNgn)}` : '≈ ₦ ••••••'} across ${heldWallets.length} asset${heldWallets.length === 1 ? '' : 's'}`
                     : 'No crypto held yet — buy your first coin below'}
+                  {liveUsdtRate != null ? ` · 1 USDT ≈ ${formatNaira(liveUsdtRate)}` : ''}
                 </Text>
 
                 {heldWallets.length > 0 && (
