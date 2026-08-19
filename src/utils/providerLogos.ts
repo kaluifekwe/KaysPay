@@ -8,6 +8,20 @@ export const NETWORK_LOGOS: Record<NgNetwork, ImageSourcePropType> = {
   '9mobile': require('../../assets/logos/9mobile.png'),
 };
 
+// Sourced from spothq/cryptocurrency-icons (MIT licensed), keyed by the same
+// uppercase codes crypto.service.ts's BuyAsset/MarketCoin use.
+export const CRYPTO_LOGOS: Record<string, ImageSourcePropType> = {
+  USDT: require('../../assets/logos/crypto/usdt.png'),
+  BTC: require('../../assets/logos/crypto/btc.png'),
+  ETH: require('../../assets/logos/crypto/eth.png'),
+  SOL: require('../../assets/logos/crypto/sol.png'),
+  XRP: require('../../assets/logos/crypto/xrp.png'),
+  TRX: require('../../assets/logos/crypto/trx.png'),
+  LTC: require('../../assets/logos/crypto/ltc.png'),
+  DOGE: require('../../assets/logos/crypto/doge.png'),
+  ADA: require('../../assets/logos/crypto/ada.png'),
+};
+
 export const TV_LOGOS: Record<string, ImageSourcePropType> = {
   dstv: require('../../assets/logos/dstv.png'),
   gotv: require('../../assets/logos/gotv.png'),

@@ -33,6 +33,8 @@ import {
   type MarketCoin,
 } from '../services/crypto.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
+import ProviderLogo from '../components/ProviderLogo';
+import { CRYPTO_LOGOS } from '../utils/providerLogos';
 import ResultStatusView, { type ResultStatus } from '../components/ResultStatusView';
 import QrCodeView from '../components/QrCodeView';
 
@@ -683,9 +685,13 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                           onPress={() => handlePickBuyAsset(m.code)}
                           activeOpacity={0.7}
                         >
-                          <View style={styles.coinIcon}>
-                            <Text style={styles.coinIconText}>{m.code.slice(0, 1)}</Text>
-                          </View>
+                          <ProviderLogo
+                            source={CRYPTO_LOGOS[m.code]}
+                            fallbackLabel={m.name}
+                            fallbackColor={theme.brand}
+                            size={38}
+                            style={{ marginRight: Spacing.M }}
+                          />
                           <View style={styles.coinMid}>
                             <View style={styles.coinNameRow}>
                               <Text style={styles.coinName}>{m.name}</Text>
@@ -723,7 +729,13 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 </TouchableOpacity>
 
                 <View style={styles.coinSummaryRow}>
-                  <View style={styles.coinIcon}><Text style={styles.coinIconText}>{selectedBuyAsset.slice(0, 1)}</Text></View>
+                  <ProviderLogo
+                    source={CRYPTO_LOGOS[selectedBuyAsset]}
+                    fallbackLabel={selectedMarket?.name ?? selectedBuyAsset}
+                    fallbackColor={theme.brand}
+                    size={38}
+                    style={{ marginRight: Spacing.M }}
+                  />
                   <View>
                     <Text style={styles.coinName}>{selectedMarket?.name ?? selectedBuyAsset}</Text>
                     {selectedMarket && <Text style={styles.coinTicker}>{formatNaira(selectedMarket.priceNgn)}</Text>}
@@ -1242,16 +1254,6 @@ function createStyles(theme: AppTheme) {
     borderBottomWidth: 1,
     borderBottomColor: theme.hairlineSoft,
   },
-  coinIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: theme.surfaceRaised2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: Spacing.M,
-  },
-  coinIconText: { ...Typography.BODY, fontFamily: MONO, color: theme.brand, fontWeight: '700' },
   coinMid: { flex: 1, gap: 3 },
   coinNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   coinName: { ...Typography.BODY, color: theme.ink, fontWeight: '600' },
