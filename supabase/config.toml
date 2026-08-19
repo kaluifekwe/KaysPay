@@ -29,6 +29,13 @@ verify_jwt = false
 [functions.crypto-quidax-webhook]
 verify_jwt = false
 
+# Missed when this function was first built (2026-08-19) — it has its own
+# signature check (verifyRampWebhookSignature) but was never added here, so
+# it silently fell back to the true default and rejected every real delivery
+# from Quidax with 401 UNAUTHORIZED_NO_AUTH_HEADER before our code ever ran.
+[functions.crypto-ramp-webhook]
+verify_jwt = false
+
 # --- Cron-only: JWT + separate x-cron-secret check ---
 [functions.vtunaija-data-catalog]
 verify_jwt = true
@@ -66,10 +73,22 @@ verify_jwt = true
 [functions.crypto-withdraw]
 verify_jwt = true
 
+[functions.crypto-banks]
+verify_jwt = true
+
+[functions.crypto-buy-refund-resolve]
+verify_jwt = true
+
+[functions.crypto-buy-refund-submit]
+verify_jwt = true
+
 [functions.vtunaija-cabletv-catalog]
 verify_jwt = true
 
 [functions.nin-reconcile]
+verify_jwt = true
+
+[functions.crypto-buy-reconcile]
 verify_jwt = true
 
 [functions.vtunaija-reconcile]
