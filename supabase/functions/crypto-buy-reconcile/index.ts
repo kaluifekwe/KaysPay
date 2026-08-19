@@ -47,38 +47,58 @@ serve(async (req: Request) => {
       if (meta.needs_refund_bank_details) { skipped++; continue; }
 
       const merchantReference = String(meta.quidax_merchant_reference || "");
-      const quidaxReference = String(meta.quidax_reference || merchantReference);
-      if (!merchantReference || !quidaxReference) { skipped++; continue; }
+      if (!merchantReference) { skipped++; continue; }
 
-      try {
-        const remote = await requeryOnRamp(quidaxReference);
-        if (remote.status === "completed") {
-          const received = remote.cryptoAmount;
-          if (received == null || received <= 0) { skipped++; continue; }
-          await settleCryptoBuySuccess(supabase, {
-            merchantReference,
-            receivedUsdt: received,
-            txHash: remote.txHash,
-            logPrefix: "crypto-buy-reconcile",
-          });
-          completed++;
-        } else if (remote.status === "failed" || remote.status === "needs_attention") {
-          await supabase.rpc("fail_crypto_buy", {
-            p_merchant_reference: merchantReference,
-            p_reason: remote.errorMessage || "reconcile_failed",
-          });
-          failed++;
-        } else {
-          stillPending++;
+      // Quidax's docs never actually settled which identifier this endpoint
+      // wants — try their own reference first (metadata.quidax_reference,
+      // e.g. "TRX-...") when we have one, then fall back to ours. A 404 on
+      // the first is exactly what "wrong identifier" looks like, so it's
+      // safe to just try the other rather than guess once and give up.
+      const candidates = Array.from(new Set(
+        [String(meta.quidax_reference || ""), merchantReference].filter(Boolean),
+      ));
+      if (candidates.length === 0) { skipped++; continue; }
+
+      let remote: Awaited<ReturnType<typeof requeryOnRamp>> | null = null;
+      let lastError: unknown = null;
+      for (const candidate of candidates) {
+        try {
+          remote = await requeryOnRamp(candidate);
+          lastError = null;
+          break;
+        } catch (e) {
+          lastError = e;
+          const is404 = e instanceof QuidaxRampError && e.status === 404;
+          if (!is404) break; // a non-404 failure won't be fixed by trying the other reference
         }
-      } catch (e) {
-        // A 404 here most likely means quidaxReference wasn't the identifier
-        // this endpoint expects (see requeryOnRamp's doc comment) — logged
-        // for visibility rather than failing the sweep over one row.
-        if (e instanceof QuidaxRampError) {
-          console.error(`crypto-buy-reconcile: requery failed for ${merchantReference} (status ${e.status}):`, e.message);
+      }
+
+      if (!remote) {
+        if (lastError instanceof QuidaxRampError) {
+          console.error(`crypto-buy-reconcile: requery failed for ${merchantReference} (status ${lastError.status}):`, lastError.message);
         }
         skipped++;
+        continue;
+      }
+
+      if (remote.status === "completed") {
+        const received = remote.cryptoAmount;
+        if (received == null || received <= 0) { skipped++; continue; }
+        await settleCryptoBuySuccess(supabase, {
+          merchantReference,
+          receivedUsdt: received,
+          txHash: remote.txHash,
+          logPrefix: "crypto-buy-reconcile",
+        });
+        completed++;
+      } else if (remote.status === "failed" || remote.status === "needs_attention") {
+        await supabase.rpc("fail_crypto_buy", {
+          p_merchant_reference: merchantReference,
+          p_reason: remote.errorMessage || "reconcile_failed",
+        });
+        failed++;
+      } else {
+        stillPending++;
       }
     }
 
