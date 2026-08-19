@@ -20,6 +20,7 @@ import { Spacing } from '../constants/spacing';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
 import { formatNaira } from '../utils/formatCurrency';
+import { storageHelpers, StorageKeys } from '../lib/mmkv';
 import { walletService } from '../services/wallet.service';
 import {
   cryptoService,
@@ -137,6 +138,9 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const insets = useSafeAreaInsets();
 
   const [tab, setTab] = useState<Tab>('deposit');
+  // Shares the same StorageKeys.BALANCE_VISIBLE flag as the Home screen —
+  // "hide my balance" is one app-wide privacy preference, not a per-screen one.
+  const [balanceVisible, setBalanceVisible] = useState(true);
   const [ngnBalance, setNgnBalance] = useState<number | null>(null);
   const [usdtBalance, setUsdtBalance] = useState<number | null>(null);
   // Live USDT/NGN market price from Quidax. buyRate is the ask, sellRate the
@@ -228,10 +232,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     }
   }, []);
 
-  useEffect(() => {
-    loadAll();
-  }, [loadAll]);
-
   const loadMarkets = useCallback(async () => {
     setMarketsLoading(true);
     const result = await cryptoService.getMarkets();
@@ -242,14 +242,31 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     }
   }, []);
 
-  // Fetched lazily — only once the customer actually opens Buy, and only
-  // the first time, since prices only need to be fresh while this screen
-  // is actually up for a purchase.
+  useEffect(() => {
+    loadAll();
+    // Prices are needed up front now too, to value every coin in the wallet
+    // hero — not just once the customer opens Buy.
+    loadMarkets();
+    storageHelpers.getBoolean(StorageKeys.BALANCE_VISIBLE).then((v) => {
+      if (v !== undefined) setBalanceVisible(v);
+    });
+  }, [loadAll, loadMarkets]);
+
+  // Safety net: retry once if the customer opens Buy and the initial
+  // markets fetch above happened to fail.
   useEffect(() => {
     if (tab === 'buy' && markets.length === 0 && !marketsLoading) {
       loadMarkets();
     }
   }, [tab, markets.length, marketsLoading, loadMarkets]);
+
+  const toggleBalanceVisibility = useCallback(() => {
+    setBalanceVisible((prev) => {
+      const next = !prev;
+      storageHelpers.setBoolean(StorageKeys.BALANCE_VISIBLE, next);
+      return next;
+    });
+  }, []);
 
   const handleSelectTab = useCallback((t: Tab) => {
     setTab(t);
@@ -273,6 +290,23 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // Quidax sub-account — never the legacy `usdtBalance` ledger number,
   // which only backs the not-yet-migrated Buy flow.
   const quidaxUsdtBalance = quidaxUsdt ? Number(quidaxUsdt.balance) : null;
+
+  // Every coin the wallet hero and asset list show — not just USDT.
+  const heldWallets = quidaxWallets.filter((w) => Number(w.balance) > 0);
+  const priceOfNgn = useCallback(
+    (currency: string): number | null => {
+      if (currency === 'USDT') return usdtNgnRate ?? rate ?? null;
+      const market = markets.find((m) => m.code === currency);
+      return market && market.priceNgn > 0 ? market.priceNgn : null;
+    },
+    [markets, usdtNgnRate, rate],
+  );
+  const totalCryptoNgn = heldWallets.reduce((sum, w) => {
+    const price = priceOfNgn(w.currency);
+    return price ? sum + Number(w.balance) * price : sum;
+  }, 0);
+  const usdtRateForTotal = usdtNgnRate ?? rate ?? null;
+  const totalCryptoUsdt = usdtRateForTotal && usdtRateForTotal > 0 ? totalCryptoNgn / usdtRateForTotal : null;
 
   // Any network change invalidates whatever address is on screen — never
   // show a TRC20 address after the user switched to BEP20.
@@ -560,22 +594,114 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} showsVerticalScrollIndicator={false}>
           <View style={styles.hero}>
-            <Text style={styles.heroLabel}>Deposited USDT</Text>
-            <Text style={styles.heroValue}>
-              {quidaxUsdt ? formatUsdt(Number(quidaxUsdt.balance)) : quidaxLoadError ? '—' : formatUsdt(0)}
-            </Text>
+            <View style={styles.heroTop}>
+              <Text style={styles.heroLabel}>Total Crypto Balance</Text>
+              <TouchableOpacity
+                style={styles.eyeButton}
+                onPress={toggleBalanceVisibility}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name={balanceVisible ? 'eye-outline' : 'eye-off-outline'} size={15} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
             {quidaxLoadError ? (
-              <Text style={styles.heroError}>{quidaxLoadError}</Text>
+              <>
+                <Text style={styles.heroValue}>—</Text>
+                <Text style={styles.heroError}>{quidaxLoadError}</Text>
+              </>
             ) : (
-              <Text style={styles.heroSub}>
-                Naira wallet {ngnBalance != null ? formatNaira(ngnBalance) : '—'}
-                {rate != null ? ` · 1 USDT ≈ ${formatNaira(rate)}` : ''}
+              <>
+                <Text style={styles.heroValue}>
+                  {balanceVisible ? formatNaira(totalCryptoNgn) : '₦ ••••••••'}
+                </Text>
+                <Text style={styles.heroSub}>
+                  {heldWallets.length > 0
+                    ? `≈ ${balanceVisible ? formatUsdt(totalCryptoUsdt ?? 0) : '•••• USDT'} across ${heldWallets.length} asset${heldWallets.length === 1 ? '' : 's'}`
+                    : 'No crypto held yet — buy your first coin below'}
+                </Text>
+
+                {heldWallets.length > 0 && (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.assetStrip}
+                    contentContainerStyle={styles.assetStripContent}
+                  >
+                    {heldWallets.map((w) => (
+                      <View key={w.currency} style={styles.assetChip}>
+                        <ProviderLogo
+                          source={CRYPTO_LOGOS[w.currency]}
+                          fallbackLabel={w.currency}
+                          fallbackColor={theme.brandDark}
+                          size={20}
+                        />
+                        <Text style={styles.assetChipText}>
+                          {balanceVisible ? formatCoin(Number(w.balance), w.currency) : `•••• ${w.currency}`}
+                        </Text>
+                      </View>
+                    ))}
+                  </ScrollView>
+                )}
+              </>
+            )}
+
+            {usdtBalance != null && usdtBalance > 0 && (
+              <Text style={styles.heroLegacy}>
+                + {balanceVisible ? formatUsdt(usdtBalance) : '•••• USDT'} from Buy (not yet deposited)
               </Text>
             )}
-            {usdtBalance != null && usdtBalance > 0 && (
-              <Text style={styles.heroLegacy}>+ {formatUsdt(usdtBalance)} from Buy (not yet deposited)</Text>
-            )}
           </View>
+
+          <View style={styles.nairaCard}>
+            <View style={styles.nairaLeft}>
+              <View style={styles.nairaIcon}>
+                <Text style={styles.nairaIconText}>₦</Text>
+              </View>
+              <View>
+                <Text style={styles.nairaName}>Naira Wallet</Text>
+                <Text style={styles.nairaHint}>For funding your next Buy</Text>
+              </View>
+            </View>
+            <Text style={styles.nairaValue}>
+              {ngnBalance != null ? (balanceVisible ? formatNaira(ngnBalance) : '₦ ••••••') : '—'}
+            </Text>
+          </View>
+
+          {heldWallets.length > 0 && (
+            <View style={styles.assetsSection}>
+              <View style={styles.assetsSectionTitleRow}>
+                <Text style={styles.sectionLabel}>Your assets</Text>
+                <Text style={styles.assetsCount}>{heldWallets.length} held</Text>
+              </View>
+              {heldWallets.map((w) => {
+                const market = markets.find((m) => m.code === w.currency);
+                const price = priceOfNgn(w.currency);
+                const ngnValue = price != null ? Number(w.balance) * price : null;
+                return (
+                  <View key={w.currency} style={styles.assetRow}>
+                    <View style={styles.assetRowLeft}>
+                      <ProviderLogo
+                        source={CRYPTO_LOGOS[w.currency]}
+                        fallbackLabel={market?.name ?? w.currency}
+                        fallbackColor={theme.brand}
+                        size={36}
+                      />
+                      <View>
+                        <Text style={styles.assetRowName}>{market?.name ?? w.currency}</Text>
+                        <Text style={styles.assetRowAmt}>
+                          {balanceVisible ? formatCoin(Number(w.balance), w.currency) : '••••'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.assetRowValue}>
+                      {balanceVisible ? (ngnValue != null ? formatNaira(ngnValue) : '—') : '₦ ••••••'}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
 
           <View style={styles.actionsRow}>
             {(['deposit', 'buy', 'sell', 'withdraw'] as Tab[]).map((t) => (
@@ -1042,20 +1168,84 @@ function createStyles(theme: AppTheme) {
   topTitle: { ...Typography.SECTION_HEADING, color: theme.ink, marginLeft: Spacing.S },
   scrollContent: { paddingHorizontal: Spacing.SCREEN_PADDING, paddingBottom: 60 },
 
+  // Fixed dark-green surface, independent of light/dark mode — theme.brandDark
+  // is a dark tone in BOTH themes, so the hardcoded white text below always
+  // has contrast, unlike theme.surfaceRaised which flips light/dark.
   hero: {
-    backgroundColor: theme.surfaceRaised,
+    backgroundColor: theme.brandDark,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.CARD_PADDING,
     marginTop: Spacing.S,
-    marginBottom: Spacing.L,
+    marginBottom: Spacing.M,
+  },
+  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.XS },
+  heroLabel: { ...Typography.CAPTION, fontWeight: '700', letterSpacing: 0.3, color: 'rgba(255,255,255,0.72)' },
+  eyeButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  heroValue: { fontFamily: MONO, fontSize: 28, fontWeight: '600', color: '#FFFFFF', marginBottom: Spacing.XS },
+  heroSub: { ...Typography.CAPTION, color: 'rgba(255,255,255,0.68)', marginBottom: Spacing.M },
+  heroError: { ...Typography.CAPTION, color: '#FFB4B4' },
+  heroLegacy: { ...Typography.CAPTION, color: 'rgba(255,255,255,0.68)', marginTop: Spacing.M },
+
+  assetStrip: { marginHorizontal: -2 },
+  assetStripContent: { gap: Spacing.S, paddingRight: Spacing.S },
+  assetChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 20,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+  },
+  assetChipText: { ...Typography.CAPTION, fontFamily: MONO, fontWeight: '600', color: '#FFFFFF' },
+
+  nairaCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: theme.surface,
     borderWidth: 1,
     borderColor: theme.hairline,
+    borderRadius: Spacing.CARD_RADIUS,
+    padding: Spacing.CARD_PADDING,
+    marginBottom: Spacing.L,
   },
-  heroLabel: { ...Typography.CAPTION, color: theme.inkMuted, marginBottom: Spacing.XS },
-  heroValue: { fontFamily: MONO, fontSize: 28, fontWeight: '600', color: theme.ink, marginBottom: Spacing.S },
-  heroSub: { ...Typography.CAPTION, color: theme.inkMuted },
-  heroError: { ...Typography.CAPTION, color: theme.down },
-  heroLegacy: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: Spacing.XS },
+  nairaLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.M },
+  nairaIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: theme.surfaceRaised,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  nairaIconText: { ...Typography.BODY, fontWeight: '800', color: theme.brand },
+  nairaName: { ...Typography.BODY, color: theme.ink, fontWeight: '700' },
+  nairaHint: { ...Typography.CAPTION, color: theme.inkFaint, marginTop: 2 },
+  nairaValue: { ...Typography.BODY, fontFamily: MONO, fontWeight: '700', color: theme.ink },
+
+  assetsSection: { marginBottom: Spacing.L },
+  assetsSectionTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  assetsCount: { ...Typography.CAPTION, color: theme.inkFaint },
+  assetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.S,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.hairlineSoft,
+  },
+  assetRowLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.M },
+  assetRowName: { ...Typography.BODY, color: theme.ink, fontWeight: '600' },
+  assetRowAmt: { ...Typography.CAPTION, fontFamily: MONO, color: theme.inkFaint, marginTop: 2 },
+  assetRowValue: { ...Typography.BODY, fontFamily: MONO, fontWeight: '700', color: theme.ink },
 
   actionsRow: { flexDirection: 'row', justifyContent: 'space-around', paddingBottom: Spacing.L },
   actionItem: { alignItems: 'center', minWidth: 64 },
