@@ -38,6 +38,7 @@ import ProviderLogo from '../components/ProviderLogo';
 import { CRYPTO_LOGOS } from '../utils/providerLogos';
 import ResultStatusView, { type ResultStatus } from '../components/ResultStatusView';
 import QrCodeView from '../components/QrCodeView';
+import CryptoRefundBankModal from '../components/CryptoRefundBankModal';
 
 interface CryptoScreenProps {
   navigation: { goBack: () => void };
@@ -210,13 +211,19 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [wdVerified, setWdVerified] = useState(false);
   const [savedAddresses, setSavedAddresses] = useState<SavedCryptoAddress[]>([]);
 
+  // A Buy Quidax auto-refunded (paying account name didn't match) and is
+  // waiting on the customer's own bank details — see CryptoRefundBankModal.
+  const [pendingRefund, setPendingRefund] = useState<{ transactionId: string; amountNgn: number } | null>(null);
+  const [refundModalVisible, setRefundModalVisible] = useState(false);
+
   const loadAll = useCallback(async () => {
-    const [walletResult, usdt, liveRate, saved, quidaxAccount] = await Promise.all([
+    const [walletResult, usdt, liveRate, saved, quidaxAccount, refund] = await Promise.all([
       walletService.getWallet(),
       cryptoService.getBalance('USDT'),
       cryptoService.getQuoteRate(),
       cryptoService.listSavedAddresses('USDT'),
       cryptoService.getOrCreateAccount(),
+      cryptoService.getPendingBuyRefund(),
     ]);
     if (walletResult.success && walletResult.wallet) setNgnBalance(walletResult.wallet.available_balance);
     setUsdtBalance(usdt);
@@ -224,6 +231,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     setBuyRate(liveRate?.buyRate ?? null);
     setSellRate(liveRate?.sellRate ?? null);
     setSavedAddresses(saved);
+    setPendingRefund(refund);
     if (quidaxAccount.success) {
       setQuidaxWallets(quidaxAccount.wallets);
       setQuidaxLoadError(null);
@@ -601,6 +609,21 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} showsVerticalScrollIndicator={false}>
+          {pendingRefund && (
+            <TouchableOpacity
+              style={styles.refundBanner}
+              onPress={() => setRefundModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="alert-circle" size={20} color={theme.gold} />
+              <View style={styles.refundBannerTextWrap}>
+                <Text style={styles.refundBannerTitle}>Refund needs your bank details</Text>
+                <Text style={styles.refundBannerSub}>Tap to provide where we should send {formatNaira(pendingRefund.amountNgn)}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.inkFaint} />
+            </TouchableOpacity>
+          )}
+
           <View style={styles.hero}>
             <View style={styles.heroTop}>
               <Text style={styles.heroLabel}>Total Crypto Balance</Text>
@@ -1156,6 +1179,19 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {pendingRefund && (
+        <CryptoRefundBankModal
+          visible={refundModalVisible}
+          transactionId={pendingRefund.transactionId}
+          amountNgn={pendingRefund.amountNgn}
+          onClose={() => setRefundModalVisible(false)}
+          onSubmitted={() => {
+            setPendingRefund(null);
+            loadAll();
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -1176,6 +1212,19 @@ function createStyles(theme: AppTheme) {
   backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   topTitle: { ...Typography.SECTION_HEADING, color: theme.ink, marginLeft: Spacing.S },
   scrollContent: { paddingHorizontal: Spacing.SCREEN_PADDING, paddingBottom: 60 },
+
+  refundBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.M,
+    backgroundColor: theme.goldSoft,
+    borderRadius: Spacing.CARD_RADIUS,
+    padding: Spacing.M,
+    marginTop: Spacing.S,
+  },
+  refundBannerTextWrap: { flex: 1 },
+  refundBannerTitle: { ...Typography.BODY, fontWeight: '700', color: theme.ink },
+  refundBannerSub: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: 2 },
 
   // Fixed dark-green surface, independent of light/dark mode — theme.brandDark
   // is a dark tone in BOTH themes, so the hardcoded white text below always

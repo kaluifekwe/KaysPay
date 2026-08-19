@@ -229,6 +229,98 @@ export async function verifyRampWebhookSignature(
   return false;
 }
 
+export interface RefundAccountDetails {
+  accountName: string;
+  accountNumber: string;
+  bankName: string;
+  bankCode: string;
+}
+
+/**
+ * Looks up the account holder's name for a bank account BEFORE submitting it
+ * as a refund destination — same "never trust a typed-in number alone"
+ * discipline as transfer-resolve-account. Quidax's own docs mark this step
+ * optional, but skipping it means the first (and only) feedback on a wrong
+ * account number is money already sent to it.
+ */
+export async function verifyRefundAccount(params: {
+  merchantReference: string;
+  accountNumber: string;
+  bankCode: string;
+}): Promise<RefundAccountDetails> {
+  const { status, data } = await callRamp(
+    `/refunds/${encodeURIComponent(params.merchantReference)}/verify_account`,
+    "POST",
+    {
+      account_number: params.accountNumber,
+      bank_code: params.bankCode,
+      currency_code: "ngn",
+    },
+  );
+  const payload = unwrap(status, data, "Could not verify this account");
+  const accountName = String(payload.account_name ?? "");
+  if (!accountName) throw new QuidaxRampError("Quidax could not verify this account");
+  return {
+    accountName,
+    accountNumber: String(payload.account_number ?? params.accountNumber),
+    bankName: String(payload.bank_name ?? ""),
+    bankCode: String(payload.bank_code ?? params.bankCode),
+  };
+}
+
+/**
+ * Submits the customer's own bank account as the destination for a refund
+ * Quidax already decided to make (their name-mismatch auto-refund). This
+ * does not move money itself — it only tells Quidax where to send what
+ * they've already committed to sending back.
+ */
+export async function submitRefundDetails(params: {
+  merchantReference: string;
+  accountNumber: string;
+  bankCode: string;
+  accountName: string;
+}): Promise<void> {
+  const { status, data } = await callRamp(
+    `/refunds/${encodeURIComponent(params.merchantReference)}/details`,
+    "POST",
+    {
+      account_number: params.accountNumber,
+      bank_code: params.bankCode,
+      account_name: params.accountName,
+    },
+  );
+  unwrap(status, data, "Could not submit refund details");
+}
+
+export interface OnRampStatus {
+  status: string;
+  cryptoAmount: number | null;
+  txHash: string | null;
+  errorMessage: string | null;
+}
+
+/**
+ * Fetches the latest status of an on-ramp purchase directly — the fallback
+ * for when its webhook never arrives (crypto-buy-reconcile). Called with
+ * Quidax's OWN `reference` (stored as metadata.quidax_reference on the
+ * transaction), not our `merchant_reference` — the path parameter here is
+ * literally named `{reference}` in Quidax's docs, unlike confirm's, which is
+ * documented as `{merchant_reference}` despite an inconsistent URL example
+ * elsewhere in the same doc set. If this guess is wrong for a given account,
+ * the failure is just "reconcile finds nothing this round" (a 404, caught by
+ * the caller) — never a wrong settlement, since nothing here writes state.
+ */
+export async function requeryOnRamp(reference: string): Promise<OnRampStatus> {
+  const { status, data } = await callRamp(`/on_ramp_transaction/${encodeURIComponent(reference)}`);
+  const payload = unwrap(status, data, "Could not fetch this transaction");
+  return {
+    status: String(payload.status ?? ""),
+    cryptoAmount: payload.crypto_payout?.amount != null ? Number(payload.crypto_payout.amount) : null,
+    txHash: payload.crypto_payout?.transaction_hash ? String(payload.crypto_payout.transaction_hash) : null,
+    errorMessage: payload.error_message != null ? String(payload.error_message) : null,
+  };
+}
+
 export interface PurchaseLimits {
   min: number;
   max: number;

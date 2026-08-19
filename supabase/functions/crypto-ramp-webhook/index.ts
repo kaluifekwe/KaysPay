@@ -1,9 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/auth.ts";
-import { confirmSwapQuotation, createSwapQuotation } from "../_shared/quidax-client.ts";
 import { verifyRampWebhookSignature } from "../_shared/quidax-ramp-client.ts";
-import { findSwapAsset } from "../_shared/crypto-assets.ts";
+import { settleCryptoBuySuccess } from "../_shared/crypto-buy-settle.ts";
 
 // Settles Buy — the only flow that runs on Quidax's RAMP product rather than
 // its exchange API. Kept separate from crypto-quidax-webhook because the two
@@ -60,84 +59,12 @@ serve(async (req: Request) => {
       console.error("crypto-ramp-webhook: unexpected buy_transaction.successful", JSON.stringify(payload).slice(0, 300));
       return json({ received: true });
     }
-
-    const { data: order } = await supabase
-      .from("transactions")
-      .select("id, user_id, status, metadata")
-      .eq("type", "crypto_buy")
-      .eq("metadata->>quidax_merchant_reference", merchantReference)
-      .maybeSingle();
-    if (!order) {
-      console.warn(`crypto-ramp-webhook: no pending buy for ${merchantReference}`);
-      return json({ received: true });
-    }
-
-    const targetAsset = String(order.metadata?.asset || "USDT").toUpperCase();
-    const swapAsset = targetAsset === "USDT" ? null : findSwapAsset(targetAsset);
-
-    if (!swapAsset) {
-      const { error } = await supabase.rpc("complete_crypto_buy", {
-        p_merchant_reference: merchantReference,
-        p_crypto_micro: Math.round(received * 1_000_000),
-        p_tx_hash: data?.crypto_payout?.transaction_hash
-          ? String(data.crypto_payout.transaction_hash)
-          : null,
-      });
-      if (error) {
-        console.error("crypto-ramp-webhook: complete_crypto_buy failed:", error.message);
-        return json({ error: "Could not settle purchase" }, 500);
-      }
-      return json({ received: true });
-    }
-
-    if (order.status !== "pending") {
-      // Already advanced past leg 1 by an earlier delivery of this webhook.
-      return json({ received: true });
-    }
-
-    try {
-      const { data: account } = await supabase
-        .from("crypto_accounts")
-        .select("quidax_user_id")
-        .eq("user_id", order.user_id)
-        .maybeSingle();
-      if (!account) {
-        console.error(`crypto-ramp-webhook: no crypto account for user ${order.user_id}, cannot start buy swap`);
-        return json({ received: true });
-      }
-
-      const quotation = await createSwapQuotation({
-        quidaxUserId: account.quidax_user_id,
-        fromCurrency: "usdt",
-        toCurrency: swapAsset.quidaxCode,
-        fromAmount: String(received),
-      });
-
-      await supabase.rpc("record_crypto_buy_swap_pending", {
-        p_merchant_reference: merchantReference,
-        p_usdt_micro: Math.round(received * 1_000_000),
-        p_swap_id: quotation.id,
-      });
-
-      try {
-        await confirmSwapQuotation({ quidaxUserId: account.quidax_user_id, quotationId: quotation.id });
-      } catch (confirmError) {
-        const detail = confirmError instanceof Error ? confirmError.message : String(confirmError);
-        console.error("crypto-ramp-webhook: buy swap confirm failed:", detail);
-        await supabase.rpc("fail_crypto_buy_swap", { p_swap_id: quotation.id, p_reason: "confirm_failed" });
-      }
-    } catch (e) {
-      const detail = e instanceof Error ? e.message : String(e);
-      console.error("crypto-ramp-webhook: could not start buy swap leg:", detail);
-      // Leg 1's USDT is safely in the customer's own sub-account regardless
-      // — flagged for follow-up rather than silently stuck 'pending' forever.
-      await supabase.rpc("record_monitoring_alert", {
-        p_fingerprint: `crypto_buy_swap_start_failed_${merchantReference}`.slice(0, 100).toLowerCase(),
-        p_type: "crypto_buy_swap_start_failed",
-        p_severity: "warning",
-        p_details: { merchant_reference: merchantReference, target_asset: targetAsset, error: detail.slice(0, 300) },
-      });
-    }
+    await settleCryptoBuySuccess(supabase, {
+      merchantReference,
+      receivedUsdt: received,
+      txHash: data?.crypto_payout?.transaction_hash ? String(data.crypto_payout.transaction_hash) : null,
+      logPrefix: "crypto-ramp-webhook",
+    });
     return json({ received: true });
   }
 
@@ -161,18 +88,41 @@ serve(async (req: Request) => {
 
   // Quidax auto-refunds a purchase whose paying bank account name doesn't
   // match the customer (common here — people pay from a spouse's or business
-  // account). Answering it needs the customer's own bank details submitted
-  // back to Ramp, which is a separate piece of work; log loudly and alert so
-  // no refund sits silently unanswered in the meantime.
+  // account). Flags the order so the app prompts the customer for a bank
+  // account to receive it back — see crypto-buy-refund-resolve/-submit.
+  // Still alerts, at a lower severity than before: this is now a handled,
+  // expected path rather than a dead end, but still worth surfacing so a
+  // customer who never opens the app again isn't silently stuck.
   if (event === "buy_transaction.refund.details_requested") {
     const merchantReference = String(data?.merchant_reference || "");
-    console.error(`crypto-ramp-webhook: refund details requested for ${merchantReference} — not yet automated`);
+    if (merchantReference) {
+      const { error } = await supabase.rpc("mark_crypto_buy_refund_requested", {
+        p_merchant_reference: merchantReference,
+      });
+      if (error) {
+        console.error("crypto-ramp-webhook: mark_crypto_buy_refund_requested failed:", error.message);
+      }
+    }
     await supabase.rpc("record_monitoring_alert", {
       p_fingerprint: `crypto_buy_refund_requested_${merchantReference}`.slice(0, 100).toLowerCase(),
       p_type: "crypto_buy_refund_details_requested",
-      p_severity: "critical",
+      p_severity: "warning",
       p_details: { merchant_reference: merchantReference },
     });
+    return json({ received: true });
+  }
+
+  // Quidax has sent the refund to the bank details we submitted. Nothing to
+  // reverse on our side — Buy never debited the KaysPay wallet — so this
+  // only needs to move the order out of "pending".
+  if (event === "buy_transaction.refund.completed") {
+    const merchantReference = String(data?.merchant_reference || "");
+    if (merchantReference) {
+      await supabase.rpc("fail_crypto_buy", {
+        p_merchant_reference: merchantReference,
+        p_reason: "refunded_name_mismatch",
+      });
+    }
     return json({ received: true });
   }
 

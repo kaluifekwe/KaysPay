@@ -407,4 +407,80 @@ export const cryptoService = {
       (async () => await supabase.from('crypto_saved_addresses').update({ last_used_at: new Date().toISOString() }).eq('id', id))(),
     );
   },
+
+  /**
+   * A pending Buy that Quidax auto-refunded (the paying bank account's name
+   * didn't match) and is now waiting on the customer's own bank details.
+   * Read directly off `transactions` rather than a dedicated endpoint —
+   * this is the same table CryptoScreen already trusts RLS on for its own
+   * history.
+   */
+  async getPendingBuyRefund(): Promise<{ transactionId: string; amountNgn: number } | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data } = await withTimeout(
+      (async () => await supabase
+        .from('transactions')
+        .select('id, amount_ngn')
+        .eq('user_id', user.id)
+        .eq('type', 'crypto_buy')
+        .eq('status', 'pending')
+        .eq('metadata->>needs_refund_bank_details', 'true')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle())(),
+    );
+    if (!data) return null;
+    return { transactionId: data.id, amountNgn: Number(data.amount_ngn) / 100 };
+  },
+
+  async listRefundBanks(): Promise<{ code: string; name: string }[]> {
+    const { data, error } = await withTimeout(supabase.functions.invoke('crypto-banks', { body: {} }));
+    if (error || !data?.success) return [];
+    return (data.banks ?? []) as { code: string; name: string }[];
+  },
+
+  async resolveRefundAccount(
+    transactionId: string,
+    bankCode: string,
+    accountNumber: string,
+  ): Promise<{ success: boolean; accountName?: string; error?: string }> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('crypto-buy-refund-resolve', {
+          body: { transaction_id: transactionId, bank_code: bankCode, account_number: accountNumber },
+        }),
+      );
+      if (error) {
+        const errBody = await (error as any)?.context?.json?.().catch(() => null);
+        return { success: false, error: errBody?.error || 'Could not verify this account.' };
+      }
+      if (!data?.success) return { success: false, error: data?.error || 'Could not verify this account.' };
+      return { success: true, accountName: data.account_name };
+    } catch {
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  },
+
+  async submitRefundBank(
+    transactionId: string,
+    bankCode: string,
+    accountNumber: string,
+  ): Promise<{ success: boolean; accountName?: string; error?: string }> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('crypto-buy-refund-submit', {
+          body: { transaction_id: transactionId, bank_code: bankCode, account_number: accountNumber },
+        }),
+      );
+      if (error) {
+        const errBody = await (error as any)?.context?.json?.().catch(() => null);
+        return { success: false, error: errBody?.error || 'Could not submit your refund details.' };
+      }
+      if (!data?.success) return { success: false, error: data?.error || 'Could not submit your refund details.' };
+      return { success: true, accountName: data.account_name };
+    } catch {
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  },
 };

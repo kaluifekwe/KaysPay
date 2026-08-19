@@ -352,6 +352,27 @@ export async function createWithdrawal(params: {
   };
 }
 
+export interface QuidaxBank {
+  code: string;
+  name: string;
+}
+
+/**
+ * The exchange API's own NG bank list. Used for the Ramp refund flow's bank
+ * picker — deliberately NOT transfer-banks (Flutterwave's list), since
+ * Flutterwave and Quidax use different bank code schemes and a refund
+ * submitted with the wrong provider's code would resolve to the wrong bank.
+ */
+export async function listBanks(): Promise<QuidaxBank[]> {
+  const { status, data } = await callQuidax("/banks");
+  if (status >= 400 || data?.status !== "success") {
+    throw new QuidaxError(data?.message || "Could not load the bank list", status);
+  }
+  return (data.data ?? [])
+    .map((b: any) => ({ code: String(b.code ?? ""), name: String(b.name ?? "") }))
+    .filter((b: QuidaxBank) => b.code && b.name);
+}
+
 /**
  * Verifies a Quidax webhook's HMAC-SHA256 signature. Header format is
  * `t=<timestamp>,s=<signature>`; the signed payload is `${timestamp}.${rawBody}`
