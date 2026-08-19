@@ -2,22 +2,19 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/auth.ts";
 import {
-  confirmSwapQuotation,
-  createSwapQuotation,
   createWithdrawal,
   getParentAccount,
   verifyQuidaxWebhookSignature,
 } from "../_shared/quidax-client.ts";
-import { findSwapAsset } from "../_shared/crypto-assets.ts";
 
 // Receives Quidax's webhook deliveries and settles everything that Quidax
 // completes asynchronously: incoming deposits, sales (swap USDT -> NGN, then
 // credit the user's Naira wallet), and withdrawals. Deposit on-hold/failed/
 // rejected variants are logged rather than acted on, since Quidax's own
 // compliance layer can hold a deposit and there is nothing to reconcile
-// until that resolves. Buy settles here too (Phase 3): the customer pays a
-// Quidax-issued one-time bank account and Quidax delivers the USDT, so
-// there is no local credit — only the order's status to move.
+// until that resolves. Buy does NOT settle here — it runs on Quidax's Ramp
+// product, which signs its webhooks differently and has its own dashboard
+// URL, so it lives in crypto-ramp-webhook.
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -172,120 +169,9 @@ serve(async (req: Request) => {
     return json({ received: true });
   }
 
-  // Buy leg 1 settled: the customer's bank transfer cleared and Quidax
-  // delivered USDT into their own sub-account. For a straight USDT
-  // purchase that's the whole trip — nothing credited locally, the coin is
-  // real and the balance is read live from Quidax, so this only moves the
-  // order out of "pending". For any other coin, this is only the halfway
-  // point: it kicks off leg 2, swapping that USDT for the target coin
-  // inside the same sub-account (mirrors crypto-sell's swap, just the other
-  // direction) — leg 2's own webhook (swap_transaction.complete/.failed,
-  // handled above) is what actually finishes the order.
-  if (event === "buy_transaction.successful") {
-    const merchantReference = String(data?.merchant_reference || "");
-    const received = Number(data?.crypto_payout?.amount ?? data?.to_amount);
-    if (!merchantReference || !Number.isFinite(received) || received <= 0) {
-      console.error("crypto-quidax-webhook: unexpected buy_transaction.successful", JSON.stringify(payload).slice(0, 300));
-      return json({ received: true });
-    }
-
-    const { data: order } = await supabase
-      .from("transactions")
-      .select("id, user_id, status, metadata")
-      .eq("type", "crypto_buy")
-      .eq("metadata->>quidax_merchant_reference", merchantReference)
-      .maybeSingle();
-    if (!order) {
-      console.warn(`crypto-quidax-webhook: no pending buy for ${merchantReference}`);
-      return json({ received: true });
-    }
-
-    const targetAsset = String(order.metadata?.asset || "USDT").toUpperCase();
-    const swapAsset = targetAsset === "USDT" ? null : findSwapAsset(targetAsset);
-
-    if (!swapAsset) {
-      const { error } = await supabase.rpc("complete_crypto_buy", {
-        p_merchant_reference: merchantReference,
-        p_crypto_micro: Math.round(received * 1_000_000),
-        p_tx_hash: data?.crypto_payout?.transaction_hash
-          ? String(data.crypto_payout.transaction_hash)
-          : null,
-      });
-      if (error) {
-        console.error("crypto-quidax-webhook: complete_crypto_buy failed:", error.message);
-        return json({ error: "Could not settle purchase" }, 500);
-      }
-      return json({ received: true });
-    }
-
-    if (order.status !== "pending") {
-      // Already advanced past leg 1 by an earlier delivery of this webhook.
-      return json({ received: true });
-    }
-
-    try {
-      const { data: account } = await supabase
-        .from("crypto_accounts")
-        .select("quidax_user_id")
-        .eq("user_id", order.user_id)
-        .maybeSingle();
-      if (!account) {
-        console.error(`crypto-quidax-webhook: no crypto account for user ${order.user_id}, cannot start buy swap`);
-        return json({ received: true });
-      }
-
-      const quotation = await createSwapQuotation({
-        quidaxUserId: account.quidax_user_id,
-        fromCurrency: "usdt",
-        toCurrency: swapAsset.quidaxCode,
-        fromAmount: String(received),
-      });
-
-      await supabase.rpc("record_crypto_buy_swap_pending", {
-        p_merchant_reference: merchantReference,
-        p_usdt_micro: Math.round(received * 1_000_000),
-        p_swap_id: quotation.id,
-      });
-
-      try {
-        await confirmSwapQuotation({ quidaxUserId: account.quidax_user_id, quotationId: quotation.id });
-      } catch (confirmError) {
-        const detail = confirmError instanceof Error ? confirmError.message : String(confirmError);
-        console.error("crypto-quidax-webhook: buy swap confirm failed:", detail);
-        await supabase.rpc("fail_crypto_buy_swap", { p_swap_id: quotation.id, p_reason: "confirm_failed" });
-      }
-    } catch (e) {
-      const detail = e instanceof Error ? e.message : String(e);
-      console.error("crypto-quidax-webhook: could not start buy swap leg:", detail);
-      // Leg 1's USDT is safely in the customer's own sub-account regardless
-      // — flagged for follow-up rather than silently stuck 'pending' forever.
-      await supabase.rpc("record_monitoring_alert", {
-        p_fingerprint: `crypto_buy_swap_start_failed_${merchantReference}`.slice(0, 100).toLowerCase(),
-        p_type: "crypto_buy_swap_start_failed",
-        p_severity: "warning",
-        p_details: { merchant_reference: merchantReference, target_asset: targetAsset, error: detail.slice(0, 300) },
-      });
-    }
-    return json({ received: true });
-  }
-
-  if (event === "buy_transaction.failed") {
-    const merchantReference = String(data?.merchant_reference || "");
-    if (merchantReference) {
-      // Nothing to refund: the money never left the customer's own bank.
-      await supabase.rpc("fail_crypto_buy", {
-        p_merchant_reference: merchantReference,
-        p_reason: String(data?.status || "failed"),
-      });
-    }
-    return json({ received: true });
-  }
-
-  // The customer's transfer landed but Quidax hasn't delivered the crypto
-  // yet — the order is already 'pending' here, so there is nothing to change.
-  if (event === "buy_transaction.processing") {
-    return json({ received: true });
-  }
+  // Buy runs on the separate Quidax RAMP product: its buy_transaction.*
+  // webhooks are signed with x-ramp-signature and delivered to their own
+  // dashboard URL, so they are handled in crypto-ramp-webhook, not here.
 
   // Any other event type — acknowledge so Quidax doesn't keep retrying.
   return json({ received: true });

@@ -162,6 +162,73 @@ export async function confirmOnRamp(merchantReference: string): Promise<OnRampBa
   };
 }
 
+async function hmacHex(secret: string, message: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signed = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return Array.from(new Uint8Array(signed))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/**
+ * Verifies Ramp's `x-ramp-signature` header — a hex HMAC-SHA256 keyed on the
+ * SAME Ramp secret used for API auth (Ramp has no separate webhook secret;
+ * its dashboard only exposes a Webhook URL field).
+ *
+ * Note this is a completely different scheme from the exchange API's
+ * `quidax-signature` (`t=...,s=...` over `timestamp.rawBody`, keyed on
+ * QUIDAX_WEBHOOK_SECRET) — which is exactly why Ramp gets its own function
+ * rather than sharing crypto-quidax-webhook.
+ *
+ * Quidax's own docs disagree with themselves about what is signed: the prose
+ * says "based solely on the data object", the Node sample signs
+ * JSON.stringify(req.body) — i.e. the whole envelope, re-serialised by
+ * Express rather than the bytes actually sent. We therefore accept any of
+ * those three readings. That is not a weakening: every candidate is an HMAC
+ * under the same secret, so forging one still requires the secret. Once a
+ * real delivery lands, the log line below tells us which reading is the true
+ * one, and this can be narrowed to just that.
+ */
+export async function verifyRampWebhookSignature(
+  rawBody: string,
+  signatureHeader: string | null,
+): Promise<boolean> {
+  if (!QUIDAX_RAMP_PRIVATE_KEY || !signatureHeader) return false;
+  const provided = signatureHeader.trim().toLowerCase();
+
+  const candidates = new Map<string, string>([["raw body", rawBody]]);
+  try {
+    const parsed = JSON.parse(rawBody);
+    candidates.set("re-serialised body", JSON.stringify(parsed));
+    if (parsed && typeof parsed === "object" && "data" in parsed) {
+      candidates.set("data object only", JSON.stringify(parsed.data));
+    }
+  } catch {
+    // Non-JSON body — the raw candidate is all we can check.
+  }
+
+  for (const [label, candidate] of candidates) {
+    if (timingSafeEqual(await hmacHex(QUIDAX_RAMP_PRIVATE_KEY, candidate), provided)) {
+      console.log(`quidax-ramp: webhook signature matched on "${label}"`);
+      return true;
+    }
+  }
+  return false;
+}
+
 export interface PurchaseLimits {
   min: number;
   max: number;
