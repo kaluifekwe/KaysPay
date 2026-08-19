@@ -197,6 +197,10 @@ serve(async (req: Request) => {
     }
   }
 
+  // Tracks how far the purchase got. Quidax's exchange and Ramp products
+  // return similar-sounding auth errors, so without this a failure log can't
+  // say which of the two actually refused us.
+  let step = "deposit_address";
   try {
     // Delivery target: an external wallet the customer supplied, or — by
     // default, and always for a swap-target coin — their own KaysPay crypto
@@ -222,6 +226,7 @@ serve(async (req: Request) => {
     const [firstName, ...rest] = fullName ? fullName.split(/\s+/) : ["KaysPay"];
     const lastName = rest.join(" ") || "User";
 
+    step = "on_ramp_initiate";
     const initiated = await initiateOnRamp({
       merchantReference,
       ngnAmount,
@@ -232,6 +237,7 @@ serve(async (req: Request) => {
       network: deliveryNetwork,
     });
 
+    step = "on_ramp_confirm";
     const bank = await confirmOnRamp(merchantReference);
 
     const { data: txId, error } = await supabase.rpc("start_crypto_buy", {
@@ -284,7 +290,14 @@ serve(async (req: Request) => {
     });
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
-    console.error("crypto-buy failed:", redactSecrets(detail));
+    // Which API refused us, and with what status — the message alone reads
+    // almost identically across Quidax's two products.
+    const api = e instanceof QuidaxRampError ? "ramp" : e instanceof QuidaxError ? "exchange" : "other";
+    const status = (e as { status?: number })?.status ?? "none";
+    console.error(
+      `crypto-buy failed [step=${step} api=${api} status=${status}]:`,
+      redactSecrets(detail),
+    );
     // Quidax's own error message (already just a short human-readable reason
     // from their API response body, never raw request/response internals) is
     // safe and far more useful to show than a blanket "try again" — it's the
