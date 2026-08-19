@@ -409,6 +409,32 @@ export const cryptoService = {
   },
 
   /**
+   * Live status of a single Buy order — polled from the "Complete your
+   * purchase" screen so the customer sees their crypto land the moment
+   * crypto-ramp-webhook (or the reconcile sweep) settles it, instead of
+   * having to manually reopen the screen to find out.
+   */
+  async getBuyOrderStatus(transactionId: string): Promise<{
+    status: string;
+    failureReason?: string;
+    needsRefundBankDetails: boolean;
+  } | null> {
+    const { data } = await withTimeout(
+      (async () => await supabase
+        .from('transactions')
+        .select('status, metadata')
+        .eq('id', transactionId)
+        .maybeSingle())(),
+    );
+    if (!data) return null;
+    return {
+      status: data.status,
+      failureReason: data.metadata?.failure_reason,
+      needsRefundBankDetails: data.metadata?.needs_refund_bank_details === true,
+    };
+  },
+
+  /**
    * A pending Buy that Quidax auto-refunded (the paying bank account's name
    * didn't match) and is now waiting on the customer's own bank details.
    * Read directly off `transactions` rather than a dedicated endpoint —

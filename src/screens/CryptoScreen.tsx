@@ -202,7 +202,12 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     destinationType: 'kayspay_account' | 'external_wallet';
     asset: BuyAsset;
     pendingSwap: boolean;
+    transactionId: string;
   } | null>(null);
+  // Polling this order's status live after "Done — I'll transfer now", so the
+  // purchase visibly lands instead of just going quiet until the screen is
+  // manually reopened.
+  const [buyPollTxId, setBuyPollTxId] = useState<string | null>(null);
   const [sellUsdt, setSellUsdt] = useState('');
 
   const [wdNetwork, setWdNetwork] = useState<CryptoNetwork>('TRC20');
@@ -435,6 +440,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
         destinationType: result.destinationType ?? 'kayspay_account',
         asset: result.asset ?? selectedBuyAsset,
         pendingSwap: !!result.pendingSwap,
+        transactionId: result.transactionId ?? '',
       });
       setBuyStep('pick');
       setSelectedBuyAsset(null);
@@ -500,6 +506,61 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     setWdVerified(false);
     cryptoService.touchAddress(addr.id);
   }, []);
+
+  // Polls the order live while the customer is on the processing screen, so
+  // the purchase visibly lands the instant crypto-ramp-webhook (or the
+  // reconcile sweep, as a fallback) settles it — not a fixed delay, a real
+  // check every few seconds, starting immediately in case it already landed
+  // by the time this screen appears.
+  useEffect(() => {
+    if (!buyPollTxId) return;
+    let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 90; // ~6 minutes at 4s apart — generous for a bank transfer to clear
+
+    const poll = async () => {
+      if (cancelled) return;
+      attempts++;
+      const result = await cryptoService.getBuyOrderStatus(buyPollTxId);
+      if (cancelled) return;
+
+      if (result?.status === 'completed') {
+        setActionMessage("Your crypto has landed — it's in your KaysPay account now.");
+        setActionState('success');
+        setBuyPollTxId(null);
+        loadAll();
+        return;
+      }
+      if (result?.needsRefundBankDetails) {
+        // Quidax is auto-refunding this one (name mismatch) — hand off to
+        // the banner/modal on the main screen rather than duplicating that
+        // flow here.
+        setActionState('idle');
+        setBuyPollTxId(null);
+        loadAll();
+        return;
+      }
+      if (result?.status === 'failed') {
+        setActionError(result.failureReason || 'This purchase could not be completed.');
+        setActionState('failed');
+        setBuyPollTxId(null);
+        return;
+      }
+      if (attempts >= MAX_ATTEMPTS) {
+        // Still pending after a generous wait — stop polling rather than
+        // spin forever. Nothing is lost: the reconcile sweep and the push
+        // notification trigger both still settle this independently.
+        setActionMessage("This is taking longer than usual. We'll notify you the moment it's ready — no need to wait here.");
+        setActionState('success');
+        setBuyPollTxId(null);
+        return;
+      }
+      setTimeout(poll, 4000);
+    };
+    poll();
+
+    return () => { cancelled = true; };
+  }, [buyPollTxId, loadAll]);
 
   const handleCopyBuyAccount = useCallback(async () => {
     if (!pendingBuyPayment) return;
@@ -577,7 +638,19 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             </Text>
           </View>
 
-          <TouchableOpacity style={styles.doneButtonOutline} onPress={() => setPendingBuyPayment(null)}>
+          <TouchableOpacity
+            style={styles.doneButtonOutline}
+            onPress={() => {
+              const txId = pendingBuyPayment?.transactionId;
+              setPendingBuyPayment(null);
+              if (txId) {
+                setActionAmountNgn(payment.amount);
+                setActionMessage("We're watching for your transfer — this updates automatically.");
+                setActionState('processing');
+                setBuyPollTxId(txId);
+              }
+            }}
+          >
             <Text style={styles.copyAddressButtonText}>Done — I'll transfer now</Text>
           </TouchableOpacity>
         </ScrollView>
@@ -592,8 +665,22 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
         headerTitle="Crypto"
         amount={actionAmountNgn ?? undefined}
         message={actionState === 'failed' ? actionError : actionMessage ?? undefined}
-        onDone={() => { setActionMessage(null); setActionState('idle'); }}
-      />
+        processingHint={buyPollTxId ? 'Checking for your transfer…' : undefined}
+        onDone={() => { setActionMessage(null); setActionState('idle'); setBuyPollTxId(null); }}
+      >
+        {actionState === 'processing' && buyPollTxId ? (
+          <TouchableOpacity
+            onPress={() => {
+              setActionMessage("We'll notify you the moment it's ready.");
+              setActionState('success');
+              setBuyPollTxId(null);
+            }}
+            style={{ marginTop: Spacing.L }}
+          >
+            <Text style={{ color: theme.brand, fontWeight: '600' }}>Check back later</Text>
+          </TouchableOpacity>
+        ) : null}
+      </ResultStatusView>
     );
   }
 
