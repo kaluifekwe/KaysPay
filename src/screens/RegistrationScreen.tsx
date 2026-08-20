@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import { Ionicons } from '@expo/vector-icons';
 import { authService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
 import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password';
@@ -61,10 +62,6 @@ function passwordStrength(pw: string, theme: AppTheme): { label: string; color: 
 }
 
 const Icons = {
-  user: '👤',
-  mail: '✉',
-  phone: '📱',
-  arrowRight: '→',
   back: '‹',
 };
 
@@ -356,7 +353,9 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
     return null;
   };
 
-  const renderFieldIcon = (icon: string) => <Text style={styles.fieldIcon}>{icon}</Text>;
+  const renderFieldIcon = (name: keyof typeof Ionicons.glyphMap) => (
+    <Ionicons name={name} size={18} color={theme.inkMuted} style={styles.fieldIconIonicon} />
+  );
 
   const renderStatusIcon = (hasError: boolean, isValid: boolean) => {
     if (hasError) return <Text style={styles.errorIcon}>×</Text>;
@@ -437,10 +436,10 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
               <View style={styles.fieldContainer}>
                 {renderLabel('Full Name')}
                 <View style={[styles.inputWrapper, getFieldStyle(!!fullNameError, fullNameValid, focusedField === 'fullName')]}>
-                  {renderFieldIcon(Icons.user)}
+                  {renderFieldIcon('person-outline')}
                   <TextInput
                     style={styles.input}
-                    placeholder="e.g. Amina Bello"
+                    placeholder="Enter your full name"
                     placeholderTextColor={theme.inkMuted}
                     value={fullName}
                     onChangeText={setFullName}
@@ -457,11 +456,11 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
               <View style={styles.fieldContainer}>
                 {renderLabel('Email Address')}
                 <View style={[styles.inputWrapper, getFieldStyle(!!emailError, emailValid, focusedField === 'email')]}>
-                  {renderFieldIcon(Icons.mail)}
+                  {renderFieldIcon('mail-outline')}
                   <TextInput
                     ref={emailRef}
                     style={styles.input}
-                    placeholder="example@gmail.com"
+                    placeholder="Enter your email address"
                     placeholderTextColor={theme.inkMuted}
                     value={email}
                     onChangeText={setEmail}
@@ -480,11 +479,11 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
               <View style={styles.fieldContainer}>
                 {renderLabel('Phone Number')}
                 <View style={[styles.inputWrapper, getFieldStyle(!!phoneError, phoneValid, focusedField === 'phone')]}>
-                  {renderFieldIcon(Icons.phone)}
+                  {renderFieldIcon('call-outline')}
                   <TextInput
                     ref={phoneRef}
                     style={styles.input}
-                    placeholder="e.g. 0803 123 4567 or +1 415 555 2671"
+                    placeholder="Enter your phone number"
                     placeholderTextColor={theme.inkMuted}
                     value={phone}
                     onChangeText={handlePhoneChange}
@@ -513,7 +512,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                 activeOpacity={0.8}
               >
                 <Text style={styles.createButtonText}>Next</Text>
-                <Text style={styles.createButtonArrow}>{Icons.arrowRight}</Text>
+                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={styles.createButtonArrowIcon} />
               </TouchableOpacity>
             </View>
           ) : (
@@ -521,7 +520,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
               <View style={styles.fieldContainer}>
                 {renderLabel('Password')}
                 <View style={[styles.inputWrapper, getFieldStyle(!!passwordError, password.length >= MIN_PASSWORD_LENGTH, focusedField === 'password')]}>
-                  <Text style={styles.fieldIcon}>🔒</Text>
+                  {renderFieldIcon('lock-closed-outline')}
                   <TextInput
                     style={styles.input}
                     placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
@@ -537,7 +536,12 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                     onSubmitEditing={() => confirmPasswordRef.current?.focus()}
                   />
                   <TouchableOpacity onPress={() => setShowPassword((v) => !v)} activeOpacity={0.7}>
-                    <Text style={styles.fieldIcon}>{showPassword ? '🙈' : '👁'}</Text>
+                    <Ionicons
+                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={18}
+                      color={theme.inkMuted}
+                      style={styles.fieldIconIonicon}
+                    />
                   </TouchableOpacity>
                   {renderStatusIcon(!!passwordError, password.length >= MIN_PASSWORD_LENGTH)}
                 </View>
@@ -562,7 +566,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
               <View style={styles.fieldContainer}>
                 {renderLabel('Confirm Password')}
                 <View style={[styles.inputWrapper, getFieldStyle(!!confirmPasswordError, confirmPassword.length > 0 && !confirmPasswordError, focusedField === 'confirmPassword')]}>
-                  <Text style={styles.fieldIcon}>🔒</Text>
+                  {renderFieldIcon('lock-closed-outline')}
                   <TextInput
                     ref={confirmPasswordRef}
                     style={styles.input}
@@ -577,7 +581,12 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                     autoCorrect={false}
                   />
                   <TouchableOpacity onPress={() => setShowConfirmPassword((v) => !v)} activeOpacity={0.7}>
-                    <Text style={styles.fieldIcon}>{showConfirmPassword ? '🙈' : '👁'}</Text>
+                    <Ionicons
+                      name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={18}
+                      color={theme.inkMuted}
+                      style={styles.fieldIconIonicon}
+                    />
                   </TouchableOpacity>
                   {renderStatusIcon(!!confirmPasswordError, confirmPassword.length > 0 && !confirmPasswordError)}
                 </View>
@@ -606,7 +615,9 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                   <Text style={styles.createButtonText}>
                     {submitting ? 'Creating Account...' : 'Sign Up'}
                   </Text>
-                  {!submitting && <Text style={styles.createButtonArrow}>{Icons.arrowRight}</Text>}
+                  {!submitting && (
+                    <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={styles.createButtonArrowIcon} />
+                  )}
                 </TouchableOpacity>
               </Animated.View>
             </View>
@@ -662,7 +673,7 @@ function createStyles(theme: AppTheme) {
   inputFocused: { borderColor: theme.brand, backgroundColor: theme.surfaceRaised2, borderWidth: 2 },
   inputError: { borderColor: theme.down },
   inputValid: { borderColor: theme.brand },
-  fieldIcon: { fontSize: 18, marginRight: 10, opacity: 0.5 },
+  fieldIconIonicon: { marginRight: 10 },
   input: { flex: 1, fontSize: 15, color: theme.ink, padding: 0 },
   validIcon: { fontSize: 18, color: theme.brand, fontWeight: '700', marginLeft: 8 },
   errorIcon: { fontSize: 18, color: theme.down, fontWeight: '700', marginLeft: 8 },
@@ -690,7 +701,7 @@ function createStyles(theme: AppTheme) {
   },
   createButtonDisabled: { opacity: 0.6 },
   createButtonText: { fontFamily: 'Helvetica-Bold', fontSize: 16, color: '#FFFFFF' },
-  createButtonArrow: { fontSize: 18, color: '#FFFFFF', marginLeft: 8 },
+  createButtonArrowIcon: { marginLeft: 8 },
   loginLink: { alignItems: 'center', marginTop: 20, marginBottom: 20 },
   loginLinkText: { fontSize: 14, color: theme.inkMuted },
   loginLinkBold: { color: theme.brand, fontWeight: '700', textDecorationLine: 'underline' },
