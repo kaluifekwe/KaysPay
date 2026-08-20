@@ -315,6 +315,29 @@ export async function confirmSwapQuotation(params: {
 }
 
 /**
+ * Direct status check for a swap already confirmed — the fallback for when
+ * its swap_transaction.complete/.failed webhook never arrives (a signature
+ * mismatch, a dropped delivery). Same "requery, don't guess" discipline as
+ * crypto-buy-reconcile uses for Buy.
+ */
+export async function getSwapTransaction(params: {
+  quidaxUserId: string;
+  swapTransactionId: string;
+}): Promise<QuidaxSwapTransaction> {
+  const { status, data } = await callQuidax(
+    `/users/${encodeURIComponent(params.quidaxUserId)}/swap_transactions/${encodeURIComponent(params.swapTransactionId)}`,
+  );
+  if (status >= 400 || data?.status !== "success") {
+    throw new QuidaxError(data?.message || "Could not fetch this swap", status);
+  }
+  return {
+    id: String(data.data.id),
+    status: String(data.data.status),
+    receivedAmount: data.data.received_amount != null ? String(data.data.received_amount) : null,
+  };
+}
+
+/**
  * Moves funds out of a sub-account. `fundUid` is either an external
  * blockchain address (a real withdrawal) or another Quidax account id (an
  * internal transfer — that's how sub-account -> main sweeps work). Settles

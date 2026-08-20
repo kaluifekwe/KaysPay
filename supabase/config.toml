@@ -94,6 +94,9 @@ verify_jwt = true
 [functions.crypto-buy-reconcile]
 verify_jwt = true
 
+[functions.crypto-sell-reconcile]
+verify_jwt = true
+
 [functions.vtunaija-reconcile]
 verify_jwt = true
 
