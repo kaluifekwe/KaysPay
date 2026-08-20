@@ -383,7 +383,14 @@ export async function verifyQuidaxWebhookSignature(
   rawBody: string,
   signatureHeader: string | null,
 ): Promise<boolean> {
-  if (!QUIDAX_WEBHOOK_SECRET || !signatureHeader) return false;
+  if (!QUIDAX_WEBHOOK_SECRET) {
+    console.error("quidax-client: webhook signature check skipped — QUIDAX_WEBHOOK_SECRET not set");
+    return false;
+  }
+  if (!signatureHeader) {
+    console.error("quidax-client: webhook signature check failed — no quidax-signature header on the request");
+    return false;
+  }
 
   const parts = Object.fromEntries(
     signatureHeader.split(",").map((seg) => {
@@ -393,7 +400,19 @@ export async function verifyQuidaxWebhookSignature(
   );
   const timestamp = parts["t"];
   const signature = parts["s"];
-  if (!timestamp || !signature) return false;
+  if (!timestamp || !signature) {
+    // Diagnostic only — logs the header's shape (keys present, rough
+    // length), never anything secret. A real signature failed here once
+    // with no further detail available; this is so the next one is
+    // actually diagnosable instead of just "failed".
+    console.error(
+      "quidax-client: webhook signature check failed — could not parse t=/s= from header. Raw keys seen:",
+      Object.keys(parts).join(","),
+      "header length:",
+      signatureHeader.length,
+    );
+    return false;
+  }
 
   const key = await crypto.subtle.importKey(
     "raw",
@@ -411,8 +430,21 @@ export async function verifyQuidaxWebhookSignature(
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
-  if (expected.length !== signature.length) return false;
+  if (expected.length !== signature.length) {
+    console.error(
+      `quidax-client: webhook signature length mismatch — expected ${expected.length} chars, got ${signature.length}. ` +
+      `timestamp=${timestamp} (age ${Math.round(Date.now() / 1000 - Number(timestamp))}s), body length=${rawBody.length}`,
+    );
+    return false;
+  }
   let diff = 0;
   for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+  if (diff !== 0) {
+    console.error(
+      `quidax-client: webhook signature content mismatch — same length, different value. ` +
+      `timestamp=${timestamp} (age ${Math.round(Date.now() / 1000 - Number(timestamp))}s), body length=${rawBody.length}, ` +
+      `expected[0:8]=${expected.slice(0, 8)}, got[0:8]=${signature.slice(0, 8)}`,
+    );
+  }
   return diff === 0;
 }
