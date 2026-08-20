@@ -81,8 +81,17 @@ serve(async (req: Request) => {
   }
 
   // The customer's transfer landed but Quidax hasn't delivered the crypto
-  // yet — the order is already 'pending' here, so there is nothing to change.
+  // yet. Records when this happened so completed_at minus this timestamp
+  // gives Quidax's own payout time, isolated from however long the customer
+  // took to actually send the transfer — otherwise unmeasurable.
   if (event === "buy_transaction.processing") {
+    const merchantReference = String(data?.merchant_reference || "");
+    if (merchantReference) {
+      const { error } = await supabase.rpc("mark_crypto_buy_fiat_received", {
+        p_merchant_reference: merchantReference,
+      });
+      if (error) console.error("crypto-ramp-webhook: mark_crypto_buy_fiat_received failed:", error.message);
+    }
     return json({ received: true });
   }
 
