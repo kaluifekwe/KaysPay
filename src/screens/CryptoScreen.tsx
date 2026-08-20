@@ -185,7 +185,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // see the ₦2,790 purchase that hung forever below Quidax's real minimum).
   const [buyLimits, setBuyLimits] = useState<{ minNgn: number; maxNgn: number } | null>(null);
   const [selectedBuyAsset, setSelectedBuyAsset] = useState<BuyAsset | null>(null);
-  const [buyUsdt, setBuyUsdt] = useState('');
+  const [buyNgn, setBuyNgn] = useState('');
   // Where a purchase should be delivered: the customer's own KaysPay crypto
   // account (default), or an external wallet they supply — same address/
   // network validation as Withdraw, since a wrong entry here is even less
@@ -292,14 +292,14 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     if (t === 'buy') {
       setBuyStep('pick');
       setSelectedBuyAsset(null);
-      setBuyUsdt('');
+      setBuyNgn('');
       setBuyToExternal(false);
     }
   }, []);
 
   const handlePickBuyAsset = useCallback((code: BuyAsset) => {
     setSelectedBuyAsset(code);
-    setBuyUsdt('');
+    setBuyNgn('');
     setBuyToExternal(false);
     setBuyStep('amount');
   }, []);
@@ -377,7 +377,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     setBuyDestVerified(false);
   }, [buyDestAddress, buyDestNetwork]);
 
-  const numericBuyUsdt = parseFloat(buyUsdt);
+  const numericBuyNgn = parseFloat(buyNgn);
   const numericSellUsdt = parseFloat(sellUsdt);
   const numericWdAmount = parseFloat(wdAmount);
 
@@ -395,11 +395,15 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       return true;
     })
     .sort((a, b) => (coinFilter === 'gainers' ? (b.change24hPct ?? 0) - (a.change24hPct ?? 0) : 0));
-  const buyNgnEstimate = usdtNgnRate && numericBuyUsdt > 0 ? numericBuyUsdt * usdtNgnRate : null;
+  // NGN is what the customer actually types now (they're paying by bank
+  // transfer in Naira) — USDT/coin amounts are derived FROM it, not the
+  // other way around, so there's no rate-conversion rounding between what
+  // they typed and what gets enforced against buyLimits.
+  const buyUsdtEstimate = usdtNgnRate && numericBuyNgn > 0 ? numericBuyNgn / usdtNgnRate : null;
   // Only meaningful for a swap-target coin — for USDT itself the "coin" IS
-  // the USDT amount, so this is left null and the screens show buyNgnEstimate.
-  const buyCoinEstimate = selectedMarket && !selectedMarket.stablecoin && buyNgnEstimate != null && selectedMarket.priceNgn > 0
-    ? buyNgnEstimate / selectedMarket.priceNgn
+  // the USDT amount, so this is left null and the screens show buyUsdtEstimate.
+  const buyCoinEstimate = selectedMarket && !selectedMarket.stablecoin && numericBuyNgn > 0 && selectedMarket.priceNgn > 0
+    ? numericBuyNgn / selectedMarket.priceNgn
     : null;
   const sellNgnEstimate = sellRate && numericSellUsdt > 0 ? numericSellUsdt * sellRate : null;
 
@@ -413,9 +417,9 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     ? `This doesn't look like a valid ${buyDestNetwork} address.`
     : null;
 
-  const buyBelowMin = buyLimits != null && buyNgnEstimate != null && buyNgnEstimate < buyLimits.minNgn;
-  const buyAboveMax = buyLimits != null && buyNgnEstimate != null && buyNgnEstimate > buyLimits.maxNgn;
-  const canBuy = !!selectedBuyAsset && Number.isFinite(numericBuyUsdt) && numericBuyUsdt > 0
+  const buyBelowMin = buyLimits != null && numericBuyNgn > 0 && numericBuyNgn < buyLimits.minNgn;
+  const buyAboveMax = buyLimits != null && numericBuyNgn > 0 && numericBuyNgn > buyLimits.maxNgn;
+  const canBuy = !!selectedBuyAsset && Number.isFinite(numericBuyNgn) && numericBuyNgn > 0
     && !buyBelowMin && !buyAboveMax
     && (!buyToExternal || (buyDestAddressValid && buyDestVerified));
   const canSell = Number.isFinite(numericSellUsdt) && numericSellUsdt >= 1 && numericSellUsdt <= 2000
@@ -430,14 +434,14 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       : 'To your KaysPay crypto account';
     const authResult = await authorize({
       title: `Confirm ${selectedBuyAsset} Purchase`,
-      amount: buyNgnEstimate ?? undefined,
+      amount: numericBuyNgn || undefined,
       subtitle,
     });
     if (!authResult) return;
     setBuyLoading(true);
     const result = await cryptoService.buy(
       selectedBuyAsset,
-      numericBuyUsdt,
+      numericBuyNgn,
       authResult.token,
       buyToExternal ? { network: buyDestNetwork, address: buyDestAddress.trim() } : undefined,
     );
@@ -453,7 +457,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       });
       setBuyStep('pick');
       setSelectedBuyAsset(null);
-      setBuyUsdt('');
+      setBuyNgn('');
       setBuyDestAddress('');
       setBuyDestVerified(false);
       loadAll();
@@ -461,7 +465,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       setActionError(result.error || 'Purchase failed. Please try again.');
       setActionState('failed');
     }
-  }, [canBuy, selectedBuyAsset, numericBuyUsdt, buyToExternal, buyDestNetwork, buyDestAddress, authorize, loadAll, buyNgnEstimate]);
+  }, [canBuy, selectedBuyAsset, numericBuyNgn, buyToExternal, buyDestNetwork, buyDestAddress, authorize, loadAll]);
 
   const handleSell = useCallback(async () => {
     if (!canSell) return;
@@ -996,7 +1000,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   </View>
                 </View>
 
-                <Text style={styles.label}>Amount to spend (USDT)</Text>
+                <Text style={styles.label}>Amount to spend (₦)</Text>
                 {buyLimits && (
                   <Text style={styles.hintText}>
                     Between {formatNaira(buyLimits.minNgn)} and {formatNaira(buyLimits.maxNgn)}
@@ -1004,17 +1008,18 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 )}
                 <TextInput
                   style={styles.input}
-                  value={buyUsdt}
-                  onChangeText={(t) => setBuyUsdt(t.replace(/[^0-9.]/g, ''))}
-                  placeholder="e.g. 50"
+                  value={buyNgn}
+                  onChangeText={(t) => setBuyNgn(t.replace(/[^0-9.]/g, ''))}
+                  placeholder="e.g. 5000"
                   placeholderTextColor={theme.inkFaint}
                   keyboardType="decimal-pad"
                   autoFocus
                 />
-                {buyNgnEstimate != null && (
+                {(buyUsdtEstimate != null || buyCoinEstimate != null) && (
                   <Text style={styles.estimateText}>
-                    ≈ {formatNaira(buyNgnEstimate)}
-                    {buyCoinEstimate != null ? ` · ${formatCoin(buyCoinEstimate, selectedBuyAsset)}` : ''}
+                    ≈ {selectedMarket?.stablecoin || buyCoinEstimate == null
+                      ? formatUsdt(buyUsdtEstimate ?? 0)
+                      : formatCoin(buyCoinEstimate, selectedBuyAsset)}
                   </Text>
                 )}
                 {buyBelowMin && buyLimits && (
@@ -1048,14 +1053,14 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 <Text style={styles.hintText}>You'll receive — estimated</Text>
                 <Text style={styles.reviewBig}>
                   {selectedMarket?.stablecoin
-                    ? formatUsdt(numericBuyUsdt || 0)
+                    ? formatUsdt(buyUsdtEstimate ?? 0)
                     : buyCoinEstimate != null ? formatCoin(buyCoinEstimate, selectedBuyAsset) : '—'}
                 </Text>
 
                 <View style={styles.feeBreakdown}>
                   <View style={styles.payDetailRow}>
                     <Text style={styles.feeLabel}>Pay (budget)</Text>
-                    <Text style={styles.feeLabel}>{formatUsdt(numericBuyUsdt || 0)}</Text>
+                    <Text style={styles.feeLabel}>{formatNaira(numericBuyNgn || 0)}</Text>
                   </View>
                   {selectedMarket && !selectedMarket.stablecoin && (
                     <View style={styles.payDetailRow}>
@@ -1064,8 +1069,8 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                     </View>
                   )}
                   <View style={styles.payDetailRow}>
-                    <Text style={styles.feeLabel}>Naira equivalent</Text>
-                    <Text style={styles.feeLabel}>{buyNgnEstimate != null ? formatNaira(buyNgnEstimate) : '—'}</Text>
+                    <Text style={styles.feeLabel}>USDT equivalent</Text>
+                    <Text style={styles.feeLabel}>{buyUsdtEstimate != null ? formatUsdt(buyUsdtEstimate) : '—'}</Text>
                   </View>
                 </View>
 

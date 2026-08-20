@@ -251,7 +251,7 @@ export const cryptoService = {
    */
   async buy(
     asset: BuyAsset,
-    usdtAmount: number,
+    ngnAmount: number,
     authToken: string,
     destination?: { network: CryptoNetwork; address: string },
   ): Promise<CryptoBuyResult> {
@@ -262,7 +262,7 @@ export const cryptoService = {
           supabase.functions.invoke('crypto-buy', {
             body: {
               asset,
-              usd_amount: usdtAmount,
+              ngn_amount: ngnAmount,
               auth_token: authToken,
               idempotency_key: idempotencyKey,
               ...(destination
