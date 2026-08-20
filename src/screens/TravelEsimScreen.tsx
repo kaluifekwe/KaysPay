@@ -494,7 +494,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
         <Text style={styles.topTitle}>eSIM Store</Text>
       </View>
 
-      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {tab === 'browse' ? (
         <FlatList
           data={browseData}

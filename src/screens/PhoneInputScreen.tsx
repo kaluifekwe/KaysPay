@@ -65,7 +65,7 @@ export default function PhoneInputScreen({ navigation }: PhoneInputScreenProps) 
     <SafeAreaView edges={['top']} style={styles.container}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.content}>
           <TouchableOpacity

@@ -100,7 +100,7 @@ export default function KycScreen({ navigation, route }: any) {
           <ActivityIndicator color={theme.brand} size="large" />
         </View>
       ) : (
-        <KeyboardAvoidingView style={styles.scrollView} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <KeyboardAvoidingView style={styles.scrollView} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}

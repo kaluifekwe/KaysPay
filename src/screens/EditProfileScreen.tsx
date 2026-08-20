@@ -223,7 +223,7 @@ export default function EditProfileScreen({ navigation }: any) {
 
       <KeyboardAvoidingView
         style={styles.scrollView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
           style={styles.scrollView}
@@ -372,7 +372,7 @@ export default function EditProfileScreen({ navigation }: any) {
       <Modal visible={otpVisible} transparent animationType="fade" onRequestClose={closeOtp}>
         <KeyboardAvoidingView
           style={styles.otpOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={styles.otpCard}>
             <Text style={styles.otpTitle}>Enter Verification Code</Text>

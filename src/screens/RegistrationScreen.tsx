@@ -400,7 +400,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
-      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}

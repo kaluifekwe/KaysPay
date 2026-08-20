@@ -106,7 +106,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
     <SafeAreaView edges={['top']} style={styles.container}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.header}>
           <TouchableOpacity
