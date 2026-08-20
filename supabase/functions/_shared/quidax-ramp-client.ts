@@ -321,46 +321,17 @@ export async function requeryOnRamp(reference: string): Promise<OnRampStatus> {
   };
 }
 
-/**
- * A live, real Ramp quote for how much crypto a given Naira amount actually
- * buys right now — Ramp's own pricing, not the exchange's usdtngn ticker
- * (crypto-markets' source for the Buy amount screen's live estimate), which
- * turned out to be running roughly half the real rate: a real ₦3,000
- * purchase settled at ~1.1462 USDT while the ticker-based estimate showed
- * ~2.15208 for the same amount. Only covers usdt/usdc/xaut/usat — the app
- * only ever buys USDT this way, so that's the only asset this is used for;
- * swap-target coins (BTC, ETH, ...) keep using their own <coin>ngn market
- * price, which hasn't shown this same staleness.
- */
-export async function getPurchaseQuote(params: {
-  fiatAmountNgn: number;
-  network: string;
-}): Promise<{ toAmount: number; fee: number }> {
-  const query = new URLSearchParams({
-    currency: "ngn",
-    token: "usdt",
-    fiat_amount: String(params.fiatAmountNgn),
-    token_network: params.network,
-  });
-  const { status, data } = await callRamp(`/purchase_quotes/buy?${query.toString()}`, "POST");
-  // Quidax's own docs are inconsistent about how this endpoint's parameters
-  // are actually passed (query string vs body vs path) — this call has
-  // never succeeded yet, so log the raw response until it does. unwrap()'s
-  // own error swallows this detail whenever data.message is empty.
-  if (status >= 400 || (data?.status && data.status !== "ok")) {
-    console.error(
-      "quidax-ramp: purchase_quotes/buy raw failure — status",
-      status,
-      "body:",
-      redactSecrets(JSON.stringify(data)).slice(0, 500),
-    );
-  }
-  const payload = unwrap(status, data, "Could not get a live quote");
-  return {
-    toAmount: Number(payload.to_amount) || 0,
-    fee: Number(payload.fee) || 0,
-  };
-}
+// getPurchaseQuote() (Ramp's documented purchase_quotes/buy endpoint) was
+// tried here to fix a real pricing bug — the exchange's usdtngn ticker
+// (crypto-markets' source for the old Buy amount-screen estimate) was
+// showing roughly double the real rate (~2.15208 USDT for ₦3,000 vs the
+// ~1.1462 a real purchase settled at). The endpoint 404s regardless of
+// parameter shape tried (query string per the docs' own URL template,
+// currency_symbol instead of currency, side=buy instead of a /buy path
+// segment) — removed rather than left half-working. The actual fix was
+// simpler: CryptoScreen no longer shows any pre-purchase crypto-amount
+// estimate at all, only the real number Quidax returns once a purchase is
+// actually initiated (accurate on every real purchase made this session).
 
 export interface PurchaseLimits {
   min: number;

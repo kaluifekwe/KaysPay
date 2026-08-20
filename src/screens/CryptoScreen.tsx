@@ -186,10 +186,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [buyLimits, setBuyLimits] = useState<{ minNgn: number; maxNgn: number } | null>(null);
   const [selectedBuyAsset, setSelectedBuyAsset] = useState<BuyAsset | null>(null);
   const [buyNgn, setBuyNgn] = useState('');
-  // Ramp's own live quote for a USDT purchase — see buyUsdtDisplay's doc
-  // comment for why this replaced the ticker-based estimate as the number
-  // actually shown.
-  const [buyLiveQuote, setBuyLiveQuote] = useState<number | null>(null);
   // Where a purchase should be delivered: the customer's own KaysPay crypto
   // account (default), or an external wallet they supply — same address/
   // network validation as Withdraw, since a wrong entry here is even less
@@ -385,20 +381,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const numericSellUsdt = parseFloat(sellUsdt);
   const numericWdAmount = parseFloat(wdAmount);
 
-  // Debounced live quote for a USDT purchase, from Ramp's own pricing —
-  // see buyUsdtDisplay's doc comment.
-  useEffect(() => {
-    if (selectedBuyAsset !== 'USDT' || !(numericBuyNgn > 0)) {
-      setBuyLiveQuote(null);
-      return;
-    }
-    const handle = setTimeout(async () => {
-      const quote = await cryptoService.getBuyQuote(numericBuyNgn);
-      setBuyLiveQuote(quote);
-    }, 500);
-    return () => clearTimeout(handle);
-  }, [selectedBuyAsset, numericBuyNgn]);
-
   const selectedMarket = markets.find((m) => m.code === selectedBuyAsset) || null;
 
   const visibleMarkets = markets
@@ -413,26 +395,16 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       return true;
     })
     .sort((a, b) => (coinFilter === 'gainers' ? (b.change24hPct ?? 0) - (a.change24hPct ?? 0) : 0));
-  // NGN is what the customer actually types now (they're paying by bank
-  // transfer in Naira) — USDT/coin amounts are derived FROM it, not the
-  // other way around, so there's no rate-conversion rounding between what
-  // they typed and what gets enforced against buyLimits.
-  //
-  // This ticker-based estimate turned out to run far off Ramp's real rate
-  // (a genuine ₦3,000 purchase settled at ~1.1462 USDT; this formula showed
-  // ~2.15208 for the same amount) — kept only as an instant fallback while
-  // buyLiveQuote (Ramp's own quote, debounced below) is loading or fails.
-  const buyUsdtEstimate = usdtNgnRate && numericBuyNgn > 0 ? numericBuyNgn / usdtNgnRate : null;
-  // The real number shown for a USDT purchase — Ramp's own live quote when
-  // available, the ticker-based estimate otherwise. Swap-target coins have
-  // no Ramp quote endpoint (it only covers usdt/usdc/xaut/usat), so they
-  // always use their own <coin>ngn market price instead (buyCoinEstimate).
-  const buyUsdtDisplay = selectedBuyAsset === 'USDT' && buyLiveQuote != null ? buyLiveQuote : buyUsdtEstimate;
-  // Only meaningful for a swap-target coin — for USDT itself the "coin" IS
-  // the USDT amount, so this is left null and the screens show buyUsdtDisplay.
-  const buyCoinEstimate = selectedMarket && !selectedMarket.stablecoin && numericBuyNgn > 0 && selectedMarket.priceNgn > 0
-    ? numericBuyNgn / selectedMarket.priceNgn
-    : null;
+  // NGN is what the customer actually types (they're paying by bank
+  // transfer in Naira). Deliberately NO pre-purchase crypto-amount estimate
+  // anywhere in Buy any more — the exchange ticker one shown here used to
+  // run far off Ramp's real rate (a genuine ₦3,000 purchase settled at
+  // ~1.1462 USDT; the old formula showed ~2.15208 for the same amount), and
+  // Ramp's own purchase_quotes/buy endpoint 404s regardless of the request
+  // shape tried. Rather than show a number that might be wrong, the first
+  // crypto amount shown anywhere is the real one, once Quidax prices the
+  // purchase — see the "Complete your purchase" screen, which has been
+  // accurate on every real purchase made this session.
   const sellNgnEstimate = sellRate && numericSellUsdt > 0 ? numericSellUsdt * sellRate : null;
 
   const wdAddressValid = wdAddress.trim().length > 0 && isValidCryptoAddress(wdNetwork, wdAddress);
@@ -1061,13 +1033,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   keyboardType="decimal-pad"
                   autoFocus
                 />
-                {(buyUsdtDisplay != null || buyCoinEstimate != null) && (
-                  <Text style={styles.estimateText}>
-                    ≈ {selectedMarket?.stablecoin || buyCoinEstimate == null
-                      ? formatUsdt(buyUsdtDisplay ?? 0)
-                      : formatCoin(buyCoinEstimate, selectedBuyAsset)}
-                  </Text>
-                )}
                 {buyBelowMin && buyLimits && (
                   <Text style={styles.errorText}>
                     Minimum purchase is {formatNaira(buyLimits.minNgn)}.
@@ -1096,17 +1061,13 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   <Text style={styles.backLinkText}>Edit amount</Text>
                 </TouchableOpacity>
 
-                <Text style={styles.hintText}>You'll receive — estimated</Text>
-                <Text style={styles.reviewBig}>
-                  {selectedMarket?.stablecoin
-                    ? formatUsdt(buyUsdtDisplay ?? 0)
-                    : buyCoinEstimate != null ? formatCoin(buyCoinEstimate, selectedBuyAsset) : '—'}
-                </Text>
+                <Text style={styles.hintText}>You're buying</Text>
+                <Text style={styles.reviewBig}>{formatNaira(numericBuyNgn || 0)}</Text>
 
                 <View style={styles.feeBreakdown}>
                   <View style={styles.payDetailRow}>
-                    <Text style={styles.feeLabel}>Pay (budget)</Text>
-                    <Text style={styles.feeLabel}>{formatNaira(numericBuyNgn || 0)}</Text>
+                    <Text style={styles.feeLabel}>Coin</Text>
+                    <Text style={styles.feeLabel}>{selectedMarket?.name ?? selectedBuyAsset}</Text>
                   </View>
                   {selectedMarket && !selectedMarket.stablecoin && (
                     <View style={styles.payDetailRow}>
@@ -1114,20 +1075,14 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                       <Text style={styles.feeLabel}>1 {selectedBuyAsset} = {formatNaira(selectedMarket.priceNgn)}</Text>
                     </View>
                   )}
-                  <View style={styles.payDetailRow}>
-                    <Text style={styles.feeLabel}>USDT equivalent</Text>
-                    <Text style={styles.feeLabel}>{buyUsdtDisplay != null ? formatUsdt(buyUsdtDisplay) : '—'}</Text>
-                  </View>
                 </View>
 
-                {!selectedMarket?.stablecoin && (
-                  <View style={styles.confirmBox}>
-                    <Text style={styles.confirmText}>
-                      Delivered to your KaysPay crypto account. Rate is re-quoted the moment your transfer clears and
-                      the conversion to {selectedBuyAsset} executes — the final amount may differ slightly from this estimate.
-                    </Text>
-                  </View>
-                )}
+                <View style={styles.confirmBox}>
+                  <Text style={styles.confirmText}>
+                    Delivered to your KaysPay crypto account. The exact amount of {selectedBuyAsset} you receive is
+                    confirmed on the next screen, once Quidax prices your transfer.
+                  </Text>
+                </View>
 
                 {selectedMarket?.stablecoin ? (
                   <TouchableOpacity style={styles.primaryButton} onPress={() => setBuyStep('destination')}>
