@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   TextInput,
   Alert,
@@ -13,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { withTimeout } from '../utils/network';
@@ -221,17 +221,14 @@ export default function EditProfileScreen({ navigation }: any) {
         <View style={styles.headerSpacer} />
       </View>
 
-      <KeyboardAvoidingView
-        style={styles.scrollView}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
+      <KeyboardAwareScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          enableOnAndroid
+          extraScrollHeight={20}
         >
         <View style={styles.fieldCard}>
           <Text style={styles.fieldLabel}>Full Name</Text>
@@ -366,8 +363,7 @@ export default function EditProfileScreen({ navigation }: any) {
             </View>
           )}
         </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAwareScrollView>
 
       <Modal visible={otpVisible} transparent animationType="fade" onRequestClose={closeOtp}>
         <KeyboardAvoidingView

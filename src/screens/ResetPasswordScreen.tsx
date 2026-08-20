@@ -5,12 +5,10 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { authService } from '../services/auth.service';
 import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
@@ -111,7 +109,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.keyboardView}>
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
@@ -128,11 +126,13 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
           </Text>
         </View>
 
-        <ScrollView
+        <KeyboardAwareScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          enableOnAndroid
+          extraScrollHeight={20}
         >
           <View style={styles.formCard}>
             {/* Code */}
@@ -244,8 +244,8 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
               Didn't get a code? <Text style={styles.resendBold}>{resending ? 'Sending...' : 'Resend'}</Text>
             </Text>
           </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAwareScrollView>
+      </View>
     </SafeAreaView>
   );
 }

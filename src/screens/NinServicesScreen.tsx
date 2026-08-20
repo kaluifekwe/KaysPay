@@ -13,6 +13,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
 import qrcode from 'qrcode-generator';
@@ -1274,12 +1275,13 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
+        <KeyboardAwareScrollView
           style={styles.scrollView}
           contentContainerStyle={[styles.scrollContent, showModifySubmitFooter && styles.scrollContentWithFooter]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          enableOnAndroid
+          extraScrollHeight={20}
           showsVerticalScrollIndicator={false}
         >
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
@@ -1760,7 +1762,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
               </TouchableOpacity>
             </View>
           )}
-        </ScrollView>
+        </KeyboardAwareScrollView>
 
         {showModifySubmitFooter && (
           <View style={[styles.modifyFooter, { paddingBottom: insets.bottom + Spacing.SCREEN_PADDING }]}>

@@ -5,7 +5,6 @@ import {
   Text,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
@@ -13,6 +12,7 @@ import {
   Switch,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../constants/colors';
@@ -334,11 +334,13 @@ export default function DataScreen({ navigation }: DataScreenProps) {
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView
+        <KeyboardAwareScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          enableOnAndroid
+          extraScrollHeight={20}
         >
           <TouchableOpacity
             style={styles.backButton}
@@ -545,7 +547,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
               <Text style={styles.errorText}>{errorMessage}</Text>
             </View>
           ) : null}
-        </ScrollView>
+        </KeyboardAwareScrollView>
 
         <View style={[styles.bottomBar, { paddingBottom: insets.bottom + Spacing.L }]}>
           {selectedBundle && (

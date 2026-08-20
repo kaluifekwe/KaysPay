@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
@@ -13,6 +12,7 @@ import {
   FlatList,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Ionicons } from '@expo/vector-icons';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
@@ -182,11 +182,13 @@ export default function TransferScreen({ navigation }: TransferScreenProps) {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
+        <KeyboardAwareScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          enableOnAndroid
+          extraScrollHeight={20}
         >
           <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => navigation.goBack()}>
             <Text style={styles.backText}>{'<'}</Text>
@@ -274,7 +276,7 @@ export default function TransferScreen({ navigation }: TransferScreenProps) {
               <Text style={styles.errorText}>{errorMessage}</Text>
             </View>
           ) : null}
-        </ScrollView>
+        </KeyboardAwareScrollView>
 
         <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + Spacing.SCREEN_PADDING }]}>
           {selectedBank && verifiedName && (

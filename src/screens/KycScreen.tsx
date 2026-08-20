@@ -3,14 +3,12 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useFocusEffect } from '@react-navigation/native';
 import { kycService } from '../services/kyc.service';
 import { safeErrorMessage } from '../utils/errorMessages';
@@ -100,14 +98,14 @@ export default function KycScreen({ navigation, route }: any) {
           <ActivityIndicator color={theme.brand} size="large" />
         </View>
       ) : (
-        <KeyboardAvoidingView style={styles.scrollView} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView
+        <KeyboardAwareScrollView
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
-            automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+            enableOnAndroid
+            extraScrollHeight={20}
           >
           {verified ? (
             <View style={styles.verifiedCard}>
@@ -173,8 +171,7 @@ export default function KycScreen({ navigation, route }: any) {
               </TouchableOpacity>
             </View>
           )}
-          </ScrollView>
-        </KeyboardAvoidingView>
+          </KeyboardAwareScrollView>
       )}
     </SafeAreaView>
   );

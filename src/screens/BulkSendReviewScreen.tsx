@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   FlatList,
   Modal,
   KeyboardAvoidingView,
@@ -15,6 +14,7 @@ import {
   Switch,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
 import { AppTheme } from '../constants/theme';
@@ -606,7 +606,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView
+        <KeyboardAwareScrollView
           style={styles.scrollView}
           contentContainerStyle={[
             styles.scrollContent,
@@ -614,6 +614,8 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          enableOnAndroid
+          extraScrollHeight={20}
         >
           <TouchableOpacity
             style={styles.backButton}
@@ -978,7 +980,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
                   </View>
                 );
               })}
-        </ScrollView>
+        </KeyboardAwareScrollView>
 
         <View
           style={[styles.bottomContainer, { paddingBottom: insets.bottom + Spacing.SCREEN_PADDING }]}

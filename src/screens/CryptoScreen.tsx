@@ -9,7 +9,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Platform,
   StatusBar,
   Modal,
@@ -18,6 +17,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Ionicons } from '@expo/vector-icons';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -885,8 +885,15 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
         <Text style={styles.topTitle}>Crypto</Text>
       </View>
 
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} showsVerticalScrollIndicator={false}>
+      <KeyboardAwareScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+        enableOnAndroid
+        extraScrollHeight={20}
+      >
           {pendingRefund && (
             <TouchableOpacity
               style={styles.refundBanner}
@@ -1505,8 +1512,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
               </View>
             )}
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
 
       {pendingRefund && (
         <CryptoRefundBankModal

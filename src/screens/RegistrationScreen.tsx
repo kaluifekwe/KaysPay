@@ -5,13 +5,11 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   Animated,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { authService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
 import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password';
@@ -112,7 +110,6 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
   const emailRef = useRef<TextInput>(null);
   const phoneRef = useRef<TextInput>(null);
   const confirmPasswordRef = useRef<TextInput>(null);
-  const scrollRef = useRef<ScrollView>(null);
   const pinRefs = useRef<(TextInput | null)[]>([]);
   const confirmPinRefs = useRef<(TextInput | null)[]>([]);
 
@@ -400,7 +397,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
-      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.keyboardView}>
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
@@ -427,11 +424,12 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
           </View>
         </View>
 
-        <ScrollView
-          ref={scrollRef}
+        <KeyboardAwareScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          enableOnAndroid
+          extraScrollHeight={20}
           keyboardShouldPersistTaps="handled"
         >
           {step === 1 ? (
@@ -625,8 +623,8 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
             <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
             <Text style={styles.termsLink}>Privacy Policy</Text>.
           </Text>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAwareScrollView>
+      </View>
     </SafeAreaView>
   );
 }

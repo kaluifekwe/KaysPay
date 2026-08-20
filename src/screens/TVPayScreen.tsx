@@ -4,7 +4,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -13,6 +12,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Ionicons } from '@expo/vector-icons';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import ProviderLogo from '../components/ProviderLogo';
@@ -42,7 +42,6 @@ export default function TVPayScreen({ navigation, route }: any) {
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const insets = useSafeAreaInsets();
-  const scrollRef = useRef<ScrollView>(null);
   const verifyRequestRef = useRef(0);
 
   const [smartcardNumber, setSmartcardNumber] = useState('');
@@ -267,13 +266,13 @@ export default function TVPayScreen({ navigation, route }: any) {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          ref={scrollRef}
+        <KeyboardAwareScrollView
           style={styles.flex}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          enableOnAndroid
+          extraScrollHeight={20}
           showsVerticalScrollIndicator={false}
         >
           <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => navigation.goBack()}>
@@ -448,7 +447,7 @@ export default function TVPayScreen({ navigation, route }: any) {
           </View>
 
           {errorMessage ? <Text style={styles.verifyError}>{errorMessage}</Text> : null}
-        </ScrollView>
+        </KeyboardAwareScrollView>
 
         <View style={[styles.bottomBar, { paddingBottom: insets.bottom + Spacing.L }]}>
           {selectedBouquet && (
