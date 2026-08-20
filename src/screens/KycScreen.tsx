@@ -32,7 +32,8 @@ export default function KycScreen({ navigation, route }: any) {
   const [verified, setVerified] = useState(false);
   const [verifiedName, setVerifiedName] = useState<string | undefined>();
 
-  const [nin, setNin] = useState('');
+  const [idType, setIdType] = useState<'nin' | 'bvn'>('nin');
+  const [idValue, setIdValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -53,23 +54,27 @@ export default function KycScreen({ navigation, route }: any) {
     }
   };
 
+  const idLabel = idType === 'nin' ? 'NIN' : 'BVN';
+
   const handleVerify = async () => {
-    if (nin.length !== 11) {
-      setError('Enter a valid 11-digit NIN');
+    if (idValue.length !== 11) {
+      setError(`Enter a valid 11-digit ${idLabel}`);
       return;
     }
     setError('');
     setSubmitting(true);
     try {
-      const result = await kycService.verifyNin(nin);
+      const result = idType === 'nin'
+        ? await kycService.verifyNin(idValue)
+        : await kycService.verifyBvn(idValue);
       if (!result.success) {
-        setError(safeErrorMessage(result.error, 'Could not verify this NIN. Please try again.'));
+        setError(safeErrorMessage(result.error, `Could not verify this ${idLabel}. Please try again.`));
         return;
       }
       setVerified(true);
       setVerifiedName(result.verifiedName);
     } catch (e) {
-      setError(safeErrorMessage(e, 'Could not verify this NIN. Please try again.'));
+      setError(safeErrorMessage(e, `Could not verify this ${idLabel}. Please try again.`));
     } finally {
       setSubmitting(false);
     }
@@ -110,7 +115,7 @@ export default function KycScreen({ navigation, route }: any) {
               <Text style={styles.verifiedTitle}>You're Verified</Text>
               {!!verifiedName && <Text style={styles.verifiedName}>{verifiedName}</Text>}
               <Text style={styles.verifiedSubtitle}>
-                Your identity has been confirmed via your NIN. Your profile name is locked to match.
+                Your identity has been confirmed. Your profile name is locked to match.
               </Text>
             </View>
           ) : (
@@ -118,19 +123,36 @@ export default function KycScreen({ navigation, route }: any) {
               <Text style={styles.title}>Verify Your Identity</Text>
               <Text style={styles.subtitle}>
                 {requiredFor
-                  ? `Required before you can ${requiredFor}. Enter your 11-digit National Identification Number (NIN) to confirm your identity. Your profile name will be updated to match your NIN record.`
-                  : 'Optional, but recommended. Enter your 11-digit National Identification Number (NIN) to confirm your identity. Your profile name will be updated to match your NIN record.'}
+                  ? `Required before you can ${requiredFor}. Verify with either your NIN or BVN — whichever you have on hand. Your profile name will be updated to match your record.`
+                  : 'Optional, but recommended. Verify with either your NIN or BVN — whichever you have on hand. Your profile name will be updated to match your record.'}
               </Text>
 
-              <Text style={styles.label}>NIN</Text>
+              <View style={styles.idTypeToggle}>
+                <TouchableOpacity
+                  style={[styles.idTypeOption, idType === 'nin' && styles.idTypeOptionActive]}
+                  onPress={() => { setIdType('nin'); setIdValue(''); setError(''); }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.idTypeOptionText, idType === 'nin' && styles.idTypeOptionTextActive]}>NIN</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.idTypeOption, idType === 'bvn' && styles.idTypeOptionActive]}
+                  onPress={() => { setIdType('bvn'); setIdValue(''); setError(''); }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.idTypeOptionText, idType === 'bvn' && styles.idTypeOptionTextActive]}>BVN</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.label}>{idLabel}</Text>
               <TextInput
                 style={[styles.input, !!error && styles.inputError]}
-                value={nin}
+                value={idValue}
                 onChangeText={(t) => {
-                  setNin(t.replace(/[^0-9]/g, '').slice(0, 11));
+                  setIdValue(t.replace(/[^0-9]/g, '').slice(0, 11));
                   setError('');
                 }}
-                placeholder="Enter your 11-digit NIN"
+                placeholder={`Enter your 11-digit ${idLabel}`}
                 placeholderTextColor={theme.inkMuted}
                 keyboardType="number-pad"
                 maxLength={11}
@@ -138,9 +160,9 @@ export default function KycScreen({ navigation, route }: any) {
               {!!error && <Text style={styles.errorText}>{error}</Text>}
 
               <TouchableOpacity
-                style={[styles.submitButton, (nin.length !== 11 || submitting) && styles.submitButtonDisabled]}
+                style={[styles.submitButton, (idValue.length !== 11 || submitting) && styles.submitButtonDisabled]}
                 onPress={handleVerify}
-                disabled={nin.length !== 11 || submitting}
+                disabled={idValue.length !== 11 || submitting}
                 activeOpacity={0.8}
               >
                 {submitting ? (
@@ -185,6 +207,31 @@ function createStyles(theme: AppTheme) {
   },
   title: { fontFamily: 'Helvetica-Bold', fontSize: 18, color: theme.ink, marginBottom: 8 },
   subtitle: { fontSize: 13, color: theme.inkMuted, lineHeight: 19, marginBottom: 20 },
+  idTypeToggle: {
+    flexDirection: 'row',
+    backgroundColor: theme.surfaceRaised,
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: 20,
+  },
+  idTypeOption: {
+    flex: 1,
+    height: 40,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  idTypeOptionActive: {
+    backgroundColor: theme.brand,
+  },
+  idTypeOptionText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.inkMuted,
+  },
+  idTypeOptionTextActive: {
+    color: '#FFFFFF',
+  },
   label: { fontSize: 13, color: theme.ink, fontWeight: '600', marginBottom: 8 },
   input: {
     height: 52,

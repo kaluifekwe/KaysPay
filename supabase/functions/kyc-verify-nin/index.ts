@@ -1,8 +1,16 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient } from "../_shared/auth.ts";
-import { verifyNin as verifyNinPrembly, isPremblyConfigured } from "../_shared/prembly-client.ts";
-import { verifyNin as verifyNinBvn, isNinBvnConfigured } from "../_shared/ninbvn-client.ts";
+import {
+  verifyNin as verifyNinPrembly,
+  verifyBvn as verifyBvnPrembly,
+  isPremblyConfigured,
+} from "../_shared/prembly-client.ts";
+import {
+  verifyNin as verifyNinBvn,
+  verifyBvn as verifyBvnNinBvn,
+  isNinBvnConfigured,
+} from "../_shared/ninbvn-client.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -11,13 +19,33 @@ function json(body: unknown, status = 200) {
   });
 }
 
-// Same record-shape normalizing as nin-verify — both providers wrap the
-// record at different, live-confirmed depths (2026-07-05).
+// Free-tier record-shape normalizing. NIN responses use lowercase
+// firstname/middlename/surname; BVN responses vary by provider — Prembly's
+// BVN endpoint returns camelCase (firstName/middleName/lastName),
+// CheckMyNINBVN's uses lowercase but "lastname" instead of "surname" (see
+// bvn-verify's own extractBvnRecord, which normalizes the same spellings
+// for the paid slip flow). One extractor covers every shape either
+// identifier type can come back in.
+function pick(c: any, ...keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = c[k];
+    if (v !== undefined && v !== null && v !== "") return typeof v === "string" ? v : String(v);
+  }
+  return undefined;
+}
+
 function extractRecord(data: any): any {
   const candidates = [data?.data?.data, data?.data, data];
   for (const c of candidates) {
-    if (c && typeof c === "object" && typeof c.firstname === "string" && c.firstname.trim().length > 0) {
-      return c;
+    if (!c || typeof c !== "object") continue;
+    const firstname = pick(c, "firstname", "firstName", "first_name");
+    if (typeof firstname === "string" && firstname.trim().length > 0) {
+      return {
+        ...c,
+        firstname,
+        middlename: pick(c, "middlename", "middleName", "middle_name"),
+        surname: pick(c, "surname", "lastname", "lastName", "last_name"),
+      };
     }
   }
   return undefined;
@@ -29,7 +57,7 @@ interface ProviderOutcome {
   errorMessage?: string;
 }
 
-async function tryPrembly(nin: string): Promise<ProviderOutcome> {
+async function tryPremblyNin(nin: string): Promise<ProviderOutcome> {
   const { status, data } = await verifyNinPrembly(nin);
   const record = extractRecord(data);
   const isTestData = typeof data?.message === "string" && /test data/i.test(data.message);
@@ -37,11 +65,29 @@ async function tryPrembly(nin: string): Promise<ProviderOutcome> {
   return { ok, record, errorMessage: data?.message };
 }
 
-async function tryNinBvn(nin: string): Promise<ProviderOutcome> {
+async function tryNinBvnNin(nin: string): Promise<ProviderOutcome> {
   const { status, data } = await verifyNinBvn(nin);
   const record = extractRecord(data);
   const ok = status < 400 && !!record;
   return { ok, record, errorMessage: ok ? undefined : (data?.message || data?.data?.message || `http_${status}`) };
+}
+
+// BVN variants — same free, no-wallet-debit model as the NIN checks above.
+// Deliberately uses Prembly's lighter bvn_validation endpoint, NOT
+// verifyBvnFull (the richer, costlier lookup reserved for the paid slip
+// product in bvn-verify) — this only ever needs a name to confirm identity.
+async function tryPremblyBvn(bvn: string): Promise<ProviderOutcome> {
+  const { status, data } = await verifyBvnPrembly(bvn);
+  const record = extractRecord(data);
+  const ok = status < 400 && !!record;
+  return { ok, record, errorMessage: data?.message || data?.detail };
+}
+
+async function tryNinBvnBvn(bvn: string): Promise<ProviderOutcome> {
+  const { status, data } = await verifyBvnNinBvn(bvn);
+  const record = extractRecord(data);
+  const ok = status < 400 && !!record;
+  return { ok, record, errorMessage: ok ? undefined : (data?.message || `http_${status}`) };
 }
 
 // Free, self-serve KYC — deliberately NOT money-related: no wallet debit, no
@@ -66,8 +112,19 @@ serve(async (req: Request) => {
     return json({ success: false, error: "Invalid request body" }, 400);
   }
 
+  // Accepts either identifier — whichever the user has on hand. Exactly one
+  // must be present; a client sending both is treated as NIN (shouldn't
+  // happen, KycScreen only ever sends one).
   const nin = String(body?.nin || "").trim();
-  if (!/^\d{11}$/.test(nin)) return json({ success: false, error: "Enter a valid 11-digit NIN" }, 400);
+  const bvn = String(body?.bvn || "").trim();
+  const idType: "nin" | "bvn" | null = nin ? "nin" : bvn ? "bvn" : null;
+  if (idType === "nin" && !/^\d{11}$/.test(nin)) {
+    return json({ success: false, error: "Enter a valid 11-digit NIN" }, 400);
+  }
+  if (idType === "bvn" && !/^\d{11}$/.test(bvn)) {
+    return json({ success: false, error: "Enter a valid 11-digit BVN" }, 400);
+  }
+  if (!idType) return json({ success: false, error: "Enter a valid 11-digit NIN or BVN" }, 400);
 
   const supabase = adminClient();
 
@@ -96,10 +153,14 @@ serve(async (req: Request) => {
 
   let outcome: ProviderOutcome = { ok: false };
   let lastError: string | undefined;
+  const [tryPrimary, tryFallback] = idType === "nin"
+    ? [tryPremblyNin, tryNinBvnNin]
+    : [tryPremblyBvn, tryNinBvnBvn];
+  const idValue = idType === "nin" ? nin : bvn;
 
   if (isPremblyConfigured()) {
     try {
-      outcome = await tryPrembly(nin);
+      outcome = await tryPrimary(idValue);
       if (!outcome.ok) lastError = outcome.errorMessage;
     } catch (e) {
       lastError = (e as Error).message;
@@ -108,7 +169,7 @@ serve(async (req: Request) => {
 
   if (!outcome.ok && isNinBvnConfigured()) {
     try {
-      const fallback = await tryNinBvn(nin);
+      const fallback = await tryFallback(idValue);
       if (fallback.ok) {
         outcome = fallback;
       } else {
@@ -120,7 +181,8 @@ serve(async (req: Request) => {
   }
 
   if (!outcome.ok) {
-    return json({ success: false, error: lastError || "Could not verify this NIN. Please try again." });
+    const label = idType === "nin" ? "NIN" : "BVN";
+    return json({ success: false, error: lastError || `Could not verify this ${label}. Please try again.` });
   }
 
   const verifiedName = [outcome.record?.firstname, outcome.record?.middlename, outcome.record?.surname]
@@ -130,13 +192,14 @@ serve(async (req: Request) => {
   await supabase.from("user_kyc").upsert({
     user_id: user.id,
     status: "verified",
-    nin,
+    nin: idType === "nin" ? nin : null,
+    bvn: idType === "bvn" ? bvn : null,
     verified_record: outcome.record,
     verified_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
 
-  // Auto-sync the profile name to the verified NIN record — no confirmation
+  // Auto-sync the profile name to the verified record — no confirmation
   // step, per the owner's spec.
   if (verifiedName) {
     await supabase.auth.admin.updateUserById(user.id, {
