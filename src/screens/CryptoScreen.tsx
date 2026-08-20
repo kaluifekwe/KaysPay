@@ -173,7 +173,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
   // Buy is a 4-step flow: pick a coin from live prices, set a USDT budget,
   // review the quote, then (USDT only) choose where it's delivered.
-  const [buyStep, setBuyStep] = useState<'pick' | 'amount' | 'review' | 'destination'>('pick');
+  const [buyStep, setBuyStep] = useState<'pick' | 'amount' | 'destination'>('pick');
   const [markets, setMarkets] = useState<MarketCoin[]>([]);
   const [marketsLoading, setMarketsLoading] = useState(false);
   const [coinSearch, setCoinSearch] = useState('');
@@ -1050,39 +1050,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   </Text>
                 )}
 
-                <TouchableOpacity
-                  style={[styles.primaryButton, !canBuy && styles.primaryButtonDisabled]}
-                  onPress={() => setBuyStep('review')}
-                  disabled={!canBuy}
-                >
-                  <Text style={styles.primaryButtonText}>Review Purchase</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {tab === 'buy' && buyStep === 'review' && selectedBuyAsset && (
-              <View>
-                <TouchableOpacity style={styles.backLink} onPress={() => setBuyStep('amount')}>
-                  <Ionicons name="chevron-back" size={16} color={theme.inkFaint} />
-                  <Text style={styles.backLinkText}>Edit amount</Text>
-                </TouchableOpacity>
-
-                <Text style={styles.hintText}>You're buying</Text>
-                <Text style={styles.reviewBig}>{formatNaira(numericBuyNgn || 0)}</Text>
-
-                <View style={styles.feeBreakdown}>
-                  <View style={styles.payDetailRow}>
-                    <Text style={styles.feeLabel}>Coin</Text>
-                    <Text style={styles.feeLabel}>{selectedMarket?.name ?? selectedBuyAsset}</Text>
-                  </View>
-                  {selectedMarket && !selectedMarket.stablecoin && (
-                    <View style={styles.payDetailRow}>
-                      <Text style={styles.feeLabel}>Rate</Text>
-                      <Text style={styles.feeLabel}>1 {selectedBuyAsset} = {formatNaira(selectedMarket.priceNgn)}</Text>
-                    </View>
-                  )}
-                </View>
-
                 <View style={styles.confirmBox}>
                   <Text style={styles.confirmText}>
                     Delivered to your KaysPay crypto account. The exact amount of {selectedBuyAsset} you receive is
@@ -1090,27 +1057,31 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   </Text>
                 </View>
 
-                {selectedMarket?.stablecoin ? (
-                  <TouchableOpacity style={styles.primaryButton} onPress={() => setBuyStep('destination')}>
-                    <Text style={styles.primaryButtonText}>Continue</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={[styles.primaryButton, (!canBuy || buyLoading) && styles.primaryButtonDisabled]}
-                    onPress={handleBuy}
-                    disabled={!canBuy || buyLoading}
-                  >
-                    {buyLoading ? <ActivityIndicator color={theme.background} /> : <Text style={styles.primaryButtonText}>Confirm & Pay</Text>}
-                  </TouchableOpacity>
-                )}
+                <TouchableOpacity
+                  style={[styles.primaryButton, (!canBuy || buyLoading) && styles.primaryButtonDisabled]}
+                  onPress={() => {
+                    if (selectedMarket?.stablecoin) {
+                      setBuyStep('destination');
+                    } else {
+                      handleBuy();
+                    }
+                  }}
+                  disabled={!canBuy || buyLoading}
+                >
+                  {buyLoading ? (
+                    <ActivityIndicator color={theme.background} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>{selectedMarket?.stablecoin ? 'Continue' : 'Buy Now'}</Text>
+                  )}
+                </TouchableOpacity>
               </View>
             )}
 
             {tab === 'buy' && buyStep === 'destination' && selectedBuyAsset && (
               <View>
-                <TouchableOpacity style={styles.backLink} onPress={() => setBuyStep('review')}>
+                <TouchableOpacity style={styles.backLink} onPress={() => setBuyStep('amount')}>
                   <Ionicons name="chevron-back" size={16} color={theme.inkFaint} />
-                  <Text style={styles.backLinkText}>Back to review</Text>
+                  <Text style={styles.backLinkText}>Edit amount</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -1661,14 +1632,6 @@ function createStyles(theme: AppTheme) {
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.M,
     marginBottom: Spacing.L,
-  },
-  reviewBig: {
-    fontFamily: MONO,
-    fontSize: 30,
-    fontWeight: '700',
-    color: theme.ink,
-    marginTop: Spacing.S,
-    marginBottom: Spacing.M,
   },
   });
 }
