@@ -343,6 +343,18 @@ export async function getPurchaseQuote(params: {
     token_network: params.network,
   });
   const { status, data } = await callRamp(`/purchase_quotes/buy?${query.toString()}`, "POST");
+  // Quidax's own docs are inconsistent about how this endpoint's parameters
+  // are actually passed (query string vs body vs path) — this call has
+  // never succeeded yet, so log the raw response until it does. unwrap()'s
+  // own error swallows this detail whenever data.message is empty.
+  if (status >= 400 || (data?.status && data.status !== "ok")) {
+    console.error(
+      "quidax-ramp: purchase_quotes/buy raw failure — status",
+      status,
+      "body:",
+      redactSecrets(JSON.stringify(data)).slice(0, 500),
+    );
+  }
   const payload = unwrap(status, data, "Could not get a live quote");
   return {
     toAmount: Number(payload.to_amount) || 0,
