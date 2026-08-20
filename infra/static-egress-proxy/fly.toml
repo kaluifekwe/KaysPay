@@ -1,0 +1,34 @@
+# fly.toml app configuration file generated for kayspay-static-egress on 2026-08-20T12:09:15+05:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'kayspay-static-egress'
+primary_region = 'iad'
+
+[build]
+
+# A raw forward proxy, not an HTTP web service — no [http_service] block.
+# That block is fly launch's default and assumes a normal server answering
+# GET / with 200; tinyproxy doesn't, so Fly's health checks would fail and
+# it would also scale to zero between calls, adding cold-start latency to a
+# real customer's money transfer. This app stays running instead.
+[[services]]
+  protocol = 'tcp'
+  internal_port = 8888
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 443
+    handlers = ['tls']
+
+  [services.concurrency]
+    type = 'connections'
+    hard_limit = 200
+    soft_limit = 150
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '256mb'

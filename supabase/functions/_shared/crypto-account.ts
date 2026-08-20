@@ -7,17 +7,15 @@ import { createSubAccount, getSubAccounts, QuidaxError } from "./quidax-client.t
  * the existing row first and only ever calls Quidax when genuinely missing —
  * never re-creates or re-derives an id that already exists.
  */
-export async function getOrCreateCryptoAccount(
-  supabase: SupabaseClient,
-  user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> | null },
-): Promise<{ quidaxUserId: string; quidaxSn: string | null }> {
-  const { data: existing } = await supabase
-    .from("crypto_accounts")
-    .select("quidax_user_id, quidax_sn")
-    .eq("user_id", user.id)
-    .maybeSingle();
-  if (existing) return { quidaxUserId: existing.quidax_user_id, quidaxSn: existing.quidax_sn };
-
+/**
+ * The name/email Quidax knows this customer by — shared between sub-account
+ * creation and anything else that needs to identify the customer TO Quidax
+ * (e.g. off-ramp's `initiate`, which compares this name against the payout
+ * bank account's registered holder name).
+ */
+export function deriveQuidaxIdentity(
+  user: { id: string; user_metadata?: Record<string, unknown> | null },
+): { email: string; firstName: string; lastName: string } {
   // public.users.full_name is never actually populated (see admin-user-lookup) —
   // the real name lives in auth user_metadata, same source used there.
   const fullName = String((user.user_metadata as { full_name?: string } | undefined)?.full_name || "").trim();
@@ -36,6 +34,61 @@ export async function getOrCreateCryptoAccount(
   // them. The address is a routing-only identifier — no mail is ever sent
   // to it, and the sub-domain is deliberately not the real mail domain.
   const email = `${user.id}@users.kayspay.com.ng`;
+  return { email, firstName: firstName.slice(0, 60), lastName: lastName.slice(0, 60) };
+}
+
+/**
+ * A server-trusted identity for security decisions — unlike
+ * deriveQuidaxIdentity() above (fine for sub-account creation, where any
+ * display name is harmless), this is for the off-ramp Sell flow's
+ * name-match check, which exists specifically to stop a customer's sale
+ * proceeds being redirected to someone else's bank account.
+ *
+ * Found by the 2026-08-20 Strix pentest (vuln-0002/0003): the old code used
+ * `auth.user_metadata.full_name` for that check — a field the customer can
+ * set to ANY name at signup or in their profile before KYC, so the "name
+ * must match" protection was checking the customer's name against itself,
+ * not against anything verified. This reads from user_kyc.verified_record
+ * instead, which only exists once NIN/BVN verification actually succeeded
+ * (see kyc-verify-nin) — returns null (fail closed) if no verified record
+ * exists, rather than falling back to the mutable metadata.
+ */
+export async function deriveVerifiedQuidaxIdentity(
+  supabase: SupabaseClient,
+  user: { id: string },
+): Promise<{ email: string; firstName: string; lastName: string } | null> {
+  const { data } = await supabase
+    .from("user_kyc")
+    .select("status, verified_record")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!data || data.status !== "verified") return null;
+
+  const record = data.verified_record as { firstname?: string; middlename?: string; surname?: string } | null;
+  const firstName = String(record?.firstname || "").trim();
+  const lastName = [record?.middlename, record?.surname].filter(Boolean).join(" ").trim();
+  if (!firstName || !lastName) return null;
+
+  return {
+    email: `${user.id}@users.kayspay.com.ng`,
+    firstName: firstName.slice(0, 60),
+    lastName: lastName.slice(0, 60),
+  };
+}
+
+export async function getOrCreateCryptoAccount(
+  supabase: SupabaseClient,
+  user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> | null },
+): Promise<{ quidaxUserId: string; quidaxSn: string | null }> {
+  const { data: existing } = await supabase
+    .from("crypto_accounts")
+    .select("quidax_user_id, quidax_sn")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (existing) return { quidaxUserId: existing.quidax_user_id, quidaxSn: existing.quidax_sn };
+
+  const { email, firstName, lastName } = deriveQuidaxIdentity(user);
 
   let account: { id: string; sn: string; email: string };
   try {

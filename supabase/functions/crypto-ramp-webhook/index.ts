@@ -135,6 +135,36 @@ serve(async (req: Request) => {
     return json({ received: true });
   }
 
+  // Sell (off-ramp, migration 139) settled — Quidax paid the customer's
+  // bank account directly from their own liquidity. Nothing to credit on
+  // our side; the KaysPay wallet was never touched by this sale.
+  if (event === "sell_transaction.successful") {
+    const merchantReference = String(data?.merchant_reference || "");
+    const paidNgn = Number(data?.fiat_payout?.amount);
+    if (!merchantReference || !Number.isFinite(paidNgn) || paidNgn <= 0) {
+      console.error("crypto-ramp-webhook: unexpected sell_transaction.successful", JSON.stringify(payload).slice(0, 300));
+      return json({ received: true });
+    }
+    const { error } = await supabase.rpc("complete_crypto_sell_offramp", {
+      p_reference: merchantReference,
+      p_ngn_kobo: Math.round(paidNgn * 100),
+    });
+    if (error) console.error("crypto-ramp-webhook: complete_crypto_sell_offramp failed:", error.message);
+    return json({ received: true });
+  }
+
+  if (event === "sell_transaction.failed") {
+    const merchantReference = String(data?.merchant_reference || "");
+    if (merchantReference) {
+      const { error } = await supabase.rpc("fail_crypto_sell_offramp", {
+        p_reference: merchantReference,
+        p_reason: String(data?.fiat_payout?.status || "offramp_failed"),
+      });
+      if (error) console.error("crypto-ramp-webhook: fail_crypto_sell_offramp failed:", error.message);
+    }
+    return json({ received: true });
+  }
+
   // Any other event type — acknowledge so Quidax doesn't keep retrying.
   return json({ received: true });
 });

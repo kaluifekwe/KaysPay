@@ -308,13 +308,55 @@ export const cryptoService = {
     }
   },
 
-  async sell(usdtAmount: number, authToken: string): Promise<CryptoActionResult> {
+  async listSellBanks(): Promise<{ code: string; name: string; logo?: string }[]> {
+    const { data, error } = await withTimeout(supabase.functions.invoke('crypto-sell-banks', { body: {} }));
+    if (error || !data?.success) return [];
+    return (data.banks ?? []) as { code: string; name: string; logo?: string }[];
+  },
+
+  async resolveSellAccount(
+    cryptoAmount: number,
+    bankCode: string,
+    accountNumber: string,
+  ): Promise<{ success: boolean; accountName?: string; error?: string }> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('crypto-sell-resolve-account', {
+          body: { crypto_amount: cryptoAmount, bank_code: bankCode, account_number: accountNumber },
+        }),
+      );
+      if (error) {
+        const errBody = await (error as any)?.context?.json?.().catch(() => null);
+        return { success: false, error: errBody?.error || 'Could not verify this account.' };
+      }
+      if (!data?.success) return { success: false, error: data?.error || 'Could not verify this account.' };
+      return { success: true, accountName: data.account_name };
+    } catch {
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  },
+
+  async sell(
+    usdtAmount: number,
+    bankCode: string,
+    bankName: string,
+    accountNumber: string,
+    authToken: string,
+  ): Promise<CryptoActionResult> {
     try {
       const idempotencyKey = newIdempotencyKey('crypto_sell');
       const { data, error } = await invokeWithRetry<any>(
         () => withTimeout(
           supabase.functions.invoke('crypto-sell', {
-            body: { asset: 'USDT', crypto_amount: usdtAmount, auth_token: authToken, idempotency_key: idempotencyKey },
+            body: {
+              asset: 'USDT',
+              crypto_amount: usdtAmount,
+              bank_code: bankCode,
+              bank_name: bankName,
+              account_number: accountNumber,
+              auth_token: authToken,
+              idempotency_key: idempotencyKey,
+            },
           }),
         ),
         idempotencyKey,

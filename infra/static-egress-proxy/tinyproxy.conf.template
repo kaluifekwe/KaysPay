@@ -1,0 +1,19 @@
+Port 8888
+Listen 0.0.0.0
+Timeout 30
+MaxClients 50
+
+# Basic auth so only KaysPay's edge functions (which know the credentials,
+# stored as a Supabase secret, never committed to this repo) can tunnel
+# traffic through this proxy's static egress IP. Without this, anyone who
+# finds the Fly hostname could send arbitrary outbound traffic that Flutterwave
+# and Paystack would see coming from KaysPay's own whitelisted IP.
+BasicAuth __PROXY_USER__ __PROXY_PASS__
+
+# Only these hosts are ever reached through this proxy — narrows what an
+# authenticated-but-compromised caller could actually do with it.
+Filter "/etc/tinyproxy/filter"
+FilterType fnmatch
+FilterDefaultDeny Yes
+
+DisableViaHeader Yes

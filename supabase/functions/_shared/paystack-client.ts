@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from "./provider-fetch.ts";
+import { proxiedFetch } from "./proxied-fetch.ts";
 import { redactSecrets } from "./redact.ts";
 
 const PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY")?.trim();
@@ -24,7 +25,7 @@ export async function callPaystack(
       Accept: "application/json",
     },
     body: body ? JSON.stringify(body) : undefined,
-  }, 25_000);
+  }, 25_000, proxiedFetch);
 
   const text = await response.text();
   let data: any;
@@ -119,4 +120,83 @@ export async function listPaystackTransactions(params: {
     perPage: String(params.perPage ?? 100),
   });
   return callPaystack(`/transaction?${query.toString()}`);
+}
+
+// --- Transfer fallback (used only when Flutterwave's send leg rejects a
+// transfer already validated by Flutterwave's own resolve) ---
+//
+// Paystack and Flutterwave use DIFFERENT, incompatible bank code schemes —
+// a Flutterwave bank_code can't be reused directly against Paystack. The
+// fallback path in transfer-send looks up the matching Paystack bank by
+// NAME instead, then re-resolves the account through Paystack and compares
+// the resolved holder name against what Flutterwave already verified.
+// That comparison is the real safety net: even an imperfect name-based bank
+// match can't send money to the wrong place, because a wrong bank match
+// will resolve to a different (or no) account name and the caller aborts
+// instead of proceeding.
+
+export interface PaystackBank {
+  name: string;
+  code: string;
+}
+
+/** Full Nigerian bank list, Paystack's own code scheme — NOT Flutterwave's. */
+export async function listPaystackBanks(): Promise<PaystackBank[]> {
+  const { status, data } = await callPaystack("/bank?country=nigeria&currency=NGN&perPage=200");
+  if (status >= 400 || data?.status !== true) {
+    throw new Error(data?.message || "Could not fetch Paystack's bank list");
+  }
+  return (data.data ?? []).map((b: any) => ({ name: String(b.name ?? ""), code: String(b.code ?? "") }));
+}
+
+/** Resolves an account number against a Paystack bank code to its registered holder name. */
+export async function resolvePaystackAccount(params: { accountNumber: string; bankCode: string }) {
+  const query = new URLSearchParams({ account_number: params.accountNumber, bank_code: params.bankCode });
+  return callPaystack(`/bank/resolve?${query.toString()}`);
+}
+
+/** Must exist before a transfer can be sent — Paystack transfers target a recipient code, not raw account details. */
+export async function createPaystackTransferRecipient(params: {
+  name: string;
+  accountNumber: string;
+  bankCode: string;
+}) {
+  return callPaystack("/transferrecipient", "POST", {
+    type: "nuban",
+    name: params.name,
+    account_number: params.accountNumber,
+    bank_code: params.bankCode,
+    currency: "NGN",
+  });
+}
+
+/**
+ * Sends NGN to a previously-created recipient. `reference` is KaysPay's own
+ * transaction idempotency key (same one already used with Flutterwave) —
+ * Paystack rejects a duplicate reference outright, so a retried request can
+ * never double-send here either.
+ */
+/**
+ * Requery a specific transfer's real status by our own reference — the
+ * fallback for when transfer.success/.failed/.reversed never arrives (a
+ * lost webhook delivery). Same "requery, don't guess" discipline as
+ * crypto-buy-reconcile.
+ */
+export function verifyPaystackTransfer(reference: string) {
+  return callPaystack(`/transfer/verify/${encodeURIComponent(reference)}`);
+}
+
+export async function initiatePaystackTransfer(params: {
+  amountKobo: number;
+  recipientCode: string;
+  reference: string;
+  reason: string;
+}) {
+  return callPaystack("/transfer", "POST", {
+    source: "balance",
+    amount: params.amountKobo,
+    recipient: params.recipientCode,
+    reason: params.reason,
+    reference: params.reference,
+  });
 }

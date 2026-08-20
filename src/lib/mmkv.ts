@@ -31,6 +31,11 @@ export const StorageKeys = {
   // Support still reaches the CURRENT number when offline rather than
   // falling back to the build-time default — see appSettings.service.ts.
   SUPPORT_WHATSAPP_NUMBER: 'support_whatsapp_number',
+  // Last known Crypto screen balances/rates, painted instantly on open while
+  // the real live numbers load in the background — see CryptoScreen.tsx.
+  // Display-only: every actual Buy/Sell/Withdraw re-checks the live balance
+  // server-side regardless of what this cache holds.
+  CRYPTO_SCREEN_CACHE: 'crypto_screen_cache',
 };
 
 // Helper functions using SecureStore (max 2KB per item)

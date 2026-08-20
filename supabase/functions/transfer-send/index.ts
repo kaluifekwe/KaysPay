@@ -12,6 +12,13 @@ import {
 } from "../_shared/auth.ts";
 import { confirmServiceRefund } from "../_shared/service-refund.ts";
 import { createDirectBankTransfer, isFlutterwaveConfigured, resolveFlutterwaveAccount } from "../_shared/flutterwave-client.ts";
+import {
+  createPaystackTransferRecipient,
+  initiatePaystackTransfer,
+  isPaystackConfigured,
+  listPaystackBanks,
+  resolvePaystackAccount,
+} from "../_shared/paystack-client.ts";
 import { redactSecrets } from "../_shared/redact.ts";
 
 // Transfer: sends real NGN from the customer's KaysPay wallet to an
@@ -50,6 +57,40 @@ function flwErrorMessage(data: any, fallback: string): string {
     ?.map((v: any) => `${v.field_name}: ${v.message}`)
     .join("; ");
   return details || data?.error?.message || data?.message || fallback;
+}
+
+// Flutterwave and Paystack use different, incompatible bank code schemes —
+// this maps a bank by NAME instead of trusting the Flutterwave code carries
+// over. Strips common suffixes ("plc", "bank", "nigeria", "limited") that
+// vary between the two providers' listings for the same institution.
+function normalizeBankName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\b(plc|bank|nigeria|limited|ltd|mfb|microfinance)\b/g, "")
+    .replace(/[^a-z0-9]/g, "")
+    .trim();
+}
+
+async function findPaystackBankCode(bankName: string): Promise<string | null> {
+  const banks = await listPaystackBanks();
+  const target = normalizeBankName(bankName);
+  if (!target) return null;
+  const exact = banks.find((b) => normalizeBankName(b.name) === target);
+  if (exact) return exact.code;
+  // Fallback to a substring match (e.g. "PalmPay" vs "PalmPay MFB") — still
+  // backed by the account-name comparison after resolve, so an imprecise
+  // match here can't result in money going to the wrong place.
+  const partial = banks.find((b) => normalizeBankName(b.name).includes(target) || target.includes(normalizeBankName(b.name)));
+  return partial?.code ?? null;
+}
+
+function namesRoughlyMatch(a: string, b: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean).sort().join(" ");
+  return norm(a) === norm(b);
+}
+
+function paystackErrorMessage(data: any, fallback: string): string {
+  return data?.message || fallback;
 }
 
 serve(async (req: Request) => {
@@ -206,7 +247,15 @@ serve(async (req: Request) => {
     if (transferRes.status < 400 && transferRes.data?.status === "success" && transferRes.data?.data?.id) {
       // Accepted, not yet settled — transfer.disburse (matched on this same
       // idempotency_key, which we sent as Flutterwave's own `reference`)
-      // is what actually completes it.
+      // is what actually completes it. The transfer's own `id` is stored
+      // for transfer-reconcile, which has to look this up by id — GET
+      // /transfers has no filter-by-reference (confirmed against
+      // Flutterwave's own v4 docs).
+      const { data: currentTxMeta } = await supabase.from("transactions").select("metadata").eq("id", txId).maybeSingle();
+      await supabase
+        .from("transactions")
+        .update({ metadata: { ...(currentTxMeta?.metadata as object ?? {}), flutterwave_transfer_id: String(transferRes.data.data.id) } })
+        .eq("id", txId);
       return json({
         success: true,
         pending: true,
@@ -216,12 +265,70 @@ serve(async (req: Request) => {
       });
     }
 
-    // Flutterwave explicitly rejected the request (bad account, over their
-    // own limits, etc.) — no money left KaysPay, safe to refund immediately.
-    const rejectReason = flwErrorMessage(transferRes.data, "provider_rejected");
-    console.error("transfer-send: Flutterwave rejected the transfer:", redactSecrets(JSON.stringify({ status: transferRes.status, message: rejectReason })));
-    await confirmServiceRefund(supabase, txId, rejectReason, "automatic");
-    return json({ success: false, error: `The bank rejected this transfer: ${redactSecrets(rejectReason)}. You were not charged.` });
+    // Flutterwave explicitly rejected the request. The account itself was
+    // already verified (via resolveFlutterwaveAccount, before any money
+    // moved), so this is almost always something on Flutterwave's own side
+    // (balance, a dashboard setting, a transient issue) rather than a bad
+    // recipient — worth trying the same transfer through Paystack before
+    // giving up and refunding.
+    const flwRejectReason = flwErrorMessage(transferRes.data, "provider_rejected");
+    console.error("transfer-send: Flutterwave rejected the transfer:", redactSecrets(JSON.stringify({ status: transferRes.status, message: flwRejectReason })));
+
+    if (isPaystackConfigured()) {
+      try {
+        const paystackBankCode = await findPaystackBankCode(bankName);
+        if (paystackBankCode) {
+          const resolveRes = await resolvePaystackAccount({ accountNumber, bankCode: paystackBankCode });
+          const resolvedName = resolveRes.data?.data?.account_name;
+          if (resolveRes.status < 400 && resolveRes.data?.status === true && resolvedName && namesRoughlyMatch(resolvedName, recipientName)) {
+            const recipientRes = await createPaystackTransferRecipient({
+              name: recipientName,
+              accountNumber,
+              bankCode: paystackBankCode,
+            });
+            const recipientCode = recipientRes.data?.data?.recipient_code;
+            if (recipientRes.status < 400 && recipientRes.data?.status === true && recipientCode) {
+              const sendRes = await initiatePaystackTransfer({
+                amountKobo,
+                recipientCode: String(recipientCode),
+                reference: requestId,
+                reason: `KaysPay transfer to ${recipientName}`.slice(0, 100),
+              });
+              const sendStatus = String(sendRes.data?.data?.status || "");
+              if (sendRes.status < 400 && sendRes.data?.status === true && (sendStatus === "success" || sendStatus === "pending")) {
+                // Accepted, not yet settled — paystack-webhook's
+                // transfer.success/failed (matched on this same reference)
+                // is what actually completes it, same pattern as Flutterwave.
+                const { data: currentTx } = await supabase.from("transactions").select("metadata").eq("id", txId).maybeSingle();
+                await supabase
+                  .from("transactions")
+                  .update({ metadata: { ...(currentTx?.metadata as object ?? {}), actual_provider: "paystack", flutterwave_reject_reason: flwRejectReason } })
+                  .eq("id", txId);
+                return json({
+                  success: true,
+                  pending: true,
+                  transaction_id: txId,
+                  recipient_name: recipientName,
+                  message: "Your transfer is processing. You'll be notified once it completes.",
+                });
+              }
+              console.error("transfer-send: Paystack fallback also rejected the transfer:", redactSecrets(JSON.stringify({ status: sendRes.status, message: paystackErrorMessage(sendRes.data, "rejected") })));
+            } else {
+              console.error("transfer-send: Paystack recipient creation failed during fallback:", redactSecrets(JSON.stringify({ status: recipientRes.status, message: paystackErrorMessage(recipientRes.data, "recipient_failed") })));
+            }
+          } else {
+            console.error("transfer-send: Paystack fallback aborted — account name mismatch or resolve failed", redactSecrets(JSON.stringify({ resolvedName, expected: recipientName })));
+          }
+        }
+      } catch (fallbackError) {
+        console.error("transfer-send: Paystack fallback threw:", redactSecrets(fallbackError));
+      }
+    }
+
+    // Both providers failed (or Paystack wasn't usable for this bank) — no
+    // money left KaysPay either way, safe to refund.
+    await confirmServiceRefund(supabase, txId, flwRejectReason, "automatic");
+    return json({ success: false, error: `The bank rejected this transfer: ${redactSecrets(flwRejectReason)}. You were not charged.` });
   } catch (e) {
     // Network/timeout/parse error — genuinely ambiguous, the request may
     // have reached Flutterwave and been actioned with only the response

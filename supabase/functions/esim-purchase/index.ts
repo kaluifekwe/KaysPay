@@ -163,6 +163,42 @@ serve(async (req: Request) => {
   const amountKobo = usdToNgnKobo(current.priceUSD, fxRate);
   const requestId = String(body.idempotency_key || newIdempotencyKey());
 
+  // Idempotency short-circuit BEFORE any provider call — found by the
+  // 2026-08-20 Strix pentest (vuln-0015): Airalo's order endpoint has no
+  // provider-side idempotency of its own (a retried request creates a
+  // genuinely new order), so without this, a replayed request with the
+  // same idempotency_key debited the wallet once but ordered a SECOND real
+  // eSIM. Same pattern vtu-purchase already uses.
+  const { data: existingTx } = await supabase
+    .from("transactions")
+    .select("id, status, amount_ngn, metadata")
+    .eq("metadata->>idempotency_key", requestId)
+    .maybeSingle();
+
+  if (existingTx) {
+    const md = (existingTx.metadata ?? {}) as Record<string, unknown>;
+    if (existingTx.status === "completed") {
+      return json({
+        success: true,
+        transaction_id: existingTx.id,
+        iccid: md.iccid,
+        qrcode: md.qrcode,
+        qrcode_url: md.qrcode_url,
+        direct_apple_installation_url: md.apple_install_url,
+        amount: existingTx.amount_ngn,
+      });
+    }
+    if (existingTx.status === "failed" || existingTx.status === "refunded") {
+      return json({ success: false, error: "This eSIM purchase already failed and was refunded. Please start a new purchase." });
+    }
+    return json({
+      success: true,
+      pending: true,
+      transaction_id: existingTx.id,
+      message: "Your eSIM order is still processing. You'll be notified once it completes.",
+    });
+  }
+
   const { data: txId, error: debitError } = await supabase.rpc(
     "debit_for_service",
     {

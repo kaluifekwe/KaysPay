@@ -314,27 +314,37 @@ export async function confirmSwapQuotation(params: {
   };
 }
 
+export interface QuidaxSwapTransactionListItem extends QuidaxSwapTransaction {
+  /** The ORIGINAL quotation id (what createSwapQuotation returns, and what
+   * we store as metadata.quidax_swap_id) — distinct from `id` above, which
+   * is a separate id confirmSwapQuotation's response creates for the
+   * resulting transaction. crypto-sell only ever stores the quotation id,
+   * so matching against THIS field (not `id`) is what actually finds a
+   * transaction by what we have on hand — same field the webhook handler
+   * already prefers (data.swap_quotation.id) when matching a delivery. */
+  quotationId: string;
+}
+
 /**
- * Direct status check for a swap already confirmed — the fallback for when
- * its swap_transaction.complete/.failed webhook never arrives (a signature
- * mismatch, a dropped delivery). Same "requery, don't guess" discipline as
- * crypto-buy-reconcile uses for Buy.
+ * Lists a sub-account's swap history — the fallback for when a
+ * swap_transaction.complete/.failed webhook never arrives (a signature
+ * mismatch, a dropped delivery). Deliberately NOT a fetch-by-id: Quidax's
+ * GET /swap_transactions/{id} wants the confirm-response's own transaction
+ * id, which crypto-sell never captures or stores — only the quotation id
+ * is on hand, so this lists recent transactions and the caller matches on
+ * quotationId instead.
  */
-export async function getSwapTransaction(params: {
-  quidaxUserId: string;
-  swapTransactionId: string;
-}): Promise<QuidaxSwapTransaction> {
-  const { status, data } = await callQuidax(
-    `/users/${encodeURIComponent(params.quidaxUserId)}/swap_transactions/${encodeURIComponent(params.swapTransactionId)}`,
-  );
+export async function listSwapTransactions(quidaxUserId: string): Promise<QuidaxSwapTransactionListItem[]> {
+  const { status, data } = await callQuidax(`/users/${encodeURIComponent(quidaxUserId)}/swap_transactions`);
   if (status >= 400 || data?.status !== "success") {
-    throw new QuidaxError(data?.message || "Could not fetch this swap", status);
+    throw new QuidaxError(data?.message || "Could not fetch swap history", status);
   }
-  return {
-    id: String(data.data.id),
-    status: String(data.data.status),
-    receivedAmount: data.data.received_amount != null ? String(data.data.received_amount) : null,
-  };
+  return (data.data ?? []).map((t: any) => ({
+    id: String(t.id),
+    status: String(t.status),
+    receivedAmount: t.received_amount != null ? String(t.received_amount) : null,
+    quotationId: String(t.swap_quotation?.id ?? ""),
+  }));
 }
 
 /**

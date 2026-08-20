@@ -1,5 +1,6 @@
 import { adminClient } from "./auth.ts";
 import { fetchWithTimeout } from "./provider-fetch.ts";
+import { proxiedFetch } from "./proxied-fetch.ts";
 
 // Flutterwave v4 API — OAuth2 client-credentials auth (NOT a static secret
 // key like Paystack/v3). Tokens expire in 600s (10 min), so unlike VTU.ng's
@@ -29,7 +30,7 @@ async function fetchFreshToken(): Promise<string> {
       client_secret: FLW_CLIENT_SECRET ?? "",
       grant_type: "client_credentials",
     }),
-  }, 15_000);
+  }, 15_000, proxiedFetch);
   const data = await res.json();
   if (!data?.access_token) {
     throw new FlutterwaveAuthError(data?.error_description || data?.error || "Flutterwave authentication failed");
@@ -78,7 +79,7 @@ export async function callFlutterwave(
         ...(idempotencyKey ? { "X-Idempotency-Key": idempotencyKey } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
-    }, 25_000);
+    }, 25_000, proxiedFetch);
     return { status: res.status, data: await res.json() };
   };
 
@@ -162,6 +163,18 @@ export function resolveFlutterwaveAccount(
  * `idempotencyKey` is KaysPay's own transaction id, so a retried request
  * (network blip, client re-submit) can never double-send.
  */
+/**
+ * Requery a specific transfer's real status — the fallback for when
+ * transfer.disburse/.reversal never arrives (a lost webhook delivery).
+ * Same "requery, don't guess" discipline as crypto-buy-reconcile. Confirmed
+ * against Flutterwave's own v4 reference docs, 2026-08-20: GET /transfers
+ * has no filter-by-reference, so this needs the transfer's own `id`
+ * (captured by transfer-send at initiate time), not our `reference`.
+ */
+export function getTransfer(supabase: ReturnType<typeof adminClient>, transferId: string) {
+  return callFlutterwave(supabase, `/transfers/${encodeURIComponent(transferId)}`, "GET");
+}
+
 export function createDirectBankTransfer(
   supabase: ReturnType<typeof adminClient>,
   params: { amountKobo: number; accountNumber: string; bankCode: string; reference: string; narration: string },

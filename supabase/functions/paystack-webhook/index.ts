@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient } from "../_shared/auth.ts";
 import { redactSecrets } from "../_shared/redact.ts";
 import { processFundingCandidate } from "../_shared/funding-credit.ts";
+import { confirmServiceRefund } from "../_shared/service-refund.ts";
 
 const PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY")?.trim();
 
@@ -100,6 +101,43 @@ serve(async (req: Request) => {
       });
       if (credit.outcome === "unmatched" || credit.outcome === "rejected") {
         throw new Error(`PAYSTACK_FUNDING_${credit.outcome.toUpperCase()}`);
+      }
+    }
+
+    // Transfer settlement — only ever reached via the Paystack FALLBACK path
+    // in transfer-send (Flutterwave rejected first, Paystack accepted).
+    // /transfer only ever confirms "accepted" synchronously — this is where
+    // that class of transfer actually completes. Matched on `reference`,
+    // the same idempotency key sent to both providers.
+    if (event.event === "transfer.success" || event.event === "transfer.failed" || event.event === "transfer.reversed") {
+      const reference = String(event.data?.reference || "");
+      const transferId = event.data?.id != null ? String(event.data.id) : null;
+
+      if (reference) {
+        const supabase = adminClient();
+        const { data: tx } = await supabase
+          .from("transactions")
+          .select("id, status, type")
+          .eq("metadata->>idempotency_key", reference)
+          .maybeSingle();
+
+        if (tx && tx.type === "transfer") {
+          if (event.event === "transfer.success") {
+            const { error } = await supabase.rpc("complete_service_transaction", {
+              p_tx_id: tx.id,
+              p_order_id: transferId,
+            });
+            if (error) throw error;
+          } else {
+            await confirmServiceRefund(
+              supabase,
+              tx.id,
+              `paystack_${event.event}`,
+              "webhook",
+              tx.status === "completed",
+            );
+          }
+        }
       }
     }
 

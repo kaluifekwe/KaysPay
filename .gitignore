@@ -65,3 +65,10 @@ supabase/.temp/
 /emulator_screenshot.png
 /expo_*.txt
 /kayspay-site.zip
+
+.vercel
+/strix_runs/
+/tmp/
+/.scratch-generated/
+/scratch-runwatch.sh
+.env*

@@ -1,39 +1,36 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient, verifyCronSecret, withJobLock } from "../_shared/auth.ts";
-import { getSwapTransaction, isQuidaxConfigured, QuidaxError } from "../_shared/quidax-client.ts";
+import { isQuidaxRampConfigured, QuidaxRampError, requeryOffRamp } from "../_shared/quidax-ramp-client.ts";
 
-// Safety net for a swap_transaction.complete/.failed webhook that never
-// arrives for a Sell — the same gap crypto-buy-reconcile closed for Buy.
-// Found the hard way: a real sale converted USDT -> NGN successfully on
-// Quidax's side, but the settlement webhook was rejected by our own
-// signature check (a misconfigured QUIDAX_WEBHOOK_SECRET), leaving the
-// customer's proceeds sitting uncredited and the transaction stuck
-// 'pending' with no automatic recovery path.
+// Safety net for a sell_transaction.successful/.failed webhook that never
+// arrives — Sell now pays the customer's bank directly via Quidax's Ramp
+// off-ramp (migration 139), not the old internal Exchange swap this
+// function originally reconciled. Same "requery, don't guess" discipline as
+// crypto-buy-reconcile, including trying both the reference Quidax's own
+// docs are ambiguous about (see requeryOffRamp).
 //
-// crypto-sell confirms the swap synchronously before this row is ever
-// created 'pending' (see record_crypto_sell_pending), so by the time a row
-// is old enough to sweep, the swap itself has already resolved on Quidax's
-// side one way or another — a short floor is appropriate here, unlike
-// Buy's 30-minute one (which waits on a customer's bank transfer).
+// 10-minute floor, not the old 5-minute one: off-ramp genuinely takes
+// Quidax real processing time (crypto deposit confirmation, then a real
+// bank payout), unlike the old synchronous swap-confirm this replaced.
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
 serve(async (req: Request) => {
   if (!verifyCronSecret(req)) return json({ error: "Unauthorized" }, 401);
-  if (!isQuidaxConfigured()) {
-    return json({ checked: 0, reason: "Quidax not configured" });
+  if (!isQuidaxRampConfigured()) {
+    return json({ checked: 0, reason: "Quidax Ramp not configured" });
   }
 
   const supabase = adminClient();
 
   const result = await withJobLock(supabase, "crypto-sell-reconcile", async () => {
-    const floor = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const floor = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
     const { data: stuck, error } = await supabase
       .from("transactions")
-      .select("id, user_id, metadata")
+      .select("id, metadata")
       .eq("status", "pending")
       .eq("type", "crypto_sell")
       .lte("created_at", floor)
@@ -46,42 +43,50 @@ serve(async (req: Request) => {
 
     for (const tx of stuck || []) {
       const meta = (tx.metadata as any) || {};
-      const swapId = String(meta.quidax_swap_id || "");
-      if (!swapId) { skipped++; continue; }
+      const merchantReference = String(meta.quidax_merchant_reference || "");
+      const candidates = Array.from(new Set(
+        [String(meta.quidax_reference || ""), merchantReference].filter(Boolean),
+      ));
+      if (candidates.length === 0) { skipped++; continue; }
 
-      const { data: account } = await supabase
-        .from("crypto_accounts")
-        .select("quidax_user_id")
-        .eq("user_id", tx.user_id)
-        .maybeSingle();
-      if (!account) { skipped++; continue; }
+      let remote: Awaited<ReturnType<typeof requeryOffRamp>> | null = null;
+      let lastError: unknown = null;
+      for (const candidate of candidates) {
+        try {
+          remote = await requeryOffRamp(candidate);
+          lastError = null;
+          break;
+        } catch (e) {
+          lastError = e;
+          const is404 = e instanceof QuidaxRampError && e.status === 404;
+          if (!is404) break;
+        }
+      }
 
-      try {
-        const swap = await getSwapTransaction({ quidaxUserId: account.quidax_user_id, swapTransactionId: swapId });
-        if (swap.status === "completed") {
-          const received = Number(swap.receivedAmount);
-          if (!Number.isFinite(received) || received <= 0) { skipped++; continue; }
-          const { error: settleError } = await supabase.rpc("complete_crypto_sell", {
-            p_swap_id: swapId,
-            p_ngn_kobo: Math.round(received * 100),
-          });
-          if (settleError) {
-            console.error(`crypto-sell-reconcile: complete_crypto_sell failed for ${swapId}:`, settleError.message);
-            skipped++;
-            continue;
-          }
-          completed++;
-        } else if (swap.status === "failed") {
-          await supabase.rpc("fail_crypto_sell", { p_swap_id: swapId, p_reason: "reconcile_failed" });
-          failed++;
-        } else {
-          stillPending++;
-        }
-      } catch (e) {
-        if (e instanceof QuidaxError) {
-          console.error(`crypto-sell-reconcile: requery failed for swap ${swapId} (status ${e.status}):`, e.message);
-        }
+      if (!remote) {
+        if (lastError) console.error(`crypto-sell-reconcile: requery failed for tx ${tx.id}:`, lastError instanceof Error ? lastError.message : String(lastError));
         skipped++;
+        continue;
+      }
+
+      const key = merchantReference || candidates[0];
+      if (remote.status === "successful" || remote.fiatPayoutStatus === "completed") {
+        if (!remote.fiatPayoutAmount || remote.fiatPayoutAmount <= 0) { skipped++; continue; }
+        const { error: settleError } = await supabase.rpc("complete_crypto_sell_offramp", {
+          p_reference: key,
+          p_ngn_kobo: Math.round(remote.fiatPayoutAmount * 100),
+        });
+        if (settleError) {
+          console.error(`crypto-sell-reconcile: complete_crypto_sell_offramp failed for ${key}:`, settleError.message);
+          skipped++;
+          continue;
+        }
+        completed++;
+      } else if (remote.status === "failed" || remote.fiatPayoutStatus === "failed") {
+        await supabase.rpc("fail_crypto_sell_offramp", { p_reference: key, p_reason: "reconcile_failed" });
+        failed++;
+      } else {
+        stillPending++;
       }
     }
 

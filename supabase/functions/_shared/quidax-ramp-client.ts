@@ -354,3 +354,146 @@ export async function getBuyLimits(currency = "ngn"): Promise<PurchaseLimits | n
     return null;
   }
 }
+
+// --- Off-ramp: Sell pays the customer's bank account directly, using
+// Quidax's own liquidity, instead of crediting the KaysPay wallet. Confirmed
+// authorized on this account 2026-08-20 (was a hard 403 wall before Quidax
+// fixed the account-level block that also blocked Buy). Deliberately kept
+// self-contained to the Ramp product's own bank list/codes rather than
+// mixing in the Exchange API's scheme — never confirmed they match. ---
+
+export interface OffRampBank {
+  code: string;
+  name: string;
+}
+
+export async function listOffRampBanks(): Promise<OffRampBank[]> {
+  const { status, data } = await callRamp("/custodial/banks");
+  const payload = unwrap(status, data, "Could not fetch the bank list");
+  const list = Array.isArray(payload) ? payload : (payload as any)?.data ?? [];
+  return (list as any[]).map((b) => ({ code: String(b.code ?? ""), name: String(b.name ?? "") }));
+}
+
+export interface OffRampInitiated {
+  publicId: string;
+  /** Quidax's own reference (TRX-*) — what requeryOffRamp/the webhook actually key on. */
+  reference: string;
+  /** Echoed back — same value we sent as merchant_reference. */
+  merchantReference: string;
+  status: string;
+}
+
+/**
+ * Opens a crypto -> Naira sale that pays the customer's bank directly.
+ * `firstName`/`lastName` are compared against the bank account's registered
+ * holder name in the next step (attachOffRampBankAccount) — Quidax rejects
+ * on a mismatch, so this can't accidentally pay someone else's account.
+ */
+export async function initiateOffRamp(params: {
+  merchantReference: string;
+  cryptoAmount: number;
+  asset: string;
+  network: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+}): Promise<OffRampInitiated> {
+  const { status, data } = await callRamp("/custodial/off_ramp_transactions/initiate", "POST", {
+    from_currency: params.asset.toLowerCase(),
+    to_currency: "ngn",
+    from_amount: String(params.cryptoAmount),
+    network: params.network,
+    merchant_reference: params.merchantReference,
+    customer: {
+      email: params.email,
+      first_name: params.firstName,
+      last_name: params.lastName,
+    },
+  });
+  const payload = unwrap(status, data, "Could not start this sale");
+  return {
+    publicId: String(payload.public_id ?? ""),
+    reference: String(payload.reference ?? ""),
+    status: String(payload.status ?? "pending"),
+  };
+}
+
+export class OffRampNameMismatchError extends QuidaxRampError {}
+
+/**
+ * Attaches the payout bank account — Quidax verifies the account's
+ * registered holder name against the customer name given at initiate, and
+ * rejects with "Name does not match" on a mismatch. That rejection is
+ * surfaced as a distinct error type so the caller can show a clear message
+ * rather than a generic failure. On success, returns Quidax's own record of
+ * the account's registered name (metadata.account_name) — the real
+ * resolved name, not just an echo of what the customer typed.
+ */
+export async function attachOffRampBankAccount(params: {
+  merchantReference: string;
+  bankCode: string;
+  accountNumber: string;
+}): Promise<{ accountName: string | null }> {
+  const { status, data } = await callRamp(
+    `/custodial/off_ramp_transactions/${encodeURIComponent(params.merchantReference)}/bank_account`,
+    "POST",
+    { bank_code: params.bankCode, account_number: params.accountNumber, currency_code: "ngn" },
+  );
+  if (status >= 400) {
+    const message = String(data?.message || "Could not attach this bank account");
+    if (/name does not match/i.test(message)) {
+      throw new OffRampNameMismatchError(message, status);
+    }
+    throw new QuidaxRampError(message, status);
+  }
+  return { accountName: data?.metadata?.account_name ? String(data.metadata.account_name) : null };
+}
+
+export interface OffRampDepositAddress {
+  address: string;
+  network: string;
+  currency: string;
+}
+
+/** Confirms the sale and returns the deposit address the customer's crypto must be withdrawn to. */
+export async function confirmOffRamp(merchantReference: string): Promise<OffRampDepositAddress> {
+  const { status, data } = await callRamp(
+    `/custodial/off_ramp_transactions/${encodeURIComponent(merchantReference)}/confirm`,
+    "POST",
+  );
+  const payload = unwrap(status, data, "Could not confirm this sale");
+  return {
+    address: String(payload.address ?? ""),
+    network: String(payload.network ?? ""),
+    currency: String(payload.currency ?? ""),
+  };
+}
+
+export interface OffRampStatus {
+  status: string;
+  fiatPayoutAmount: number | null;
+  fiatPayoutStatus: string | null;
+}
+
+/**
+ * Direct status check for reconcile — same "requery, don't guess" discipline
+ * as requeryOnRamp. Confirmed against Quidax's own docs, 2026-08-20: this
+ * path is `/off_ramp_transaction/{reference}` (singular, NOT under
+ * `/custodial/`) — the same inconsistent-with-initiate/confirm quirk
+ * on-ramp's own requery endpoint has. Takes whichever reference the caller
+ * has on hand; crypto-sell-reconcile tries Quidax's own `reference` first,
+ * falling back to `merchant_reference` on a 404 — same "try both" pattern
+ * crypto-buy-reconcile already uses for this exact ambiguity.
+ */
+export async function requeryOffRamp(reference: string): Promise<OffRampStatus> {
+  const { status, data } = await callRamp(
+    `/off_ramp_transaction/${encodeURIComponent(reference)}`,
+  );
+  const payload = unwrap(status, data, "Could not fetch this sale");
+  const payout = (payload as any).fiat_payout;
+  return {
+    status: String(payload.status ?? ""),
+    fiatPayoutAmount: payout?.amount != null ? Number(payout.amount) : null,
+    fiatPayoutStatus: payout?.status != null ? String(payout.status) : null,
+  };
+}

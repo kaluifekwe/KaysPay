@@ -3,6 +3,8 @@ import { adminClient } from "../_shared/auth.ts";
 import { AdminAuthError, requireAdmin } from "../_shared/admin-auth.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -34,7 +36,23 @@ serve(async (req) => {
       .select("id, full_name, phone, created_at, last_active")
       .eq("id", userId)
       .maybeSingle();
-    if (profileError || !profile) return json({ error: "User not found" }, 404);
+    if (profileError) return json({ error: "Could not load user" }, 500);
+
+    // A deleted Auth/profile row is intentionally absent, but the stable
+    // audit subject remains addressable by UUID for regulated record review.
+    if (!profile) {
+      const [{ data: subject }, txCount] = await Promise.all([
+        db.from("customer_subjects").select("subject_id,joined_at,deleted_at").eq("subject_id", userId).maybeSingle(),
+        db.from("transactions").select("id", { count: "exact", head: true }).eq("user_id", userId),
+      ]);
+      if (!subject) return json({ error: "User not found" }, 404);
+      return json({ success: true, user: {
+        id: subject.subject_id, full_name: null, phone: null, email: null,
+        created_at: subject.joined_at, last_active: null, deleted_at: subject.deleted_at,
+        wallet_balance_kobo: null, wallet_locked_kobo: null, kyc_status: "deleted",
+        transaction_count: txCount.count ?? 0,
+      } });
+    }
 
     const [wallet, kyc, txCount, authUser] = await Promise.all([
       db.from("wallets").select("balance, locked_amount").eq("user_id", userId).maybeSingle(),
@@ -73,5 +91,13 @@ serve(async (req) => {
   const { data, error } = await db.rpc("admin_search_users", { p_query: safeQ });
 
   if (error) return json({ error: "Search failed" }, 500);
+  if ((data?.length ?? 0) === 0 && UUID_PATTERN.test(safeQ)) {
+    const { data: subject } = await db.from("customer_subjects")
+      .select("subject_id,joined_at,deleted_at").eq("subject_id", safeQ).maybeSingle();
+    if (subject) return json({ success: true, matches: [{
+      id: subject.subject_id, full_name: null, phone: null,
+      created_at: subject.joined_at, deleted_at: subject.deleted_at,
+    }] });
+  }
   return json({ success: true, matches: data });
 });

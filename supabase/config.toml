@@ -73,10 +73,28 @@ verify_jwt = true
 [functions.crypto-sell]
 verify_jwt = true
 
+[functions.transfer-banks]
+verify_jwt = true
+
+[functions.transfer-resolve-account]
+verify_jwt = true
+
+[functions.transfer-send]
+verify_jwt = true
+
+[functions.transfer-reconcile]
+verify_jwt = true
+
 [functions.crypto-withdraw]
 verify_jwt = true
 
 [functions.crypto-banks]
+verify_jwt = true
+
+[functions.crypto-sell-banks]
+verify_jwt = true
+
+[functions.crypto-sell-resolve-account]
 verify_jwt = true
 
 [functions.crypto-buy-refund-resolve]
@@ -219,6 +237,9 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.admin-user-lookup]
+verify_jwt = true
+
+[functions.admin-user-activity]
 verify_jwt = true
 
 [functions.admin-service-controls]
