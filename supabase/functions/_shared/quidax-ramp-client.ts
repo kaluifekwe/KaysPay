@@ -31,7 +31,7 @@ async function callRamp(
   method = "GET",
   body?: Record<string, unknown>,
 ): Promise<{ status: number; data: any }> {
-  if (!QUIDAX_RAMP_PRIVATE_KEY) throw new QuidaxRampError("Quidax Ramp not configured");
+  if (!QUIDAX_RAMP_PRIVATE_KEY) throw new QuidaxRampError("Crypto service not configured");
 
   const response = await fetchWithTimeout(`${RAMP_BASE_URL}${path}`, {
     method,
@@ -49,7 +49,7 @@ async function callRamp(
     data = JSON.parse(text);
   } catch {
     console.error("Quidax Ramp returned a non-JSON response:", redactSecrets(text.slice(0, 300)));
-    data = { status: "error", message: "Quidax returned an unexpected response" };
+    data = { status: "error", message: "Unexpected response from crypto service" };
   }
   return { status: response.status, data };
 }
@@ -147,7 +147,7 @@ export async function confirmOnRamp(merchantReference: string): Promise<OnRampBa
   );
   const payload = unwrap(status, data, "Could not generate payment details");
   const accountNumber = String(payload.account_number ?? "");
-  if (!accountNumber) throw new QuidaxRampError("Quidax did not return a payment account");
+  if (!accountNumber) throw new QuidaxRampError("Could not generate payment details");
   return {
     accountName: String(payload.account_name ?? ""),
     accountNumber,
@@ -259,7 +259,7 @@ export async function verifyRefundAccount(params: {
   );
   const payload = unwrap(status, data, "Could not verify this account");
   const accountName = String(payload.account_name ?? "");
-  if (!accountName) throw new QuidaxRampError("Quidax could not verify this account");
+  if (!accountName) throw new QuidaxRampError("Could not verify this account");
   return {
     accountName,
     accountNumber: String(payload.account_number ?? params.accountNumber),

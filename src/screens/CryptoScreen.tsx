@@ -824,7 +824,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
           <View style={styles.confirmWarningBox}>
             <Text style={styles.confirmWarning}>
-              Transfer from a bank account in your own name — Quidax rejects payments from a different name, and
+              Transfer from a bank account in your own name — payments from a different name will be rejected, and
               sending a different amount will delay it.
             </Text>
           </View>
@@ -1233,7 +1233,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 <View style={styles.confirmBox}>
                   <Text style={styles.confirmText}>
                     Delivered to your KaysPay crypto account. The exact amount of {selectedBuyAsset} you receive is
-                    confirmed on the next screen, once Quidax prices your transfer.
+                    confirmed on the next screen, once your transfer is priced.
                   </Text>
                 </View>
 

@@ -26,7 +26,7 @@ async function callQuidax(
   method = "GET",
   body?: Record<string, unknown>,
 ): Promise<{ status: number; data: any; headers: Headers }> {
-  if (!QUIDAX_SECRET_KEY) throw new QuidaxError("Quidax not configured");
+  if (!QUIDAX_SECRET_KEY) throw new QuidaxError("Crypto service not configured");
 
   const response = await fetchWithTimeout(`${QUIDAX_BASE_URL}${path}`, {
     method,
@@ -44,7 +44,7 @@ async function callQuidax(
     data = JSON.parse(text);
   } catch {
     console.error("Quidax returned a non-JSON response:", redactSecrets(text.slice(0, 300)));
-    data = { status: "error", message: "Quidax returned an unexpected response" };
+    data = { status: "error", message: "Unexpected response from crypto service" };
   }
   return { status: response.status, data, headers: response.headers };
 }
@@ -76,7 +76,7 @@ export async function createSubAccount(params: {
     last_name: params.lastName,
   });
   if (status >= 400 || data?.status !== "success") {
-    throw new QuidaxError(data?.message || "Could not create Quidax sub-account", status);
+    throw new QuidaxError(data?.message || "Could not set up your crypto account", status);
   }
   return { id: data.data.id, sn: data.data.sn, email: data.data.email };
 }
@@ -94,7 +94,7 @@ export async function getSubAccounts(): Promise<QuidaxSubAccount[]> {
   for (let guard = 0; guard < 50; guard++) {
     const { status, data, headers } = await callQuidax(`/users?per_page=100&page=${page}`, "GET");
     if (status >= 400 || data?.status !== "success") {
-      throw new QuidaxError(data?.message || "Could not list Quidax sub-accounts", status);
+      throw new QuidaxError(data?.message || "Could not list crypto accounts", status);
     }
     results.push(...(data.data as any[]).map((u) => ({ id: String(u.id), sn: String(u.sn), email: String(u.email) })));
     const nextPage = headers.get("x-next-page");
@@ -117,7 +117,7 @@ export interface QuidaxWallet {
 export async function getSubAccountWallets(quidaxUserId: string): Promise<QuidaxWallet[]> {
   const { status, data } = await callQuidax(`/users/${encodeURIComponent(quidaxUserId)}/wallets`, "GET");
   if (status >= 400 || data?.status !== "success") {
-    throw new QuidaxError(data?.message || "Could not fetch Quidax wallets", status);
+    throw new QuidaxError(data?.message || "Could not fetch your crypto balances", status);
   }
   return (data.data as any[]).map((w) => ({
     currency: String(w.currency),
@@ -154,7 +154,7 @@ export async function createDepositAddress(params: {
     throw new QuidaxError(data?.message || "Could not generate a deposit address", status);
   }
   const addr = data.data.address ?? data.data.data?.address;
-  if (!addr) throw new QuidaxError("Quidax did not return a deposit address");
+  if (!addr) throw new QuidaxError("Could not generate a deposit address");
   return {
     id: String(data.data.id),
     currency: String(data.data.currency),
@@ -231,7 +231,7 @@ export async function getMarketTicker(market: string): Promise<QuidaxTicker> {
   const bid = Number(ticker?.buy);
   const ask = Number(ticker?.sell);
   if (!Number.isFinite(last) || last <= 0) {
-    throw new QuidaxError("Quidax returned no usable price for " + market);
+    throw new QuidaxError("No price currently available for " + market);
   }
   return {
     last,
@@ -245,7 +245,7 @@ export async function getMarketTicker(market: string): Promise<QuidaxTicker> {
 export async function getParentAccount(): Promise<QuidaxSubAccount> {
   const { status, data } = await callQuidax("/users/me", "GET");
   if (status >= 400 || data?.status !== "success") {
-    throw new QuidaxError(data?.message || "Could not fetch the Quidax parent account", status);
+    throw new QuidaxError(data?.message || "Could not fetch merchant account", status);
   }
   return { id: String(data.data.id), sn: String(data.data.sn), email: String(data.data.email) };
 }
