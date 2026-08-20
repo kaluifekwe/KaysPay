@@ -585,6 +585,21 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     }
   }, [pendingBuyPayment]);
 
+  // Quidax's amount always carries a Kobo remainder (their flat processor
+  // fee plus 7.5% VAT on it lands on exactly .50 every time) — not
+  // something we can round away without the transfer no longer matching
+  // what they're expecting. Copying it removes the actual friction (typing
+  // it by hand) without touching the number itself.
+  const handleCopyBuyAmount = useCallback(async () => {
+    if (!pendingBuyPayment) return;
+    try {
+      await Clipboard.setStringAsync(pendingBuyPayment.payment.amountToPay.toFixed(2));
+      Alert.alert('Copied', 'Amount copied — paste it into your bank transfer.');
+    } catch {
+      Alert.alert('Copy amount', 'Could not copy the amount. Please try again.');
+    }
+  }, [pendingBuyPayment]);
+
   if (pendingBuyPayment) {
     const { payment, estimatedCrypto, destinationType, asset, pendingSwap } = pendingBuyPayment;
     return (
@@ -599,7 +614,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={styles.confirmBox}>
             <Text style={styles.hintText}>Transfer exactly</Text>
-            <Text style={styles.heroValue2}>{formatNaira(payment.amountToPay)}</Text>
+            <TouchableOpacity onPress={handleCopyBuyAmount} activeOpacity={0.7}>
+              <Text style={styles.heroValue2}>{formatNaira(payment.amountToPay)}</Text>
+              <Text style={styles.tapToCopyHint}>Tap to copy</Text>
+            </TouchableOpacity>
             <View style={styles.payDetailRow}>
               <Text style={styles.payDetailLabel}>Bank</Text>
               <Text style={styles.payDetailValue}>{payment.bankName}</Text>
@@ -1548,7 +1566,8 @@ function createStyles(theme: AppTheme) {
 
   destinationToggleRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.L },
 
-  heroValue2: { fontFamily: MONO, fontSize: 26, fontWeight: '600', color: theme.ink, marginTop: Spacing.XS, marginBottom: Spacing.M },
+  heroValue2: { fontFamily: MONO, fontSize: 26, fontWeight: '600', color: theme.ink, marginTop: Spacing.XS },
+  tapToCopyHint: { ...Typography.CAPTION, color: theme.brand, marginBottom: Spacing.M },
   payDetailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: Spacing.XS },
   payDetailLabel: { ...Typography.CAPTION, color: theme.inkFaint },
   payDetailValue: { ...Typography.BODY, color: theme.ink, fontWeight: '600' },
