@@ -654,12 +654,18 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 <Text style={styles.feeLabel}>{formatNaira(payment.merchantMarkup)}</Text>
               </View>
             )}
+            <View style={[styles.payDetailRow, styles.receiveRow]}>
+              <Text style={styles.receiveLabel}>You'll receive</Text>
+              <Text style={styles.receiveValue}>
+                {pendingSwap ? formatCoin(estimatedCrypto, asset) : formatUsdt(estimatedCrypto)}
+              </Text>
+            </View>
           </View>
 
           <Text style={styles.hintText}>
             {pendingSwap
-              ? `You'll receive about ${formatCoin(estimatedCrypto, asset)} into your KaysPay crypto account — first as USDT once the transfer clears, then automatically converted to ${asset}.`
-              : `You'll receive about ${formatUsdt(estimatedCrypto)} into ${destinationType === 'external_wallet' ? 'your external wallet' : 'your KaysPay crypto account'} once the transfer clears.`}
+              ? `Into your KaysPay crypto account — first as USDT once the transfer clears, then automatically converted to ${asset}.`
+              : `Into ${destinationType === 'external_wallet' ? 'your external wallet' : 'your KaysPay crypto account'} once the transfer clears.`}
           </Text>
 
           <View style={styles.confirmWarningBox}>
@@ -1557,6 +1563,9 @@ function createStyles(theme: AppTheme) {
   payDetailAccount: { ...Typography.BODY, fontFamily: MONO, color: theme.brand, fontWeight: '700', letterSpacing: 1 },
   feeBreakdown: { marginTop: Spacing.M, paddingHorizontal: Spacing.XS },
   feeLabel: { ...Typography.CAPTION, fontFamily: MONO, color: theme.inkMuted },
+  receiveRow: { marginTop: Spacing.S, paddingTop: Spacing.M, borderTopWidth: 1, borderTopColor: theme.hairline },
+  receiveLabel: { ...Typography.BODY, fontWeight: '700', color: theme.ink },
+  receiveValue: { ...Typography.BODY, fontFamily: MONO, fontWeight: '700', color: theme.brand },
   confirmWarningBox: {
     backgroundColor: theme.errorBg,
     borderRadius: Spacing.CARD_RADIUS,
