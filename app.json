@@ -4,7 +4,7 @@
     "slug": "KaysPay",
     "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/icon-green.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
@@ -21,7 +21,7 @@
       ],
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
-        "foregroundImage": "./assets/android-icon-foreground.png"
+        "foregroundImage": "./assets/icon-green.png"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.kayspay.app",
@@ -30,7 +30,7 @@
       ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/icon-green.png"
     },
     "runtimeVersion": {
       "policy": "appVersion"
