@@ -223,6 +223,22 @@ export const cryptoService = {
   },
 
   /**
+   * The real min/max for a Buy, shown on the amount screen BEFORE the
+   * customer commits — the exact same numbers crypto-buy itself enforces
+   * (both read from the same server-side resolveBuyLimits()), so this can
+   * never promise something the actual purchase then rejects.
+   */
+  async getBuyLimits(): Promise<{ minNgn: number; maxNgn: number } | null> {
+    try {
+      const { data, error } = await withTimeout(supabase.functions.invoke('crypto-buy-limits', { body: {} }));
+      if (error || !data?.success) return null;
+      return { minNgn: Number(data.min_ngn), maxNgn: Number(data.max_ngn) };
+    } catch {
+      return null;
+    }
+  },
+
+  /**
    * Starts a purchase: Quidax issues a single-use bank account for the
    * customer to transfer Naira into. For USDT, Quidax delivers it either to
    * their own KaysPay crypto account (default) or a `destination` wallet

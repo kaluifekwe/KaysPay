@@ -179,6 +179,11 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [coinSearch, setCoinSearch] = useState('');
   const [coinFilter, setCoinFilter] = useState<CoinFilter>('popular');
   const [usdtNgnRate, setUsdtNgnRate] = useState<number | null>(null);
+  // Shown on the amount screen before the customer commits — the exact
+  // numbers crypto-buy itself enforces, so this can't promise something the
+  // real purchase then rejects (or worse, silently accepts and gets stuck —
+  // see the ₦2,790 purchase that hung forever below Quidax's real minimum).
+  const [buyLimits, setBuyLimits] = useState<{ minNgn: number; maxNgn: number } | null>(null);
   const [selectedBuyAsset, setSelectedBuyAsset] = useState<BuyAsset | null>(null);
   const [buyUsdt, setBuyUsdt] = useState('');
   // Where a purchase should be delivered: the customer's own KaysPay crypto
@@ -260,6 +265,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     // Prices are needed up front now too, to value every coin in the wallet
     // hero — not just once the customer opens Buy.
     loadMarkets();
+    cryptoService.getBuyLimits().then((limits) => { if (limits) setBuyLimits(limits); });
     storageHelpers.getBoolean(StorageKeys.BALANCE_VISIBLE).then((v) => {
       if (v !== undefined) setBalanceVisible(v);
     });
@@ -407,7 +413,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     ? `This doesn't look like a valid ${buyDestNetwork} address.`
     : null;
 
+  const buyBelowMin = buyLimits != null && buyNgnEstimate != null && buyNgnEstimate < buyLimits.minNgn;
+  const buyAboveMax = buyLimits != null && buyNgnEstimate != null && buyNgnEstimate > buyLimits.maxNgn;
   const canBuy = !!selectedBuyAsset && Number.isFinite(numericBuyUsdt) && numericBuyUsdt > 0
+    && !buyBelowMin && !buyAboveMax
     && (!buyToExternal || (buyDestAddressValid && buyDestVerified));
   const canSell = Number.isFinite(numericSellUsdt) && numericSellUsdt >= 1 && numericSellUsdt <= 2000
     && quidaxUsdtBalance != null && numericSellUsdt <= quidaxUsdtBalance;
@@ -988,6 +997,11 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 </View>
 
                 <Text style={styles.label}>Amount to spend (USDT)</Text>
+                {buyLimits && (
+                  <Text style={styles.hintText}>
+                    Between {formatNaira(buyLimits.minNgn)} and {formatNaira(buyLimits.maxNgn)}
+                  </Text>
+                )}
                 <TextInput
                   style={styles.input}
                   value={buyUsdt}
@@ -1001,6 +1015,16 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   <Text style={styles.estimateText}>
                     ≈ {formatNaira(buyNgnEstimate)}
                     {buyCoinEstimate != null ? ` · ${formatCoin(buyCoinEstimate, selectedBuyAsset)}` : ''}
+                  </Text>
+                )}
+                {buyBelowMin && buyLimits && (
+                  <Text style={styles.errorText}>
+                    Minimum purchase is {formatNaira(buyLimits.minNgn)}.
+                  </Text>
+                )}
+                {buyAboveMax && buyLimits && (
+                  <Text style={styles.errorText}>
+                    Maximum purchase is {formatNaira(buyLimits.maxNgn)}.
                   </Text>
                 )}
 

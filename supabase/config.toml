@@ -67,6 +67,9 @@ verify_jwt = true
 [functions.crypto-buy]
 verify_jwt = true
 
+[functions.crypto-buy-limits]
+verify_jwt = true
+
 [functions.crypto-sell]
 verify_jwt = true
 
