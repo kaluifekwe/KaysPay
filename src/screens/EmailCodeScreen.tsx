@@ -104,7 +104,26 @@ export default function EmailCodeScreen(props: any) {
   };
 
   const handleCodeChange = (text: string, index: number) => {
-    const digit = text.replace(/[^0-9]/g, '').slice(-1);
+    const digits = text.replace(/[^0-9]/g, '');
+
+    // Pasting (or an OS autofill suggestion) drops the whole code into
+    // whichever box was focused — spread it across all six instead of
+    // truncating to just the last digit, so users can copy the code from
+    // their email app instead of retyping it one digit at a time.
+    if (digits.length > 1) {
+      const newCode = [...code];
+      let i = index;
+      for (const d of digits) {
+        if (i > 5) break;
+        newCode[i] = d;
+        i++;
+      }
+      setCode(newCode);
+      inputRefs.current[Math.min(i, 5)]?.focus();
+      return;
+    }
+
+    const digit = digits.slice(-1);
     const newCode = [...code];
     newCode[index] = digit;
     setCode(newCode);

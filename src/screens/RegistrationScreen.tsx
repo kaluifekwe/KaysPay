@@ -89,7 +89,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
   const [phoneError, setPhoneError] = useState('');
   const [fullNameValid, setFullNameValid] = useState(false);
   const [emailValid, setEmailValid] = useState(false);
-  const [phoneValid, setPhoneValid] = useState(true); // phone is optional
+  const [phoneValid, setPhoneValid] = useState(false);
   const [detectedNetwork, setDetectedNetwork] = useState<string | null>(null);
 
   // Step 2
@@ -178,12 +178,10 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
     setEmailValid(true);
   };
 
-  // Phone is optional (the app serves users outside Nigeria too) — only
-  // validate format when something is entered.
   const validatePhone = (value: string) => {
     if (!value.trim()) {
-      setPhoneError('');
-      setPhoneValid(true);
+      setPhoneError('Phone number is required');
+      setPhoneValid(false);
       setDetectedNetwork(null);
       return;
     }
@@ -303,7 +301,14 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
       // never be picked up by a different account signed in later on this
       // device.
       const newUserId = result.userId;
-      if (newUserId) await authService.stashSignupPin(newUserId, pinString);
+      if (newUserId) {
+        await authService.stashSignupPin(newUserId, pinString);
+        // Separate stash so AppNavigator can offer biometric enrollment once,
+        // right after email verification — RequirePinNavigator's own
+        // BiometricSetup step never runs for these users since a PIN already
+        // exists by then.
+        await authService.stashPinForBiometricPrompt(newUserId, pinString);
+      }
 
       // Best-effort immediate save so the PIN is usually persisted before email
       // verify even completes. Root cause of the redundant PIN gate: right after
@@ -475,7 +480,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
               </View>
 
               <View style={styles.fieldContainer}>
-                {renderLabel('Phone Number', false)}
+                {renderLabel('Phone Number')}
                 <View style={[styles.inputWrapper, getFieldStyle(!!phoneError, phoneValid, focusedField === 'phone')]}>
                   {renderFieldIcon(Icons.phone)}
                   <TextInput

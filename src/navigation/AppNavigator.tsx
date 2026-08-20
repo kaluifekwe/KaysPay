@@ -33,6 +33,7 @@ import ChangePinScreen from '../screens/ChangePinScreen';
 import ForgotPinScreen from '../screens/ForgotPinScreen';
 import LegalDocumentScreen from '../screens/LegalDocumentScreen';
 import ActiveSessionsScreen from '../screens/ActiveSessionsScreen';
+import BiometricSetupScreen from '../screens/BiometricSetupScreen';
 import { authService } from '../services/auth.service';
 import { pushService } from '../services/push.service';
 import { deviceSessionService } from '../services/deviceSession.service';
@@ -101,6 +102,15 @@ export default function AppNavigator() {
   // connection blipped. A genuinely new user's real `false` still comes
   // through below once the check actually succeeds.
   const [hasPin, setHasPin] = useState(true);
+  // Post-signup, one-time biometric enrollment offer. RequirePinNavigator's
+  // own BiometricSetup step never runs for a fresh signup, because the PIN
+  // gate it's meant to follow is already satisfied by then (PIN is captured
+  // during Registration itself — see RegistrationScreen). This is what makes
+  // sure those users still get asked once. `resolved` gates rendering so
+  // Main never flashes for a beat before this decides whether to show it.
+  const [needsBiometricPrompt, setNeedsBiometricPrompt] = useState(false);
+  const [biometricPromptPin, setBiometricPromptPin] = useState<string | null>(null);
+  const [biometricPromptResolved, setBiometricPromptResolved] = useState(false);
 
   // One-time, best-effort: purge any leftover PIN stashed under the old
   // device-global key (pre-account-scoping). Never read/consumed — only
@@ -171,6 +181,38 @@ export default function AppNavigator() {
     }
   }, [isAuth, hasVerifiedEmail, hasPin]);
 
+  // Resolves the one-time post-signup biometric prompt (see
+  // needsBiometricPrompt above). Runs once per sign-in, right after the PIN
+  // gate clears either way (immediate save or the ensurePinSaved fallback).
+  useEffect(() => {
+    if (isAuth && hasVerifiedEmail && hasPin && !biometricPromptResolved) {
+      let cancelled = false;
+      (async () => {
+        let pin: string | null = null;
+        try {
+          const session = await authService.getCurrentSession();
+          const userId = session?.user?.id;
+          if (userId) pin = await authService.getStashedBiometricPromptPin(userId);
+        } catch {
+          // best-effort — worst case this one-time prompt is simply skipped
+        }
+        if (cancelled) return;
+        setBiometricPromptPin(pin);
+        setNeedsBiometricPrompt(!!pin);
+        setBiometricPromptResolved(true);
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!isAuth) {
+      // Reset so the next sign-in (possibly a different account) resolves fresh.
+      setBiometricPromptResolved(false);
+      setNeedsBiometricPrompt(false);
+      setBiometricPromptPin(null);
+    }
+  }, [isAuth, hasVerifiedEmail, hasPin, biometricPromptResolved]);
+
   const checkAuth = async () => {
     try {
       const session = await authService.getCurrentSession();
@@ -233,6 +275,32 @@ export default function AppNavigator() {
         ) : !hasPin ? (
           <RootStack.Screen name="RequirePin">
             {() => <RequirePinNavigator onComplete={() => setHasPin(true)} />}
+          </RootStack.Screen>
+        ) : !biometricPromptResolved ? (
+          <RootStack.Screen name="Loading">
+            {() => (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={theme.brand} />
+              </View>
+            )}
+          </RootStack.Screen>
+        ) : needsBiometricPrompt ? (
+          <RootStack.Screen name="BiometricPrompt">
+            {() => (
+              <BiometricSetupScreen
+                route={{ params: { pin: biometricPromptPin || undefined } }}
+                onComplete={async () => {
+                  try {
+                    const session = await authService.getCurrentSession();
+                    const userId = session?.user?.id;
+                    if (userId) await authService.clearStashedBiometricPromptPin(userId);
+                  } catch {
+                    // best-effort — the stash is scoped per-account and harmless if it lingers
+                  }
+                  setNeedsBiometricPrompt(false);
+                }}
+              />
+            )}
           </RootStack.Screen>
         ) : (
           <RootStack.Screen name="Main" component={MainStackScreen} />

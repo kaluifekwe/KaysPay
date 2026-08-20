@@ -4,6 +4,10 @@ import { withTimeout } from '../utils/network';
 export interface KycStatus {
   verified: boolean;
   verifiedName?: string;
+  /** The verified NIN itself — own data, RLS-scoped to the caller. Lets
+   *  callers (e.g. wallet funding) reuse an already-verified identity
+   *  instead of asking the user to type their BVN/NIN a second time. */
+  verifiedNin?: string;
 }
 
 export interface KycVerifyResult {
@@ -25,12 +29,12 @@ export const kycService = {
   async getStatus(): Promise<KycStatus> {
     try {
       const { data } = await withTimeout(
-        (async () => supabase.from('user_kyc').select('status, verified_record').maybeSingle())(),
+        (async () => supabase.from('user_kyc').select('status, nin, verified_record').maybeSingle())(),
       );
       if (!data || data.status !== 'verified') return { verified: false };
       const record = data.verified_record as any;
       const verifiedName = [record?.firstname, record?.middlename, record?.surname].filter(Boolean).join(' ');
-      return { verified: true, verifiedName: verifiedName || undefined };
+      return { verified: true, verifiedName: verifiedName || undefined, verifiedNin: data.nin || undefined };
     } catch {
       return { verified: false };
     }

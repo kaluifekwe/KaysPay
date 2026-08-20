@@ -17,6 +17,7 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -36,6 +37,7 @@ import {
   type BuyAsset,
   type MarketCoin,
 } from '../services/crypto.service';
+import { kycService } from '../services/kyc.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import ProviderLogo from '../components/ProviderLogo';
 import { CRYPTO_LOGOS } from '../utils/providerLogos';
@@ -44,7 +46,7 @@ import QrCodeView from '../components/QrCodeView';
 import CryptoRefundBankModal from '../components/CryptoRefundBankModal';
 
 interface CryptoScreenProps {
-  navigation: { goBack: () => void };
+  navigation: { goBack: () => void; navigate: (screen: string, params?: any) => void };
 }
 
 type Tab = 'deposit' | 'buy' | 'sell' | 'withdraw';
@@ -190,6 +192,18 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const insets = useSafeAreaInsets();
 
   const [tab, setTab] = useState<Tab>('deposit');
+  // Buy/Sell require identity verification (NIN/BVN) — Deposit doesn't.
+  // null = not checked yet, so the real Buy/Sell forms never flash on
+  // screen before this resolves; the gate below only renders once it's
+  // explicitly false. Re-checked on every focus so returning from the KYC
+  // screen with a fresh verification unlocks the tab immediately.
+  const [kycVerified, setKycVerified] = useState<boolean | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      kycService.getStatus().then((s) => setKycVerified(s.verified)).catch(() => setKycVerified(false));
+    }, []),
+  );
   // Shares the same StorageKeys.BALANCE_VISIBLE flag as the Home screen —
   // "hide my balance" is one app-wide privacy preference, not a per-screen one.
   const [balanceVisible, setBalanceVisible] = useState(true);
@@ -1017,6 +1031,26 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
           </View>
 
           <View style={styles.panel}>
+            {(tab === 'buy' || tab === 'sell') && kycVerified === false && (
+              <View style={styles.kycGate}>
+                <View style={styles.kycGateIconWrap}>
+                  <Ionicons name="shield-checkmark-outline" size={28} color={theme.brand} />
+                </View>
+                <Text style={styles.kycGateTitle}>Verify Your Identity</Text>
+                <Text style={styles.kycGateSubtitle}>
+                  Buying and selling crypto requires identity verification. Verify your NIN or BVN to
+                  continue — it only takes a minute.
+                </Text>
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={() => navigation.navigate('Kyc', { requiredFor: 'buy or sell crypto' })}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.primaryButtonText}>Verify Now</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {tab === 'deposit' && (
               <View>
                 <Text style={styles.hintText}>
@@ -1069,7 +1103,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
               </View>
             )}
 
-            {tab === 'buy' && buyStep === 'pick' && (
+            {tab === 'buy' && buyStep === 'pick' && kycVerified !== false && (
               <View>
                 <View style={styles.search}>
                   <Ionicons name="search" size={15} color={theme.inkFaint} />
@@ -1149,7 +1183,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
               </View>
             )}
 
-            {tab === 'buy' && buyStep === 'amount' && selectedBuyAsset && (
+            {tab === 'buy' && buyStep === 'amount' && selectedBuyAsset && kycVerified !== false && (
               <View>
                 <TouchableOpacity style={styles.backLink} onPress={() => setBuyStep('pick')}>
                   <Ionicons name="chevron-back" size={16} color={theme.inkFaint} />
@@ -1223,7 +1257,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
               </View>
             )}
 
-            {tab === 'buy' && buyStep === 'destination' && selectedBuyAsset && (
+            {tab === 'buy' && buyStep === 'destination' && selectedBuyAsset && kycVerified !== false && (
               <View>
                 <TouchableOpacity style={styles.backLink} onPress={() => setBuyStep('amount')}>
                   <Ionicons name="chevron-back" size={16} color={theme.inkFaint} />
@@ -1301,7 +1335,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
               </View>
             )}
 
-            {tab === 'sell' && (
+            {tab === 'sell' && kycVerified !== false && (
               <View>
                 <Text style={styles.label}>Amount (USDT)</Text>
                 <TextInput
@@ -1743,6 +1777,28 @@ function createStyles(theme: AppTheme) {
     backgroundColor: theme.brandSoft,
     borderRadius: Spacing.CARD_RADIUS,
     padding: Spacing.M,
+    marginBottom: Spacing.L,
+  },
+
+  kycGate: {
+    alignItems: 'center',
+    paddingVertical: Spacing.XL,
+    paddingHorizontal: Spacing.M,
+  },
+  kycGateIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: theme.brandSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.M,
+  },
+  kycGateTitle: { ...Typography.CARD_TITLE, color: theme.ink, marginBottom: Spacing.S },
+  kycGateSubtitle: {
+    ...Typography.BODY,
+    color: theme.inkMuted,
+    textAlign: 'center',
     marginBottom: Spacing.L,
   },
 

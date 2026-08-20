@@ -18,7 +18,13 @@ import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtect
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
 
-export default function KycScreen({ navigation }: any) {
+export default function KycScreen({ navigation, route }: any) {
+  // Reached either from Settings/Profile (verification is optional for the
+  // app generally) or from a hard gate — Crypto Buy/Sell or Wallet Funding
+  // (see CryptoScreen / WalletFundingScreen), which pass their own
+  // requiredFor reason. Those paths shouldn't tell the user this step is
+  // optional right after blocking them on it.
+  const requiredFor: string | undefined = route?.params?.requiredFor;
   useSensitiveScreenProtection();
   const { theme } = useTheme();
   const styles = createStyles(theme);
@@ -111,8 +117,9 @@ export default function KycScreen({ navigation }: any) {
             <View style={styles.formCard}>
               <Text style={styles.title}>Verify Your Identity</Text>
               <Text style={styles.subtitle}>
-                Optional, but recommended. Enter your 11-digit National Identification Number (NIN) to
-                confirm your identity. Your profile name will be updated to match your NIN record.
+                {requiredFor
+                  ? `Required before you can ${requiredFor}. Enter your 11-digit National Identification Number (NIN) to confirm your identity. Your profile name will be updated to match your NIN record.`
+                  : 'Optional, but recommended. Enter your 11-digit National Identification Number (NIN) to confirm your identity. Your profile name will be updated to match your NIN record.'}
               </Text>
 
               <Text style={styles.label}>NIN</Text>

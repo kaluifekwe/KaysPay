@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -12,6 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import DataPromoBanner from '../components/DataPromoBanner';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -23,6 +24,7 @@ import { formatNaira } from '../utils/formatCurrency';
 import { walletService } from '../services/wallet.service';
 import { notificationService } from '../services/notification.service';
 import { vtuService } from '../services/vtu.service';
+import { kycService } from '../services/kyc.service';
 import { supabase } from '../lib/supabase';
 import { withTimeout } from '../utils/network';
 import type { Transaction } from '../types/app.types';
@@ -137,6 +139,17 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     greetingHour < 12 ? 'Good morning' : greetingHour < 17 ? 'Good afternoon' : 'Good evening';
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  // null = not checked yet (banner stays hidden rather than flashing on
+  // every open); false shows the "Complete your KYC" banner below. Wallet
+  // funding and Crypto both gate on this same status — this is just the
+  // visible reminder so it's never a surprise when those are blocked.
+  const [kycVerified, setKycVerified] = useState<boolean | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      kycService.getStatus().then((s) => setKycVerified(s.verified)).catch(() => {});
+    }, []),
+  );
 
   useEffect(() => {
     loadBalanceVisibility();
@@ -340,6 +353,23 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           </TouchableOpacity>
         )}
 
+        {kycVerified === false && (
+          <TouchableOpacity
+            style={styles.kycBanner}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('Kyc')}
+          >
+            <View style={styles.kycBannerIconWrap}>
+              <Ionicons name="shield-checkmark-outline" size={20} color={theme.brand} />
+            </View>
+            <View style={styles.kycBannerTextWrap}>
+              <Text style={styles.kycBannerTitle}>Complete your identity verification</Text>
+              <Text style={styles.kycBannerSubtitle}>Required to fund your wallet or trade crypto</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={theme.brand} />
+          </TouchableOpacity>
+        )}
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{Strings.HOME_QUICK_ACTIONS}</Text>
           <View style={styles.quickActionsGrid}>
@@ -531,6 +561,37 @@ function createStyles(theme: AppTheme) {
   },
   cashbackPillAmount: {
     fontWeight: '800',
+  },
+  kycBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.brandSoft,
+    borderRadius: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+    marginBottom: 16,
+    gap: 10,
+  },
+  kycBannerIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  kycBannerTextWrap: {
+    flex: 1,
+  },
+  kycBannerTitle: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: theme.ink,
+  },
+  kycBannerSubtitle: {
+    fontSize: 12,
+    color: theme.inkMuted,
+    marginTop: 2,
   },
   walletLabel: {
     ...Typography.CAPTION,

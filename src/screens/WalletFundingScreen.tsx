@@ -18,9 +18,11 @@ import { useTheme } from '../components/ThemeProvider';
 import { formatNaira } from '../utils/formatCurrency';
 import { walletService } from '../services/wallet.service';
 import { virtualAccountService, VirtualAccount, VirtualAccountProvider } from '../services/virtualAccount.service';
+import { kycService } from '../services/kyc.service';
 import ProviderFundingBlock from '../components/ProviderFundingBlock';
 import { supabase } from '../lib/supabase';
 import { useCachedData } from '../hooks/useCachedData';
+import { Ionicons } from '@expo/vector-icons';
 
 const QUICK_AMOUNTS = [500, 1000, 2000, 5000, 10000, 20000];
 
@@ -56,6 +58,25 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     flutterwave: null,
     paystack: null,
   });
+  // Bank-transfer funding requires a verified identity (CBN requires BVN/NIN
+  // to issue a dedicated account number, and this reuses the app's own
+  // verified-NIN flow instead of the old raw, unverified entry). null =
+  // not checked yet, so the gate/funding UI never flashes the wrong state.
+  // Re-checked on every focus so returning from KYC unlocks this immediately.
+  const [kycVerified, setKycVerified] = useState<boolean | null>(null);
+  const [verifiedNin, setVerifiedNin] = useState<string | undefined>();
+
+  useFocusEffect(
+    useCallback(() => {
+      kycService
+        .getStatus()
+        .then((s) => {
+          setKycVerified(s.verified);
+          setVerifiedNin(s.verifiedNin);
+        })
+        .catch(() => setKycVerified(false));
+    }, []),
+  );
   // True until the first getAllMine() resolves — so users who already have
   // an account see a loader instead of a flash of "Get my account number".
   const [accountsInitialLoading, setAccountsInitialLoading] = useState(BANK_TRANSFER_FUNDING_ENABLED);
@@ -245,37 +266,61 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             {BANK_TRANSFER_FUNDING_ENABLED && (
               <>
                 <Text style={styles.sectionTitle}>Fund by Bank Transfer</Text>
-                <Text style={styles.cbnNotice}>
-                  Nigerian banking regulation (CBN) requires a BVN or NIN to issue any dedicated
-                  account number. This is a standard, one-time step — your details are sent
-                  securely and used only to set up your account.
-                </Text>
-                <ProviderFundingBlock
-                  provider="flutterwave"
-                  providerLabel="Flutterwave"
-                  account={accounts.flutterwave}
-                  initialLoading={accountsInitialLoading}
-                  onCreated={(acct) => setAccounts((prev) => ({ ...prev, flutterwave: acct }))}
-                />
-                {PAYSTACK_FUNDING_ENABLED && (
-                  <ProviderFundingBlock
-                    provider="paystack"
-                    providerLabel="Paystack"
-                    account={accounts.paystack}
-                    initialLoading={accountsInitialLoading}
-                    onCreated={(acct) => setAccounts((prev) => ({ ...prev, paystack: acct }))}
-                    onPaystackCheckStarted={startPaystackBalanceCheck}
-                    onPaystackCheckFailed={stopPaystackBalanceCheck}
-                  />
-                )}
-                {paystackCheckStatus !== 'idle' && (
-                  <Text style={styles.paystackCheckText} accessibilityLiveRegion="polite">
-                    {paystackCheckStatus === 'checking'
-                      ? 'Checking your Paystack transfer…'
-                      : paystackCheckStatus === 'credited'
-                        ? 'Transfer detected — wallet credited.'
-                        : 'Transfer not confirmed yet. Your wallet will update automatically when Paystack confirms it.'}
-                  </Text>
+                {kycVerified === false ? (
+                  <View style={styles.kycGate}>
+                    <View style={styles.kycGateIconWrap}>
+                      <Ionicons name="shield-checkmark-outline" size={28} color={theme.brand} />
+                    </View>
+                    <Text style={styles.kycGateTitle}>Verify Your Identity</Text>
+                    <Text style={styles.kycGateSubtitle}>
+                      Nigerian banking regulation (CBN) requires a verified BVN or NIN to issue a
+                      dedicated account number. Verify your identity to set up bank transfer funding —
+                      it only takes a minute.
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.kycGateButton}
+                      onPress={() => navigation.navigate('Kyc', { requiredFor: 'fund your wallet' })}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.kycGateButtonText}>Verify Now</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={styles.cbnNotice}>
+                      Nigerian banking regulation (CBN) requires a BVN or NIN to issue any dedicated
+                      account number. Your verified identity is reused automatically — nothing more to enter.
+                    </Text>
+                    <ProviderFundingBlock
+                      provider="flutterwave"
+                      providerLabel="Flutterwave"
+                      account={accounts.flutterwave}
+                      initialLoading={accountsInitialLoading}
+                      verifiedNin={verifiedNin}
+                      onCreated={(acct) => setAccounts((prev) => ({ ...prev, flutterwave: acct }))}
+                    />
+                    {PAYSTACK_FUNDING_ENABLED && (
+                      <ProviderFundingBlock
+                        provider="paystack"
+                        providerLabel="Paystack"
+                        account={accounts.paystack}
+                        initialLoading={accountsInitialLoading}
+                        verifiedNin={verifiedNin}
+                        onCreated={(acct) => setAccounts((prev) => ({ ...prev, paystack: acct }))}
+                        onPaystackCheckStarted={startPaystackBalanceCheck}
+                        onPaystackCheckFailed={stopPaystackBalanceCheck}
+                      />
+                    )}
+                    {paystackCheckStatus !== 'idle' && (
+                      <Text style={styles.paystackCheckText} accessibilityLiveRegion="polite">
+                        {paystackCheckStatus === 'checking'
+                          ? 'Checking your Paystack transfer…'
+                          : paystackCheckStatus === 'credited'
+                            ? 'Transfer detected — wallet credited.'
+                            : 'Transfer not confirmed yet. Your wallet will update automatically when Paystack confirms it.'}
+                      </Text>
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -382,6 +427,40 @@ function createStyles(theme: AppTheme) {
     marginBottom: Spacing.L,
     lineHeight: 18,
   },
+  kycGate: {
+    alignItems: 'center',
+    backgroundColor: theme.surfaceRaised,
+    borderRadius: 12,
+    paddingVertical: Spacing.XL,
+    paddingHorizontal: Spacing.M,
+    marginBottom: Spacing.L,
+  },
+  kycGateIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: theme.brandSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.M,
+  },
+  kycGateTitle: { ...Typography.CARD_TITLE, color: theme.ink, marginBottom: Spacing.S },
+  kycGateSubtitle: {
+    ...Typography.BODY,
+    color: theme.inkMuted,
+    textAlign: 'center',
+    marginBottom: Spacing.L,
+  },
+  kycGateButton: {
+    height: Spacing.BUTTON_HEIGHT_PRIMARY,
+    minWidth: 160,
+    backgroundColor: theme.brand,
+    borderRadius: Spacing.BUTTON_RADIUS,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.L,
+  },
+  kycGateButtonText: { ...Typography.BUTTON_TEXT, color: theme.background },
   paystackCheckText: {
     ...Typography.CAPTION,
     color: theme.brand,

@@ -17,6 +17,14 @@ export interface AuthResult {
 // a different account signed in later on the same device.
 const pendingPinKey = (userId: string) => `pending_signup_pin:${userId}`;
 
+// Separate stash, same shape as pendingPinKey above: holds the just-created
+// PIN only long enough to offer biometric enrollment once, right after a
+// fresh signup completes (RequirePinNavigator's own BiometricSetup step is
+// skipped for these users, since they already set a PIN during Registration
+// — see AppNavigator's needsBiometricPrompt check). Cleared the moment that
+// one-time prompt is shown, whether the user enables or declines.
+const biometricPromptPinKey = (userId: string) => `biometric_prompt_signup_pin:${userId}`;
+
 // Pre-scoping key name used before this fix. No longer written, but a stray
 // value may still exist on devices that signed up under the old code — purged
 // (never consumed) via purgeLegacyPendingPin() so it can't be inherited by
@@ -332,6 +340,27 @@ export const authService = {
     try { await SecureStore.deleteItemAsync(pendingPinKey(userId)); } catch {}
   },
 
+  /** Stashes the signup PIN for the one-time post-signup biometric prompt. */
+  async stashPinForBiometricPrompt(userId: string, pin: string): Promise<void> {
+    try {
+      if (userId && /^\d{4}$/.test(pin)) await SecureStore.setItemAsync(biometricPromptPinKey(userId), pin);
+    } catch {
+      // best-effort — worst case, that prompt is simply skipped for this signup
+    }
+  },
+
+  /** Reads back the stashed pin for the post-signup biometric prompt, if any. */
+  async getStashedBiometricPromptPin(userId: string): Promise<string | null> {
+    if (!userId) return null;
+    try { return await SecureStore.getItemAsync(biometricPromptPinKey(userId)); } catch { return null; }
+  },
+
+  /** Clears the post-signup biometric prompt stash — called once that prompt has been shown, and on sign-out. */
+  async clearStashedBiometricPromptPin(userId: string): Promise<void> {
+    if (!userId) return;
+    try { await SecureStore.deleteItemAsync(biometricPromptPinKey(userId)); } catch {}
+  },
+
   /**
    * Best-effort one-time cleanup of the pre-scoping global stash key. Never
    * read/consumed — only deleted, since there's no safe way to know which
@@ -559,7 +588,10 @@ export const authService = {
       // one to 'local' doesn't weaken that.
       await supabase.auth.signOut({ scope: 'local' });
     } finally {
-      if (outgoingUserId) await authService.clearStashedPin(outgoingUserId);
+      if (outgoingUserId) {
+        await authService.clearStashedPin(outgoingUserId);
+        await authService.clearStashedBiometricPromptPin(outgoingUserId);
+      }
       await storageHelpers.clearAll();
       clearAllCache();
     }

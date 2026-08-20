@@ -5,7 +5,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  TextInput,
   ActivityIndicator,
   Alert,
   Image,
@@ -22,6 +21,11 @@ interface ProviderFundingBlockProps {
   providerLabel: string;
   account: VirtualAccount | null;
   initialLoading: boolean;
+  /** The caller's own verified NIN (see kycService) — WalletFundingScreen
+   *  only ever renders this component once KYC is confirmed verified, so
+   *  this is always present in practice; Flutterwave's account-creation
+   *  call reuses it instead of asking the user to type a BVN/NIN again. */
+  verifiedNin?: string;
   onCreated: (account: VirtualAccount) => void;
   onPaystackCheckStarted?: () => void;
   onPaystackCheckFailed?: () => void;
@@ -50,6 +54,7 @@ export default function ProviderFundingBlock({
   providerLabel,
   account,
   initialLoading,
+  verifiedNin,
   onCreated,
   onPaystackCheckStarted,
   onPaystackCheckFailed,
@@ -57,8 +62,6 @@ export default function ProviderFundingBlock({
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const branding = PROVIDER_BRANDING[provider];
-  const [showBvnInput, setShowBvnInput] = useState(false);
-  const [bvnOrNin, setBvnOrNin] = useState('');
   const [loading, setLoading] = useState(false);
   const [requeryLoading, setRequeryLoading] = useState(false);
   const [accountCopied, setAccountCopied] = useState(false);
@@ -75,16 +78,17 @@ export default function ProviderFundingBlock({
   };
 
   const handleGetAccount = async () => {
-    if (provider === 'flutterwave' && !/^\d{11}$/.test(bvnOrNin)) {
-      Alert.alert('Bank Transfer', 'Please enter a valid 11-digit BVN or NIN.');
+    if (provider === 'flutterwave' && !/^\d{11}$/.test(verifiedNin || '')) {
+      // Shouldn't happen — this component only renders once WalletFundingScreen
+      // confirms KYC is verified — but fail loudly rather than silently no-op.
+      Alert.alert('Bank Transfer', 'Please verify your identity first.');
       return;
     }
     setLoading(true);
-    const res = await virtualAccountService.create(provider, bvnOrNin);
+    const res = await virtualAccountService.create(provider, verifiedNin || '');
     setLoading(false);
     if (res.success && res.account) {
       onCreated(res.account);
-      setShowBvnInput(false);
     } else {
       Alert.alert('Bank Transfer', res.error || 'Could not set up your account number.');
     }
@@ -161,7 +165,10 @@ export default function ProviderFundingBlock({
         <View style={styles.transferCard}>
           <ActivityIndicator color={theme.brand} />
         </View>
-      ) : provider === 'paystack' ? (
+      ) : (
+        // Both providers now use the same one-tap flow: identity is already
+        // verified before this component ever renders (see
+        // WalletFundingScreen), so there's nothing left to type here.
         <TouchableOpacity
           style={styles.transferButton}
           onPress={handleGetAccount}
@@ -170,40 +177,8 @@ export default function ProviderFundingBlock({
           {loading ? (
             <ActivityIndicator color={theme.brand} />
           ) : (
-            <Text style={styles.transferButtonText}>Get my Paystack account number</Text>
+            <Text style={styles.transferButtonText}>Get my {providerLabel} account number</Text>
           )}
-        </TouchableOpacity>
-      ) : showBvnInput ? (
-        <View style={styles.transferCard}>
-          <Text style={styles.transferHint}>
-            We need your BVN or NIN once to set up your {providerLabel} account number.
-          </Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              value={bvnOrNin}
-              onChangeText={(t) => setBvnOrNin(t.replace(/[^0-9]/g, '').slice(0, 11))}
-              placeholder="Enter your BVN or NIN"
-              placeholderTextColor={theme.inkFaint}
-              keyboardType="number-pad"
-              maxLength={11}
-            />
-          </View>
-          <TouchableOpacity
-            style={[styles.transferButton, bvnOrNin.length !== 11 && styles.transferButtonDisabled]}
-            onPress={handleGetAccount}
-            disabled={loading || bvnOrNin.length !== 11}
-          >
-            {loading ? (
-              <ActivityIndicator color={theme.brand} />
-            ) : (
-              <Text style={styles.transferButtonText}>Continue</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <TouchableOpacity style={styles.transferButton} onPress={() => setShowBvnInput(true)}>
-          <Text style={styles.transferButtonText}>Get my {providerLabel} account number</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -315,23 +290,6 @@ function createStyles(theme: AppTheme) {
     ...Typography.BUTTON_TEXT,
     color: theme.brand,
     textAlign: 'center',
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: Spacing.INPUT_BORDER_WIDTH,
-    borderColor: theme.border,
-    borderRadius: Spacing.BUTTON_RADIUS,
-    height: Spacing.INPUT_HEIGHT,
-    paddingHorizontal: Spacing.M,
-    marginBottom: Spacing.L,
-    backgroundColor: theme.surface,
-  },
-  input: {
-    flex: 1,
-    ...Typography.BODY,
-    color: theme.ink,
-    height: '100%',
   },
   });
 }
