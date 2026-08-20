@@ -239,6 +239,24 @@ export const cryptoService = {
   },
 
   /**
+   * A live USDT quote from Ramp's own pricing, for the amount screen —
+   * the exchange's usdtngn ticker (used for the coin picker's price list)
+   * turned out to run far off Ramp's actual rate for a real purchase, so
+   * this is what the Buy amount estimate uses instead. USDT only.
+   */
+  async getBuyQuote(ngnAmount: number): Promise<number | null> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('crypto-buy-quote', { body: { ngn_amount: ngnAmount } }),
+      );
+      if (error || !data?.success) return null;
+      return Number(data.usdt_amount) || null;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
    * Starts a purchase: Quidax issues a single-use bank account for the
    * customer to transfer Naira into. For USDT, Quidax delivers it either to
    * their own KaysPay crypto account (default) or a `destination` wallet

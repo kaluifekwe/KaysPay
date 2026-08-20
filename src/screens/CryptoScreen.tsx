@@ -186,6 +186,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [buyLimits, setBuyLimits] = useState<{ minNgn: number; maxNgn: number } | null>(null);
   const [selectedBuyAsset, setSelectedBuyAsset] = useState<BuyAsset | null>(null);
   const [buyNgn, setBuyNgn] = useState('');
+  // Ramp's own live quote for a USDT purchase — see buyUsdtDisplay's doc
+  // comment for why this replaced the ticker-based estimate as the number
+  // actually shown.
+  const [buyLiveQuote, setBuyLiveQuote] = useState<number | null>(null);
   // Where a purchase should be delivered: the customer's own KaysPay crypto
   // account (default), or an external wallet they supply — same address/
   // network validation as Withdraw, since a wrong entry here is even less
@@ -381,6 +385,20 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const numericSellUsdt = parseFloat(sellUsdt);
   const numericWdAmount = parseFloat(wdAmount);
 
+  // Debounced live quote for a USDT purchase, from Ramp's own pricing —
+  // see buyUsdtDisplay's doc comment.
+  useEffect(() => {
+    if (selectedBuyAsset !== 'USDT' || !(numericBuyNgn > 0)) {
+      setBuyLiveQuote(null);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      const quote = await cryptoService.getBuyQuote(numericBuyNgn);
+      setBuyLiveQuote(quote);
+    }, 500);
+    return () => clearTimeout(handle);
+  }, [selectedBuyAsset, numericBuyNgn]);
+
   const selectedMarket = markets.find((m) => m.code === selectedBuyAsset) || null;
 
   const visibleMarkets = markets
@@ -399,9 +417,19 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // transfer in Naira) — USDT/coin amounts are derived FROM it, not the
   // other way around, so there's no rate-conversion rounding between what
   // they typed and what gets enforced against buyLimits.
+  //
+  // This ticker-based estimate turned out to run far off Ramp's real rate
+  // (a genuine ₦3,000 purchase settled at ~1.1462 USDT; this formula showed
+  // ~2.15208 for the same amount) — kept only as an instant fallback while
+  // buyLiveQuote (Ramp's own quote, debounced below) is loading or fails.
   const buyUsdtEstimate = usdtNgnRate && numericBuyNgn > 0 ? numericBuyNgn / usdtNgnRate : null;
+  // The real number shown for a USDT purchase — Ramp's own live quote when
+  // available, the ticker-based estimate otherwise. Swap-target coins have
+  // no Ramp quote endpoint (it only covers usdt/usdc/xaut/usat), so they
+  // always use their own <coin>ngn market price instead (buyCoinEstimate).
+  const buyUsdtDisplay = selectedBuyAsset === 'USDT' && buyLiveQuote != null ? buyLiveQuote : buyUsdtEstimate;
   // Only meaningful for a swap-target coin — for USDT itself the "coin" IS
-  // the USDT amount, so this is left null and the screens show buyUsdtEstimate.
+  // the USDT amount, so this is left null and the screens show buyUsdtDisplay.
   const buyCoinEstimate = selectedMarket && !selectedMarket.stablecoin && numericBuyNgn > 0 && selectedMarket.priceNgn > 0
     ? numericBuyNgn / selectedMarket.priceNgn
     : null;
@@ -1033,10 +1061,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   keyboardType="decimal-pad"
                   autoFocus
                 />
-                {(buyUsdtEstimate != null || buyCoinEstimate != null) && (
+                {(buyUsdtDisplay != null || buyCoinEstimate != null) && (
                   <Text style={styles.estimateText}>
                     ≈ {selectedMarket?.stablecoin || buyCoinEstimate == null
-                      ? formatUsdt(buyUsdtEstimate ?? 0)
+                      ? formatUsdt(buyUsdtDisplay ?? 0)
                       : formatCoin(buyCoinEstimate, selectedBuyAsset)}
                   </Text>
                 )}
@@ -1071,7 +1099,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 <Text style={styles.hintText}>You'll receive — estimated</Text>
                 <Text style={styles.reviewBig}>
                   {selectedMarket?.stablecoin
-                    ? formatUsdt(buyUsdtEstimate ?? 0)
+                    ? formatUsdt(buyUsdtDisplay ?? 0)
                     : buyCoinEstimate != null ? formatCoin(buyCoinEstimate, selectedBuyAsset) : '—'}
                 </Text>
 
@@ -1088,7 +1116,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   )}
                   <View style={styles.payDetailRow}>
                     <Text style={styles.feeLabel}>USDT equivalent</Text>
-                    <Text style={styles.feeLabel}>{buyUsdtEstimate != null ? formatUsdt(buyUsdtEstimate) : '—'}</Text>
+                    <Text style={styles.feeLabel}>{buyUsdtDisplay != null ? formatUsdt(buyUsdtDisplay) : '—'}</Text>
                   </View>
                 </View>
 
