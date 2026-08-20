@@ -17,7 +17,7 @@ function Shell() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <h1>Kay's Pay Admin</h1>
+        <h1>KaysPay Admin</h1>
         <div className="role-badge">{role === 'super_admin' ? 'Super Admin' : 'Support'}</div>
         <nav>
           <NavLink to="/" end>Dashboard</NavLink>
@@ -56,7 +56,7 @@ function NotAuthorized() {
     <div className="login-shell">
       <div className="login-card">
         <h1>Not authorized</h1>
-        <p className="muted">Your Kay's Pay account doesn't have admin access. Ask a super admin to invite you.</p>
+        <p className="muted">Your KaysPay account doesn't have admin access. Ask a super admin to invite you.</p>
         <button className="secondary" style={{ width: '100%' }} onClick={() => supabase.auth.signOut()}>Sign out</button>
       </div>
     </div>

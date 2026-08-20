@@ -157,7 +157,7 @@ export async function confirmOnRamp(merchantReference: string): Promise<OnRampBa
     processorFee: readMoney(payload, "processor_fee", "processing_fee"),
     vat: readMoney(payload, "vat", "vat_amount"),
     // Quidax includes this in amount_expected and settles it to the merchant
-    // markup wallet. Do not calculate or add it again inside Kay's Pay.
+    // markup wallet. Do not calculate or add it again inside KaysPay.
     merchantMarkup: readMoney(payload, "merchant_markup", "markup", "markup_amount", "merchant_fee"),
   };
 }

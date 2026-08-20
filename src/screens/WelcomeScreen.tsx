@@ -102,7 +102,7 @@ const DollarCardSlide = () => (
       <View style={styles.dollarCard}>
         <View style={styles.dollarCardGlow} />
         <View style={styles.dollarCardContent}>
-          <Text style={styles.dollarCardBrand}>Kay's Pay</Text>
+          <Text style={styles.dollarCardBrand}>KaysPay</Text>
           <View style={styles.dollarCardChip} />
           <Text style={styles.dollarCardNumber}>4782 •••• •••• 3947</Text>
           <View style={styles.dollarCardBottom}>
@@ -145,7 +145,7 @@ const ForeignNumbersSlide = () => (
         <Text style={styles.foreignPrice}>₦450</Text>
       </View>
       <View style={styles.foreignBanner}>
-        <Text style={styles.foreignBannerText}>✓ SMS code delivered instantly inside Kay's Pay</Text>
+        <Text style={styles.foreignBannerText}>✓ SMS code delivered instantly inside KaysPay</Text>
       </View>
     </View>
   </View>
@@ -342,7 +342,7 @@ export default function WelcomeScreen({ navigation }: WelcomeScreenProps) {
         <View style={styles.logoTile}>
           <Image source={require('../../assets/icon-green.png')} style={styles.logoImg} resizeMode="contain" />
         </View>
-        <Text style={styles.appName}>Kay's Pay</Text>
+        <Text style={styles.appName}>KaysPay</Text>
         <Text style={styles.tagline}>Nigeria's All-in-One Payment App</Text>
       </View>
 

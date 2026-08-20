@@ -464,7 +464,7 @@ export default function TransactionDetailModal({
             <View style={styles.handle} />
             <View style={styles.brandRow}>
               <Image source={require('../../assets/icon-green.png')} style={styles.brandLogo} resizeMode="contain" />
-              <Text style={styles.brandName}>Kay's Pay</Text>
+              <Text style={styles.brandName}>KaysPay</Text>
             </View>
             <Text style={styles.label}>{transaction.label}</Text>
             <Text style={styles.amount}>

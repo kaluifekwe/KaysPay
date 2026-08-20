@@ -1,4 +1,4 @@
-# Kay's Pay - Persistent Metro Server
+# KaysPay - Persistent Metro Server
 # Auto-restarts if crashed, runs on port 8081
 # Usage: powershell -ExecutionPolicy Bypass -File "C:\Projects\KaysPay\metro-server.ps1"
 
@@ -6,7 +6,7 @@ $Port = 8081
 $ProjectDir = "C:\Projects\KaysPay"
 $LogFile = "C:\Projects\KaysPay\metro-server.log"
 
-Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Starting Kay's Pay Metro Server on port $Port"
+Write-Output "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - Starting KaysPay Metro Server on port $Port"
 
 # Kill any existing process on port
 $existing = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue

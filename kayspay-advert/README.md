@@ -1,6 +1,6 @@
 # KSP Adverts
 
-Reusable creative-production workspace for Kay'sPay social media content.
+Reusable creative-production workspace for KaysPay social media content.
 
 ## Purpose
 

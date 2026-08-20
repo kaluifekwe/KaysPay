@@ -136,7 +136,7 @@ export function AppPrivacyGate({ children }: { children: React.ReactNode }) {
     unlocking.current = true;
     try {
       const result = await authorize({
-        title: 'Unlock Kay’s Pay',
+        title: 'Unlock KaysPay',
         subtitle: 'Confirm your PIN or biometric to continue',
         // Skips a redundant lock-status round trip when the check above
         // already fetched one; null just means it falls back to fetching.
@@ -242,7 +242,7 @@ export function AppPrivacyGate({ children }: { children: React.ReactNode }) {
           ) : (
             <>
               <Ionicons name="shield-checkmark" size={52} color={theme.brand} />
-              <Text style={styles.title}>Kay’s Pay is protected</Text>
+              <Text style={styles.title}>KaysPay is protected</Text>
               {securityError ? (
                 <>
                   <Text style={styles.message}>{securityError}</Text>

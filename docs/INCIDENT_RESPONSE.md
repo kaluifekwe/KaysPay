@@ -1,4 +1,4 @@
-# Kay's Pay incident response and recovery
+# KaysPay incident response and recovery
 
 ## First response
 
@@ -6,7 +6,7 @@
 2. Do not manually edit wallet balances or transaction states.
 3. Preserve the affected transaction IDs, provider references, timestamps and function logs. Do not copy PINs, tokens, NIN/BVN values or full provider payloads into tickets or chat.
 4. If customers could lose money, pause only the affected service using `service_controls`; leave unrelated services available.
-5. Compare Kay's Pay transactions with the provider's authoritative order status and merchant-wallet statement.
+5. Compare KaysPay transactions with the provider's authoritative order status and merchant-wallet statement.
 6. Use the existing idempotent reconciliation/refund functions. Never run ad-hoc balance updates.
 
 ## Emergency service controls

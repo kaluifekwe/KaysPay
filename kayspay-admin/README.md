@@ -1,4 +1,4 @@
-# Kay's Pay Admin
+# KaysPay Admin
 
 Internal admin panel — separate from the customer-facing Expo app in the
 repo root, same Supabase project. See [`AGENTS.md`](../AGENTS.md) for the
@@ -25,7 +25,7 @@ Function instead (see `supabase/functions/admin-*` and
 1. Apply migration `087_admin_panel_foundation.sql` and deploy the
    `admin-*` edge functions (see the repo root's normal
    `supabase db push` / `supabase functions deploy` workflow).
-2. Open the deployed admin app and sign in with your existing Kay's Pay
+2. Open the deployed admin app and sign in with your existing KaysPay
    account (email + password — same account as the mobile app).
 3. Since no admin exists yet, you'll see a one-time "Set up admin access"
    screen. Completing it makes that account the first super admin.

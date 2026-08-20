@@ -82,7 +82,7 @@ serve(async (req) => {
             const details = alert.fingerprint === "stuck_vtu" ? await stuckVtuDetails(db) : "";
             const sent = await sendEmail(
               ALERT_EMAIL,
-              `[${alert.severity.toUpperCase()}] Kay's Pay: ${alert.type}`,
+              `[${alert.severity.toUpperCase()}] KaysPay: ${alert.type}`,
               `<p>${alert.type}: <b>${alert.value}</b></p>${details}<p>No balances or transactions were changed by this monitor.</p>`,
             );
             if (sent.ok) emailed++;
@@ -101,7 +101,7 @@ serve(async (req) => {
           if (claimed && isResendConfigured()) {
             const dailySent = await sendEmail(
               ALERT_EMAIL,
-              `Kay's Pay daily operations summary — ${watDate}`,
+              `KaysPay daily operations summary — ${watDate}`,
               `<p>Automated read-only summary for the last 24 hours.</p>${
                 metricsTableHtml(metrics)
               }`,

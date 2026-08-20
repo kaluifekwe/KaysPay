@@ -1,8 +1,8 @@
-# Kay'sPay Social Brand Guide
+# KaysPay Social Brand Guide
 
 ## Positioning
 
-Kay'sPay is presented as a clear, approachable everyday-services platform for Nigerian users. Creative work should feel trustworthy, useful, modern, and action-oriented.
+KaysPay is presented as a clear, approachable everyday-services platform for Nigerian users. Creative work should feel trustworthy, useful, modern, and action-oriented.
 
 ## Palette
 

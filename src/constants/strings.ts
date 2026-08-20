@@ -1,6 +1,6 @@
 export const Strings = {
   // App
-  APP_NAME: "Kay's Pay",
+  APP_NAME: "KaysPay",
   APP_TAGLINE: "Nigeria's all-in-one VTU & payment app",
 
   // Onboarding

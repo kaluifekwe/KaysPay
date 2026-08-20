@@ -1223,7 +1223,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
               <View style={styles.noticeBoxTextCol}>
                 <Text style={styles.noticeBoxTitle}>This App Must Be the ONLY Point of Initiation</Text>
                 <Text style={styles.noticeBoxText}>
-                  Do not use the NIMC app, NIMC office self-service kiosk, any other third-party service, or any mobile/web platform to initiate the same request alongside Kay's Pay.
+                  Do not use the NIMC app, NIMC office self-service kiosk, any other third-party service, or any mobile/web platform to initiate the same request alongside KaysPay.
                 </Text>
               </View>
             </View>

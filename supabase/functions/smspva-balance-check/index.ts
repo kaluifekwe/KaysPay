@@ -41,6 +41,6 @@ serve(async (req: Request) => {
     `<p>SMSPVA powers the Foreign Number feature. Once it hits $0, new number purchases fail ` +
     `(and customers are auto-refunded). Top up at smspva.com to keep the feature working.</p>`;
 
-  const r = await sendEmail(ALERT_EMAIL, "Kay's Pay — SMSPVA balance running low", html);
+  const r = await sendEmail(ALERT_EMAIL, "KaysPay — SMSPVA balance running low", html);
   return json({ checked: true, balance, alerted: r.ok, emailError: r.error ?? null });
 });

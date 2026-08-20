@@ -1,6 +1,6 @@
 # Content History
 
-## 2026-08 Kay'sPay two-minute advert
+## 2026-08 KaysPay two-minute advert
 
 - Composition: `KaysPay-2Minute-Advert`
 - Format: 1920 × 1080, 30 fps, 2:00

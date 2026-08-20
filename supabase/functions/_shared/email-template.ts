@@ -1,4 +1,4 @@
-// One branded shell for every Kay's Pay transactional email. The logo is
+// One branded shell for every KaysPay transactional email. The logo is
 // served from a public Supabase Storage bucket ('branding') because email
 // clients block local/base64/inline images — a hosted https URL is the only
 // reliable way to render a logo in Gmail/Outlook/Apple Mail.
@@ -36,15 +36,15 @@ function shell(inner: string, preheader: string): string {
       <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="width:480px;max-width:480px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid ${LINE};">
         <tr><td style="background:${GREEN};padding:22px 28px;" align="left">
           <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-            <td style="vertical-align:middle;"><img src="${LOGO_URL}" width="36" height="36" alt="Kay's Pay" style="display:block;border-radius:9px;"></td>
-            <td style="vertical-align:middle;padding-left:12px;color:#ffffff;font-size:18px;font-weight:800;letter-spacing:.2px;">Kay's Pay</td>
+            <td style="vertical-align:middle;"><img src="${LOGO_URL}" width="36" height="36" alt="KaysPay" style="display:block;border-radius:9px;"></td>
+            <td style="vertical-align:middle;padding-left:12px;color:#ffffff;font-size:18px;font-weight:800;letter-spacing:.2px;">KaysPay</td>
           </tr></table>
         </td></tr>
         ${inner}
         <tr><td style="padding:22px 28px;background:#fafbfa;border-top:1px solid ${LINE};">
-          <p style="margin:0 0 4px;font-size:12px;color:${MUTED};line-height:1.6;">Kay's Pay. Airtime, data, bills &amp; wallet, made simple.</p>
+          <p style="margin:0 0 4px;font-size:12px;color:${MUTED};line-height:1.6;">KaysPay. Airtime, data, bills &amp; wallet, made simple.</p>
           <p style="margin:0;font-size:12px;color:${MUTED};line-height:1.6;">Need help? <a href="mailto:${SUPPORT_EMAIL}" style="color:${ACCENT};text-decoration:none;">${SUPPORT_EMAIL}</a></p>
-          <p style="margin:10px 0 0;font-size:11px;color:#9aa8a1;">© 2026 Kay's Pay. All rights reserved.</p>
+          <p style="margin:10px 0 0;font-size:11px;color:#9aa8a1;">© 2026 KaysPay. All rights reserved.</p>
         </td></tr>
       </table>
     </td></tr>
@@ -56,14 +56,14 @@ function shell(inner: string, preheader: string): string {
 // HTML-only mail, and it's what shows in clients that don't render HTML.
 function textShell(lines: string[]): string {
   return [
-    "KAY'S PAY",
+    "KAYSPAY",
     "",
     ...lines,
     "",
     "----",
-    "Kay's Pay. Airtime, data, bills & wallet, made simple.",
+    "KaysPay. Airtime, data, bills & wallet, made simple.",
     `Need help? ${SUPPORT_EMAIL}`,
-    "© 2026 Kay's Pay. All rights reserved.",
+    "© 2026 KaysPay. All rights reserved.",
   ].join("\n");
 }
 
@@ -92,11 +92,11 @@ function codeBlock(title: string, lead: string, code: string, note: string): str
 /** Signup email-verification code. */
 export function otpEmail(code: string): { subject: string; html: string; text: string } {
   const title = "Verify your email";
-  const lead = "Enter this code in the app to finish creating your Kay's Pay account.";
+  const lead = "Enter this code in the app to finish creating your KaysPay account.";
   const note = "This code expires in <b>10 minutes</b>. If you didn't try to sign up, you can safely ignore this email.";
   return {
-    subject: "Your Kay's Pay verification code",
-    html: shell(codeBlock(title, lead, code, note), "Your Kay's Pay verification code"),
+    subject: "Your KaysPay verification code",
+    html: shell(codeBlock(title, lead, code, note), "Your KaysPay verification code"),
     text: codeText(title, lead, code, note),
   };
 }
@@ -104,11 +104,11 @@ export function otpEmail(code: string): { subject: string; html: string; text: s
 /** Forgot-password reset code. */
 export function passwordResetEmail(code: string): { subject: string; html: string; text: string } {
   const title = "Reset your password";
-  const lead = "We received a request to reset your Kay's Pay password. Enter this code in the app to set a new one.";
+  const lead = "We received a request to reset your KaysPay password. Enter this code in the app to set a new one.";
   const note = "This code expires in <b>10 minutes</b>. If you didn't request this, your password is unchanged, so you can safely ignore this email.";
   return {
-    subject: "Reset your Kay's Pay password",
-    html: shell(codeBlock(title, lead, code, note), "Reset your Kay's Pay password"),
+    subject: "Reset your KaysPay password",
+    html: shell(codeBlock(title, lead, code, note), "Reset your KaysPay password"),
     text: codeText(title, lead, code, note),
   };
 }
@@ -116,11 +116,11 @@ export function passwordResetEmail(code: string): { subject: string; html: strin
 /** Transaction-PIN reset code. */
 export function pinResetEmail(code: string): { subject: string; html: string; text: string } {
   const title = "Reset your transaction PIN";
-  const lead = "Enter this code in the Kay's Pay app to create a new transaction PIN.";
+  const lead = "Enter this code in the KaysPay app to create a new transaction PIN.";
   const note = "This code expires in <b>10 minutes</b>. If you didn't request this, do not share the code and contact support immediately.";
   return {
-    subject: "Reset your Kay's Pay transaction PIN",
-    html: shell(codeBlock(title, lead, code, note), "Reset your Kay's Pay transaction PIN"),
+    subject: "Reset your KaysPay transaction PIN",
+    html: shell(codeBlock(title, lead, code, note), "Reset your KaysPay transaction PIN"),
     text: codeText(title, lead, code, note),
   };
 }
@@ -128,7 +128,7 @@ export function pinResetEmail(code: string): { subject: string; html: string; te
 /** After-the-fact security alert following a successful PIN reset. */
 export function pinResetNoticeEmail(): { subject: string; html: string; text: string } {
   const title = "Your transaction PIN was changed";
-  const lead = "Your Kay's Pay transaction PIN was reset successfully.";
+  const lead = "Your KaysPay transaction PIN was reset successfully.";
   const note = `If this wasn't you, contact ${SUPPORT_EMAIL} immediately.`;
   const inner = `
     <tr><td style="padding:30px 28px;">
@@ -137,7 +137,7 @@ export function pinResetNoticeEmail(): { subject: string; html: string; text: st
       <p style="margin:0;font-size:15px;color:${MUTED};line-height:1.6;">${note}</p>
     </td></tr>`;
   return {
-    subject: "Your Kay's Pay transaction PIN was changed",
+    subject: "Your KaysPay transaction PIN was changed",
     html: shell(inner, title),
     text: textShell([title, "", lead, "", note]),
   };
@@ -155,8 +155,8 @@ export function profileChangeCodeEmail(
   const textLead = `Enter this code in the app to confirm you want to change your account's ${fieldLabel} to ${pendingValue}. If you didn't request this exact change, do not share this code — someone else may have access to your account.`;
   const note = "This code expires in <b>10 minutes</b>.";
   return {
-    subject: `Confirm your Kay's Pay ${fieldLabel} change`,
-    html: shell(codeBlock(title, lead, code, note), `Confirm your Kay's Pay ${fieldLabel} change`),
+    subject: `Confirm your KaysPay ${fieldLabel} change`,
+    html: shell(codeBlock(title, lead, code, note), `Confirm your KaysPay ${fieldLabel} change`),
     text: codeText(title, textLead, code, note),
   };
 }
@@ -167,16 +167,16 @@ export function profileChangedNoticeEmail(fieldLabel: string): { subject: string
   const inner = `
     <tr><td style="padding:30px 28px 6px;">
       <h1 style="margin:0 0 10px;font-size:20px;color:${INK};font-weight:800;">${title}</h1>
-      <p style="margin:0 0 14px;font-size:15px;color:${MUTED};line-height:1.6;">Your Kay's Pay account's ${fieldLabel} was just changed.</p>
+      <p style="margin:0 0 14px;font-size:15px;color:${MUTED};line-height:1.6;">Your KaysPay account's ${fieldLabel} was just changed.</p>
       <p style="margin:0;font-size:15px;color:${MUTED};line-height:1.6;">If this wasn't you, contact <a href="mailto:${SUPPORT_EMAIL}" style="color:${ACCENT};text-decoration:none;">${SUPPORT_EMAIL}</a> immediately.</p>
     </td></tr>`;
   return {
-    subject: `Your Kay's Pay ${fieldLabel} was changed`,
-    html: shell(inner, `Your Kay's Pay ${fieldLabel} was changed`),
+    subject: `Your KaysPay ${fieldLabel} was changed`,
+    html: shell(inner, `Your KaysPay ${fieldLabel} was changed`),
     text: textShell([
       title,
       "",
-      `Your Kay's Pay account's ${fieldLabel} was just changed.`,
+      `Your KaysPay account's ${fieldLabel} was just changed.`,
       "",
       `If this wasn't you, contact ${SUPPORT_EMAIL} immediately.`,
     ]),
@@ -247,7 +247,7 @@ export function welcomeEmail(
         <tr><td style="padding:18px 18px 16px;">
           <div style="font-size:11px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;color:${WHATSAPP_EYEBROW};margin-bottom:7px;">WhatsApp community</div>
           <div style="font-size:16px;font-weight:800;color:${INK};margin-bottom:6px;">Join our WhatsApp group</div>
-          <div style="font-size:14px;color:${MUTED};line-height:1.55;margin-bottom:14px;">Get quick help when you need it, hear about new features first, and tell us what to build next. It's the fastest way to reach us, and to meet other people using Kay's Pay.</div>
+          <div style="font-size:14px;color:${MUTED};line-height:1.55;margin-bottom:14px;">Get quick help when you need it, hear about new features first, and tell us what to build next. It's the fastest way to reach us, and to meet other people using KaysPay.</div>
           <table role="presentation" cellpadding="0" cellspacing="0"><tr>
             <td style="background:${WHATSAPP_GREEN};border-radius:10px;">
               <a href="${esc(groupUrl)}" style="display:inline-block;padding:12px 20px;font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;">Join the WhatsApp group →</a>
@@ -261,10 +261,10 @@ export function welcomeEmail(
 
   const inner = `
     <tr><td style="padding:30px 28px 6px;">
-      <h1 style="margin:0 0 14px;font-size:21px;color:${INK};font-weight:800;">Welcome to Kay's Pay 🎉</h1>
+      <h1 style="margin:0 0 14px;font-size:21px;color:${INK};font-weight:800;">Welcome to KaysPay 🎉</h1>
       <p style="margin:0 0 14px;font-size:15px;color:${INK};line-height:1.65;">Hi <b>${name}</b>,</p>
-      <p style="margin:0 0 14px;font-size:15px;color:${INK};line-height:1.65;">I'm <b>Kalu Ifekwe</b>, the founder of Kay's Pay. I wanted to personally say hello, and thank you for joining us.</p>
-      <p style="margin:0 0 18px;font-size:15px;color:${INK};line-height:1.65;">I built Kay's Pay on one simple belief: paying for the things we use every day, like airtime, data, electricity, TV and exam pins, should be fast, fairly priced, and reliable, even when the network isn't at its best.</p>
+      <p style="margin:0 0 14px;font-size:15px;color:${INK};line-height:1.65;">I'm <b>Kalu Ifekwe</b>, the founder of KaysPay. I wanted to personally say hello, and thank you for joining us.</p>
+      <p style="margin:0 0 18px;font-size:15px;color:${INK};line-height:1.65;">I built KaysPay on one simple belief: paying for the things we use every day, like airtime, data, electricity, TV and exam pins, should be fast, fairly priced, and reliable, even when the network isn't at its best.</p>
       <p style="margin:0 0 14px;font-size:13px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:${ACCENT};">Here's what you can do</p>
     </td></tr>
     <tr><td style="padding:0 28px 6px;">
@@ -281,19 +281,19 @@ export function welcomeEmail(
         <td style="vertical-align:middle;"><div style="width:40px;height:40px;border-radius:50%;background:${SOFT};border:1px solid ${LINE};color:${GREEN};font-size:16px;font-weight:800;text-align:center;line-height:40px;">K</div></td>
         <td style="vertical-align:middle;padding-left:12px;">
           <div style="font-size:14px;font-weight:800;color:${INK};">Kalu Ifekwe</div>
-          <div style="font-size:13px;color:${MUTED};">Founder, Kay's Pay</div>
+          <div style="font-size:13px;color:${MUTED};">Founder, KaysPay</div>
         </td>
       </tr></table>
     </td></tr>`;
 
   const text = textShell([
-    "Welcome to Kay's Pay",
+    "Welcome to KaysPay",
     "",
     `Hi ${plainName},`,
     "",
-    "I'm Kalu Ifekwe, the founder of Kay's Pay. I wanted to personally say hello, and thank you for joining us.",
+    "I'm Kalu Ifekwe, the founder of KaysPay. I wanted to personally say hello, and thank you for joining us.",
     "",
-    "I built Kay's Pay on one simple belief: paying for the things we use every day, like airtime, data, electricity, TV and exam pins, should be fast, fairly priced, and reliable, even when the network isn't at its best.",
+    "I built KaysPay on one simple belief: paying for the things we use every day, like airtime, data, electricity, TV and exam pins, should be fast, fairly priced, and reliable, even when the network isn't at its best.",
     "",
     "HERE'S WHAT YOU CAN DO",
     ...WELCOME_STEPS.map(([t, d], i) => `${i + 1}. ${t} — ${d.replace(/&amp;/g, "&")}`),
@@ -312,8 +312,8 @@ export function welcomeEmail(
     "",
     "Warmly,",
     "Kalu Ifekwe",
-    "Founder, Kay's Pay",
+    "Founder, KaysPay",
   ]);
 
-  return { subject: "Welcome to Kay's Pay 🎉", html: shell(inner, "A note from the founder"), text };
+  return { subject: "Welcome to KaysPay 🎉", html: shell(inner, "A note from the founder"), text };
 }

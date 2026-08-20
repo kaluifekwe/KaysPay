@@ -1,7 +1,7 @@
 {
   "name": "kayspay-admin",
   "version": "1.0.0",
-  "description": "Kay's Pay admin panel — separate from the customer-facing RN app, same Supabase project.",
+  "description": "KaysPay admin panel — separate from the customer-facing RN app, same Supabase project.",
   "private": true,
   "type": "module",
   "scripts": {

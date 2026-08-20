@@ -35,7 +35,7 @@ interface CardTransaction {
 
 const MOCK_CARD = {
   number: '**** **** **** 4829',
-  holder: "KAY'S PAY USER",
+  holder: "KAYSPAY USER",
   expiry: '12/28',
   balance: 0,
 };

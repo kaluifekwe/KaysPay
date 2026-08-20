@@ -43,7 +43,7 @@ function normaliseWhatsAppNumber(raw: string): string | null {
  *
  * The host check is a security boundary, not just tidiness: this URL is
  * embedded in an email sent to every new user, so an arbitrary link pasted
- * here (by mistake or otherwise) would be a link Kay's Pay appears to
+ * here (by mistake or otherwise) would be a link KaysPay appears to
  * vouch for.
  */
 function normaliseWhatsAppGroupUrl(raw: string): string | null {

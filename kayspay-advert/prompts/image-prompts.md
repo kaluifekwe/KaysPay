@@ -9,7 +9,7 @@ Headline (verbatim):
 Supporting copy (verbatim):
 Call to action (verbatim):
 Visual direction:
-Required Kay'sPay assets:
+Required KaysPay assets:
 Required disclaimer:
 Avoid:
 ```

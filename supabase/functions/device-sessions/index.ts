@@ -50,8 +50,8 @@ serve(async (req) => {
       );
       await sendEmail(
         user.email,
-        "New device signed in to Kay's Pay",
-        `<p>A new device signed in to your Kay's Pay account:</p><p><b>${name}</b></p><p>If this wasn't you, reset your password and revoke other devices in Settings.</p>`,
+        "New device signed in to KaysPay",
+        `<p>A new device signed in to your KaysPay account:</p><p><b>${name}</b></p><p>If this wasn't you, reset your password and revoke other devices in Settings.</p>`,
         {
           text:
             `A new device signed in: ${name}. If this wasn't you, reset your password and revoke other devices.`,
@@ -113,11 +113,11 @@ serve(async (req) => {
     if (rate.allowed && user.email && isResendConfigured()) {
       await sendEmail(
         user.email,
-        "Your Kay's Pay PIN was changed",
+        "Your KaysPay PIN was changed",
         "<p>Your transaction PIN was changed successfully.</p><p>If this wasn't you, reset your password and remove other devices immediately.</p>",
         {
           text:
-            "Your Kay's Pay transaction PIN was changed. If this wasn't you, reset your password and remove other devices immediately.",
+            "Your KaysPay transaction PIN was changed. If this wasn't you, reset your password and remove other devices immediately.",
         },
       );
     }

@@ -1,4 +1,4 @@
-# Kay's Pay - Agent Rules
+# KaysPay - Agent Rules
 
 ## CRITICAL RULES (MUST FOLLOW)
 

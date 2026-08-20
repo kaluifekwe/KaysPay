@@ -1,8 +1,8 @@
-# Kay'sPay Two-Minute Launch Advert
+# KaysPay Two-Minute Launch Advert
 
 ## Objective
 
-Introduce the breadth of Kay'sPay services and move viewers toward downloading the app and creating an account.
+Introduce the breadth of KaysPay services and move viewers toward downloading the app and creating an account.
 
 ## Deliverable
 
@@ -18,4 +18,4 @@ Airtime, data, electricity, television, crypto, eSIM, and NIN-related services.
 
 ## Call to action
 
-Download Kay'sPay. Create your account. Start today.
+Download KaysPay. Create your account. Start today.

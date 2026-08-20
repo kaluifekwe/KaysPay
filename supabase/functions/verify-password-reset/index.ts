@@ -144,11 +144,11 @@ serve(async (req: Request) => {
   if (isResendConfigured()) {
     await sendEmail(
       email,
-      "Your Kay's Pay password was changed",
-      "<p>Your Kay's Pay password was reset successfully, and registered device sessions were revoked.</p><p>If this wasn't you, contact support immediately.</p>",
+      "Your KaysPay password was changed",
+      "<p>Your KaysPay password was reset successfully, and registered device sessions were revoked.</p><p>If this wasn't you, contact support immediately.</p>",
       {
         text:
-          "Your Kay's Pay password was reset and registered device sessions were revoked. If this wasn't you, contact support immediately.",
+          "Your KaysPay password was reset and registered device sessions were revoked. If this wasn't you, contact support immediately.",
       },
     );
   }

@@ -1,7 +1,7 @@
-# Releasing updates to Kay's Pay
+# Releasing updates to KaysPay
 
 How to ship changes to the live app **without breaking users who are mid-update.**
-Kay's Pay is Expo + EAS, so you have two release paths.
+KaysPay is Expo + EAS, so you have two release paths.
 
 ---
 

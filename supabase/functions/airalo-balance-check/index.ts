@@ -45,6 +45,6 @@ serve(async (req: Request) => {
     `<p>Airalo bills postpaid up to a $10,000 credit limit — once the available balance reaches $0, new eSIM ` +
     `orders will start failing. Pay down your Airalo balance to keep eSIM sales flowing.</p>`;
 
-  const r = await sendEmail(ALERT_EMAIL, "Kay's Pay — Airalo credit running low", html);
+  const r = await sendEmail(ALERT_EMAIL, "KaysPay — Airalo credit running low", html);
   return json({ checked: true, available: balance.available, alerted: r.ok, emailError: r.error ?? null });
 });

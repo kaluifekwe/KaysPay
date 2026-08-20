@@ -89,7 +89,7 @@ export interface CryptoBuyPayment {
   amount: number;
   processorFee: number;
   vat: number;
-  /** Kay's Pay markup itemised by Quidax; already included in amountToPay. */
+  /** KaysPay markup itemised by Quidax; already included in amountToPay. */
   merchantMarkup: number;
 }
 

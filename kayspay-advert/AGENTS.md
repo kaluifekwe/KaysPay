@@ -2,7 +2,7 @@
 
 ## Scope
 
-This repository is only for Kay'sPay marketing, social media, product design, video editing, image generation, voice-over, music, captions, and campaign exports. Never modify the Kay'sPay application repository from this workspace.
+This repository is only for KaysPay marketing, social media, product design, video editing, image generation, voice-over, music, captions, and campaign exports. Never modify the KaysPay application repository from this workspace.
 
 ## Approval
 

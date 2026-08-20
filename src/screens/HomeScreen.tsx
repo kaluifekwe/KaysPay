@@ -64,7 +64,7 @@ const ADVERTS: Advert[] = [
   { icon: 'globe-outline', title: 'Travel eSIMs', sub: 'Stay online in 190+ countries', screen: 'TravelEsim' },
   { icon: 'id-card-outline', title: 'Get your BVN slip', sub: 'Verify and download in seconds', screen: 'NinServices' },
   { icon: 'id-card-outline', title: 'Get your NIN slip', sub: 'Verify and download in seconds', screen: 'NinServices' },
-  { icon: 'logo-bitcoin', title: "Buy and sell crypto on Kay's Pay", sub: 'USDT, instantly, right from your wallet', screen: 'Crypto', comingSoon: !CRYPTO_ENABLED },
+  { icon: 'logo-bitcoin', title: "Buy and sell crypto on KaysPay", sub: 'USDT, instantly, right from your wallet', screen: 'Crypto', comingSoon: !CRYPTO_ENABLED },
 ];
 
 // One unified icon family (Ionicons outline) in brand green — replaces the
@@ -99,7 +99,7 @@ function AdvertCarousel({ navigation, theme, styles }: { navigation: any; theme:
         activeOpacity={0.9}
         onPress={() =>
           ad.comingSoon
-            ? Alert.alert('Crypto — coming soon', "Buy and sell crypto right inside Kay's Pay. We'll notify you the moment it's live.")
+            ? Alert.alert('Crypto — coming soon', "Buy and sell crypto right inside KaysPay. We'll notify you the moment it's live.")
             : ad.screen && navigation.navigate(ad.screen)
         }
       >

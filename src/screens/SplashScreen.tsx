@@ -78,7 +78,7 @@ export default function SplashScreen({ navigation }: SplashScreenProps) {
         <View style={styles.logoTile}>
           <Image source={require('../../assets/icon-green.png')} style={styles.logoImg} resizeMode="contain" />
         </View>
-        <Animated.Text style={styles.appName}>Kay's Pay</Animated.Text>
+        <Animated.Text style={styles.appName}>KaysPay</Animated.Text>
       </Animated.View>
     </View>
   );

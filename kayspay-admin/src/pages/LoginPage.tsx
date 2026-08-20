@@ -19,8 +19,8 @@ export default function LoginPage() {
   return (
     <div className="login-shell">
       <div className="login-card">
-        <h1>Kay's Pay Admin</h1>
-        <p className="muted">Sign in with your existing Kay's Pay account.</p>
+        <h1>KaysPay Admin</h1>
+        <p className="muted">Sign in with your existing KaysPay account.</p>
         <form onSubmit={handleSubmit}>
           <div className="field">
             <label>Email</label>

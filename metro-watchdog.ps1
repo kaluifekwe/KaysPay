@@ -1,4 +1,4 @@
-# Kay's Pay - Metro Watchdog
+# KaysPay - Metro Watchdog
 # Checks if Metro is running on port 8081, restarts if dead
 # Run via Windows Task Scheduler every 30 seconds
 
