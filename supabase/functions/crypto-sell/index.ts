@@ -6,6 +6,7 @@ import {
   enforceRateLimit,
   getAuthUser,
   isDeviceSessionAllowed,
+  isServiceEnabled,
   readJsonBody,
   RequestBodyError,
 } from "../_shared/auth.ts";
@@ -59,6 +60,10 @@ serve(async (req: Request) => {
   }
 
   const supabase = adminClient();
+
+  if (!(await isServiceEnabled(supabase, "crypto"))) {
+    return json({ success: false, error: "Crypto is temporarily unavailable. Please try again later." }, 503);
+  }
 
   if (!(await isDeviceSessionAllowed(req, supabase, user.id))) {
     return json({ error: "This device session has been revoked. Please log in again." }, 401);

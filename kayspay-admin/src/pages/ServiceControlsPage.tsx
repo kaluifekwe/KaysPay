@@ -36,6 +36,9 @@ const LABELS: Record<string, string> = {
   foreign_number: 'Foreign numbers',
   identity: 'Identity (NIN/BVN Verify)',
   nin_modification: 'NIN Modification (Name/Phone/Address + Validation)',
+  crypto: 'Crypto (Buy/Sell) — hides from Home when off',
+  crypto_withdraw: 'Crypto Withdraw (external wallet)',
+  transfer: 'Wallet Transfer',
 };
 
 const NETWORKS = ['mtn', 'glo', '9mobile', 'airtel'];

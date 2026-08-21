@@ -114,6 +114,25 @@ export const cryptoService = {
   },
 
   /**
+   * Whether Crypto Buy/Sell should be shown at all — the admin's kill switch
+   * (service_controls.crypto), read through a narrow RPC that only ever
+   * answers for a small whitelist of client-visibility flags, never the raw
+   * service_controls table. Buy/Sell themselves still enforce this
+   * server-side regardless of what the client shows; this is purely for
+   * hiding the Home tile/advert when the owner turns it off.
+   */
+  async isEnabled(): Promise<boolean> {
+    try {
+      const { data, error } = await withTimeout(
+        (async () => supabase.rpc('is_client_feature_enabled', { p_service: 'crypto' }))(),
+      );
+      return !error && data === true;
+    } catch {
+      return true; // best-effort — never hide the feature just because this check failed
+    }
+  },
+
+  /**
    * Live USDT/NGN market price from Quidax, for display only — buy and sell
    * always re-derive their own price server-side. `buyRate` is the ask (what
    * buying costs) and `sellRate` the bid (what selling earns), so each side

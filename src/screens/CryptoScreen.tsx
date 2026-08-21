@@ -204,6 +204,18 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       kycService.getStatus().then((s) => setKycVerified(s.verified)).catch(() => setKycVerified(false));
     }, []),
   );
+  // Defense in depth for the admin's Crypto kill switch: Home already
+  // removes the tile/advert entirely when this is off, so reaching this
+  // screen at all should only happen via a stale nav stack — still checked
+  // here so that path shows a clear message instead of a live trading UI
+  // whose actions the server would reject anyway.
+  const [serviceEnabled, setServiceEnabled] = useState(true);
+
+  useFocusEffect(
+    useCallback(() => {
+      cryptoService.isEnabled().then(setServiceEnabled).catch(() => {});
+    }, []),
+  );
   // Shares the same StorageKeys.BALANCE_VISIBLE flag as the Home screen —
   // "hide my balance" is one app-wide privacy preference, not a per-screen one.
   const [balanceVisible, setBalanceVisible] = useState(true);
@@ -872,6 +884,29 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
           </TouchableOpacity>
         ) : null}
       </ResultStatusView>
+    );
+  }
+
+  if (!serviceEnabled) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <StatusBar barStyle={theme.mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
+        <View style={styles.topBar}>
+          <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => navigation.goBack()}>
+            <Ionicons name="chevron-back" size={26} color={theme.ink} />
+          </TouchableOpacity>
+          <Text style={styles.topTitle}>Crypto</Text>
+        </View>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.L }}>
+          <Ionicons name="logo-bitcoin" size={40} color={theme.inkFaint} />
+          <Text style={{ ...Typography.CARD_TITLE, color: theme.ink, marginTop: Spacing.M, textAlign: 'center' }}>
+            Crypto is currently unavailable
+          </Text>
+          <Text style={{ ...Typography.BODY, color: theme.inkMuted, marginTop: Spacing.S, textAlign: 'center' }}>
+            We'll let you know as soon as it's back.
+          </Text>
+        </View>
+      </SafeAreaView>
     );
   }
 

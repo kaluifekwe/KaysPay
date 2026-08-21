@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -25,6 +25,7 @@ import { walletService } from '../services/wallet.service';
 import { notificationService } from '../services/notification.service';
 import { vtuService } from '../services/vtu.service';
 import { kycService } from '../services/kyc.service';
+import { cryptoService } from '../services/crypto.service';
 import { supabase } from '../lib/supabase';
 import { withTimeout } from '../utils/network';
 import { useCachedData } from '../hooks/useCachedData';
@@ -39,7 +40,12 @@ interface HomeScreenProps {
 // ready to show it — flip to true to reveal the Crypto tile/advert.
 // External-wallet withdrawal will still show "not available yet" even once
 // this is on, since that genuinely needs Yellow Card's approval.
-const CRYPTO_ENABLED = true;
+//
+// Real-time visibility is the admin's service_controls.crypto kill switch
+// (see cryptoService.isEnabled, checked on focus below) — when off, the
+// Crypto tile and advert are removed from these lists entirely rather than
+// shown as "coming soon". Buy/Sell enforce the same switch server-side
+// regardless of what the client shows.
 
 interface QuickAction {
   id: string;
@@ -61,18 +67,20 @@ interface Advert {
 // Auto-rotating promo adverts on the home screen (owner 2026-07-28). Hardcoded
 // for now — can be moved to a Supabase table later so promos are editable
 // without an app update.
-const ADVERTS: Advert[] = [
+const BASE_ADVERTS: Advert[] = [
   { icon: 'phone-portrait-outline', title: 'Instant airtime', sub: 'MTN, Airtel and Glo in seconds', screen: 'Airtime' },
   { icon: 'cellular-outline', title: 'Cheap data bundles', sub: 'Every network, delivered instantly', screen: 'Data' },
   { icon: 'globe-outline', title: 'Travel eSIMs', sub: 'Stay online in 190+ countries', screen: 'TravelEsim' },
   { icon: 'id-card-outline', title: 'Get your BVN slip', sub: 'Verify and download in seconds', screen: 'NinServices' },
   { icon: 'id-card-outline', title: 'Get your NIN slip', sub: 'Verify and download in seconds', screen: 'NinServices' },
-  { icon: 'logo-bitcoin', title: "Buy and sell crypto on KaysPay", sub: 'USDT, instantly, right from your wallet', screen: 'Crypto', comingSoon: !CRYPTO_ENABLED },
 ];
+const CRYPTO_ADVERT: Advert = {
+  icon: 'logo-bitcoin', title: "Buy and sell crypto on KaysPay", sub: 'USDT, instantly, right from your wallet', screen: 'Crypto',
+};
 
 // One unified icon family (Ionicons outline) in brand green — replaces the
 // mixed emoji set so every tile reads as part of the same system.
-const quickActions: QuickAction[] = [
+const BASE_QUICK_ACTIONS: QuickAction[] = [
   { id: '1', icon: 'phone-portrait-outline', label: Strings.SERVICE_AIRTIME, screen: 'Airtime' },
   { id: '2', icon: 'cellular-outline', label: Strings.SERVICE_DATA, screen: 'Data' },
   { id: '4', icon: 'receipt-outline', label: Strings.SERVICE_BILLS, screen: 'Bills' },
@@ -81,20 +89,34 @@ const quickActions: QuickAction[] = [
   { id: '7', icon: 'globe-outline', label: Strings.SERVICE_ESIM, screen: 'TravelEsim', badge: 'New' },
   // Foreign Number + Dollar Card hidden (owner 2026-07-28) — re-add to restore.
   { id: '11', icon: 'id-card-outline', label: Strings.SERVICE_NIN, screen: 'NinServices', badge: 'New' },
-  // Crypto: built and functional (buy/sell), gated behind CRYPTO_ENABLED
-  // until the owner is ready to show real users — see the flag above.
-  { id: '99', icon: 'logo-bitcoin', label: 'Crypto', screen: 'Crypto', comingSoon: !CRYPTO_ENABLED, badge: CRYPTO_ENABLED ? 'New' : 'Soon' },
 ];
+const CRYPTO_QUICK_ACTION: QuickAction = {
+  id: '99', icon: 'logo-bitcoin', label: 'Crypto', screen: 'Crypto', badge: 'New',
+};
 
 // Auto-rotating advert banner (cycles every 3s). Taps navigate to the service,
 // or show the coming-soon alert for Crypto.
-function AdvertCarousel({ navigation, theme, styles }: { navigation: any; theme: AppTheme; styles: ReturnType<typeof createStyles> }) {
+function AdvertCarousel({
+  adverts,
+  navigation,
+  theme,
+  styles,
+}: {
+  adverts: Advert[];
+  navigation: any;
+  theme: AppTheme;
+  styles: ReturnType<typeof createStyles>;
+}) {
   const [index, setIndex] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setIndex((i) => (i + 1) % ADVERTS.length), 3000);
+    setIndex((i) => (i >= adverts.length ? 0 : i));
+  }, [adverts.length]);
+  useEffect(() => {
+    const t = setInterval(() => setIndex((i) => (i + 1) % adverts.length), 3000);
     return () => clearInterval(t);
-  }, []);
-  const ad = ADVERTS[index];
+  }, [adverts.length]);
+  const ad = adverts[index];
+  if (!ad) return null;
   return (
     <View style={styles.advertWrap}>
       <TouchableOpacity
@@ -116,7 +138,7 @@ function AdvertCarousel({ navigation, theme, styles }: { navigation: any; theme:
         <Ionicons name="chevron-forward" size={20} color={theme.gold} />
       </TouchableOpacity>
       <View style={styles.advertDots}>
-        {ADVERTS.map((_, i) => (
+        {adverts.map((_, i) => (
           <View key={i} style={[styles.advertDot, i === index && styles.advertDotActive]} />
         ))}
       </View>
@@ -145,11 +167,25 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   // funding and Crypto both gate on this same status — this is just the
   // visible reminder so it's never a surprise when those are blocked.
   const [kycVerified, setKycVerified] = useState<boolean | null>(null);
+  // Admin's Crypto kill switch — defaults to true so the tile doesn't
+  // flash away and back on every open; only actually hides once the check
+  // comes back false. Re-checked on every focus, same as kycVerified above.
+  const [cryptoEnabled, setCryptoEnabled] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
       kycService.getStatus().then((s) => setKycVerified(s.verified)).catch(() => {});
+      cryptoService.isEnabled().then(setCryptoEnabled).catch(() => {});
     }, []),
+  );
+
+  const quickActions = useMemo(
+    () => (cryptoEnabled ? [...BASE_QUICK_ACTIONS, CRYPTO_QUICK_ACTION] : BASE_QUICK_ACTIONS),
+    [cryptoEnabled],
+  );
+  const adverts = useMemo(
+    () => (cryptoEnabled ? [...BASE_ADVERTS, CRYPTO_ADVERT] : BASE_ADVERTS),
+    [cryptoEnabled],
   );
 
   // Shows the last-known balance/cashback immediately (even on a bad
@@ -415,7 +451,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
         <DataPromoBanner navigation={navigation} />
 
-        <AdvertCarousel navigation={navigation} theme={theme} styles={styles} />
+        <AdvertCarousel adverts={adverts} navigation={navigation} theme={theme} styles={styles} />
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
