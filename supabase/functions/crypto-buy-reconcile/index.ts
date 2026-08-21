@@ -11,6 +11,15 @@ import { settleCryptoBuySuccess } from "../_shared/crypto-buy-settle.ts";
 // exact amount_expected, which can take a while (a slow bank, an unwatched
 // app). Sweeping too eagerly would requery orders that are legitimately
 // still waiting on that transfer, so the floor below is generous.
+//
+// Quidax's own docs never actually enumerate every terminal status this
+// endpoint can return (see requeryOnRamp's comment) — "abandoned" was found
+// by checking a real stuck order directly against Quidax's dashboard
+// (2026-08-21), not from documentation. Only statuses actually confirmed
+// this way belong here: guessing at unconfirmed ones risks closing out an
+// order that's genuinely still in progress, which is worse than leaving a
+// truly-dead one stuck as "pending" a while longer.
+const TERMINAL_FAILURE_STATUSES = new Set(["failed", "needs_attention", "abandoned"]);
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
@@ -91,10 +100,10 @@ serve(async (req: Request) => {
           logPrefix: "crypto-buy-reconcile",
         });
         completed++;
-      } else if (remote.status === "failed" || remote.status === "needs_attention") {
+      } else if (TERMINAL_FAILURE_STATUSES.has(remote.status)) {
         await supabase.rpc("fail_crypto_buy", {
           p_merchant_reference: merchantReference,
-          p_reason: remote.errorMessage || "reconcile_failed",
+          p_reason: remote.errorMessage || `reconcile_${remote.status}`,
         });
         failed++;
       } else {
