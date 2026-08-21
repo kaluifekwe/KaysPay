@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AuthNavigator from './AuthNavigator';
 import RequireEmailVerifyNavigator from './RequireEmailVerifyNavigator';
 import RequirePinNavigator from './RequirePinNavigator';
@@ -41,8 +41,8 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
 
-const RootStack = createStackNavigator<any>();
-const MainStack = createStackNavigator<any>();
+const RootStack = createNativeStackNavigator<any>();
+const MainStack = createNativeStackNavigator<any>();
 
 function MainStackScreen() {
   return (

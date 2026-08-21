@@ -1,5 +1,5 @@
 import React from 'react';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import SplashScreen from '../screens/SplashScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import OnboardingScreen from '../screens/OnboardingScreen';
@@ -10,7 +10,7 @@ import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import PhoneInputScreen from '../screens/PhoneInputScreen';
 import OTPVerifyScreen from '../screens/OTPVerifyScreen';
 
-const Stack = createStackNavigator();
+const Stack = createNativeStackNavigator();
 
 // PIN/biometric setup is NOT part of this stack — it's mounted at the root
 // (see AppNavigator + RequirePinNavigator) as a hard, un-skippable gate that
@@ -26,7 +26,7 @@ export default function AuthNavigator() {
       initialRouteName="Splash"
       screenOptions={{
         headerShown: false,
-        cardStyle: { backgroundColor: '#FFFFFF' },
+        contentStyle: { backgroundColor: '#FFFFFF' },
       }}
     >
       <Stack.Screen name="Splash" component={SplashScreen} />

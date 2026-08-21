@@ -1,9 +1,9 @@
 import React from 'react';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import PINSetupScreen from '../screens/PINSetupScreen';
 import BiometricSetupScreen from '../screens/BiometricSetupScreen';
 
-const Stack = createStackNavigator();
+const Stack = createNativeStackNavigator();
 
 interface RequirePinNavigatorProps {
   /** Called once the user has created a PIN (and optionally enabled biometric). */
@@ -26,7 +26,7 @@ export default function RequirePinNavigator({ onComplete }: RequirePinNavigatorP
       screenOptions={{
         headerShown: false,
         gestureEnabled: false,
-        cardStyle: { backgroundColor: '#FFFFFF' },
+        contentStyle: { backgroundColor: '#FFFFFF' },
       }}
     >
       <Stack.Screen name="PINSetup" component={PINSetupScreen} />

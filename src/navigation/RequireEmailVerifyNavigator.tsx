@@ -1,8 +1,8 @@
 import React from 'react';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import EmailCodeScreen from '../screens/EmailCodeScreen';
 
-const Stack = createStackNavigator();
+const Stack = createNativeStackNavigator();
 
 interface RequireEmailVerifyNavigatorProps {
   /** Called once the signup email code has been verified. */
@@ -23,7 +23,7 @@ export default function RequireEmailVerifyNavigator({ onComplete, email }: Requi
       screenOptions={{
         headerShown: false,
         gestureEnabled: false,
-        cardStyle: { backgroundColor: '#FFFFFF' },
+        contentStyle: { backgroundColor: '#FFFFFF' },
       }}
     >
       <Stack.Screen
