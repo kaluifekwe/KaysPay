@@ -27,6 +27,7 @@ import { vtuService } from '../services/vtu.service';
 import { kycService } from '../services/kyc.service';
 import { supabase } from '../lib/supabase';
 import { withTimeout } from '../utils/network';
+import { useCachedData } from '../hooks/useCachedData';
 import type { Transaction } from '../types/app.types';
 
 interface HomeScreenProps {
@@ -126,10 +127,10 @@ function AdvertCarousel({ navigation, theme, styles }: { navigation: any; theme:
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const { theme, mode, toggleMode } = useTheme();
   const styles = createStyles(theme);
-  const [balance, setBalance] = useState(0);
-  const [cashbackBalance, setCashbackBalance] = useState(0);
+  // Realtime pushes (subscribeToBalance) override the cached/fetched value
+  // for instant updates; null means "no push yet, defer to the cache".
+  const [realtimeBalance, setRealtimeBalance] = useState<number | null>(null);
   const [balanceVisible, setBalanceVisible] = useState(true);
-  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [userName, setUserName] = useState('User');
   // Time-based greeting (from the phone's clock); recomputes whenever Home
@@ -151,13 +152,41 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     }, []),
   );
 
+  // Shows the last-known balance/cashback immediately (even on a bad
+  // connection) instead of a blank ₦0 while the live fetch is in flight,
+  // then quietly refreshes in the background — same pattern already used
+  // on WalletFunding/Crypto for this exact "takes a while to reflect" gap.
+  const fetchWalletOrThrow = useCallback(async () => {
+    const result = await walletService.getWallet();
+    if (!result.success) throw new Error(result.error || 'Could not load wallet');
+    return { balance: result.wallet?.balance ?? 0, cashback: result.wallet?.cashback_balance ?? 0 };
+  }, []);
+  const { data: walletData, refresh: refreshWallet } = useCachedData('home_wallet', fetchWalletOrThrow);
+
+  const fetchTransactionsOrThrow = useCallback(async () => {
+    const result = await walletService.getRecentTransactions(5);
+    if (!result.success) throw new Error(result.error || 'Could not load transactions');
+    return result.transactions ?? [];
+  }, []);
+  const { data: recentTransactionsData, refresh: refreshTransactions } = useCachedData<Transaction[]>(
+    'home_recent_transactions',
+    fetchTransactionsOrThrow,
+  );
+
+  const balance = realtimeBalance ?? walletData?.balance ?? 0;
+  const cashbackBalance = walletData?.cashback ?? 0;
+  const recentTransactions = recentTransactionsData ?? [];
+
+  const loadData = useCallback(async () => {
+    await Promise.all([refreshWallet(), refreshTransactions()]);
+  }, [refreshWallet, refreshTransactions]);
+
   useEffect(() => {
     loadBalanceVisibility();
-    loadData();
     loadUserInfo();
     loadUnread();
     const sub = walletService.subscribeToBalance((newBalance) => {
-      setBalance(newBalance);
+      setRealtimeBalance(newBalance);
     });
     // Refresh whenever Home regains focus (e.g. returning from funding or the
     // notifications tab) so the balance and unread count stay current without a
@@ -209,19 +238,6 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     const visible = await storageHelpers.getBoolean(StorageKeys.BALANCE_VISIBLE);
     if (visible !== undefined) {
       setBalanceVisible(visible);
-    }
-  };
-
-  const loadData = async () => {
-    const walletResult = await walletService.getWallet();
-    if (walletResult.success && walletResult.wallet) {
-      setBalance(walletResult.wallet.balance);
-      setCashbackBalance(walletResult.wallet.cashback_balance || 0);
-    }
-
-    const txResult = await walletService.getRecentTransactions(5);
-    if (txResult.success && txResult.transactions) {
-      setRecentTransactions(txResult.transactions);
     }
   };
 
