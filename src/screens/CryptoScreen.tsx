@@ -1262,7 +1262,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   placeholderTextColor={theme.inkFaint}
                   keyboardType="decimal-pad"
                   autoFocus
-                  onFocus={() => scrollRef.current?.scrollToEnd({ animated: true })}
                 />
                 {buyBelowMin && buyLimits && (
                   <Text style={styles.errorText}>
@@ -1390,7 +1389,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   placeholder="e.g. 10"
                   placeholderTextColor={theme.inkFaint}
                   keyboardType="decimal-pad"
-                  onFocus={() => scrollRef.current?.scrollToEnd({ animated: true })}
                 />
                 {sellNgnEstimate != null && (
                   <Text style={styles.estimateText}>≈ {formatNaira(sellNgnEstimate)}</Text>
