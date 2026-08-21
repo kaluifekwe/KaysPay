@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser } from "../_shared/auth.ts";
+import { adminClient, enforceRateLimit, getAuthUser } from "../_shared/auth.ts";
 import { isQuidaxConfigured, listBanks } from "../_shared/quidax-client.ts";
 import { redactSecrets } from "../_shared/redact.ts";
 
@@ -25,6 +25,16 @@ serve(async (req: Request) => {
 
   if (!isQuidaxConfigured()) {
     return json({ success: false, error: "Not available yet." }, 503);
+  }
+
+  // Bank lists are cached client-side, so 20/min is generous for real use.
+  const rate = await enforceRateLimit(adminClient(), "crypto_banks", user.id, 20, 60, user.id);
+  if (!rate.allowed) {
+    return json({
+      success: false,
+      error: "Please wait a moment and try again.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
   }
 
   try {

@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser, adminClient } from "../_shared/auth.ts";
+import { getAuthUser, adminClient, enforceRateLimit } from "../_shared/auth.ts";
 import { createCustomer, createStaticVirtualAccount, isFlutterwaveConfigured } from "../_shared/flutterwave-client.ts";
 import { createPaystackDedicatedAccount, getOrCreatePaystackCustomer, isPaystackConfigured } from "../_shared/paystack-client.ts";
 import { redactSecrets } from "../_shared/redact.ts";
@@ -28,6 +28,19 @@ serve(async (req: Request) => {
 
   const user = await getAuthUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
+
+  // Creating a virtual account is a provider-side write and effectively a
+  // one-time action per user, so this ceiling is deliberately low: 5/hour
+  // still absorbs retries after a failed attempt without letting a loop
+  // register hundreds of accounts against our provider.
+  const rate = await enforceRateLimit(adminClient(), "create_virtual_account", user.id, 5, 3600, user.id);
+  if (!rate.allowed) {
+    return json({
+      success: false,
+      error: "Too many attempts. Please wait a little and try again.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
+  }
 
   try {
     return await handleRequest(req, user);

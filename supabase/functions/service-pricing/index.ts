@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { adminClient, getAuthUser, isServiceEnabled } from "../_shared/auth.ts";
+import { adminClient, enforceRateLimit, getAuthUser, isServiceEnabled } from "../_shared/auth.ts";
 
 // Same defaults as each identity function's own hardcoded fallback (see
 // _shared/service-pricing.ts) — kept in sync manually since these live in
@@ -34,9 +34,20 @@ function json(body: unknown, status = 200) {
 serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
-  if (!(await getAuthUser(req))) return json({ error: "Unauthorized" }, 401);
+  // Keep the resolved user — the rate limiter needs an account to key on.
+  const user = await getAuthUser(req);
+  if (!user) return json({ error: "Unauthorized" }, 401);
 
   const supabase = adminClient();
+
+  const rate = await enforceRateLimit(supabase, "service_pricing", user.id, 20, 60, user.id);
+  if (!rate.allowed) {
+    return json({
+      error: "Please wait a moment and try again.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
+  }
+
   const [{ data, error }, modificationEnabled, { data: feeRow }] = await Promise.all([
     supabase.from("service_pricing").select("service_key, price_kobo"),
     isServiceEnabled(supabase, "nin_modification"),

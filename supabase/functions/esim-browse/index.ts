@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser, adminClient } from "../_shared/auth.ts";
+import { getAuthUser, adminClient, enforceRateLimit } from "../_shared/auth.ts";
 import { browseAiraloPackages, fetchAiraloCatalog, isAiraloConfigured } from "../_shared/airalo-client.ts";
 import { usdToNgnKobo, getUsdNgnRate, NormalizedEsimPlan } from "../_shared/esim-catalog.ts";
 
@@ -57,6 +57,17 @@ serve(async (req: Request) => {
   if (!isAiraloConfigured()) return json({ success: false, error: "eSIM provider not configured" }, 500);
 
   const supabase = adminClient();
+
+  // Named limitCheck, not `rate` — `rate` is already the FX rate below.
+  const limitCheck = await enforceRateLimit(supabase, "esim_browse", user.id, 20, 60, user.id);
+  if (!limitCheck.allowed) {
+    return json({
+      success: false,
+      error: "Please wait a moment and try again.",
+      retry_after_seconds: limitCheck.retryAfterSeconds,
+    }, 429);
+  }
+
   let plans: NormalizedEsimPlan[] = [];
   try {
     const rate = await getUsdNgnRate(supabase);

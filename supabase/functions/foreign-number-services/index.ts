@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser, adminClient } from "../_shared/auth.ts";
+import { getAuthUser, adminClient, enforceRateLimit } from "../_shared/auth.ts";
 import { isSmspvaConfigured } from "../_shared/smspva-client.ts";
 import {
   FOREIGN_NUMBER_SERVICES,
@@ -28,6 +28,16 @@ serve(async (req: Request) => {
   if (!user) return json({ error: "Unauthorized" }, 401);
 
   const supabase = adminClient();
+
+  const rate = await enforceRateLimit(supabase, "foreign_number_services", user.id, 30, 60, user.id);
+  if (!rate.allowed) {
+    return json({
+      success: false,
+      error: "Please wait a moment and try again.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
+  }
+
   let cd: Record<string, Record<string, number>> | undefined;
   try {
     const { data: cache } = await supabase.from("smspva_price_cache").select("data").eq("id", 1).maybeSingle();

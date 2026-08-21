@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser, adminClient } from "../_shared/auth.ts";
+import { getAuthUser, adminClient, enforceRateLimit } from "../_shared/auth.ts";
 import {
   isVtuNaijaConfigured,
   normalizeVTUNaijaQueryResult,
@@ -41,6 +41,14 @@ serve(async (req: Request) => {
   if (!txId) return json({ error: "Missing transaction_id" }, 400);
 
   const supabase = adminClient();
+
+  const rate = await enforceRateLimit(supabase, "vtu_verify_order", user.id, 20, 60, user.id);
+  if (!rate.allowed) {
+    return json({
+      error: "Please wait a moment and try again.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
+  }
 
   // Load the order and confirm it belongs to the caller. Never trust a
   // transaction id alone — a user may only settle their OWN order.

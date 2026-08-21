@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser, adminClient } from "../_shared/auth.ts";
+import { getAuthUser, adminClient, enforceRateLimit } from "../_shared/auth.ts";
 import { confirmServiceRefund } from "../_shared/service-refund.ts";
 import { getSms, isSmspvaConfigured } from "../_shared/smspva-client.ts";
 
@@ -25,6 +25,21 @@ serve(async (req: Request) => {
 
   const user = await getAuthUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
+
+  // Deliberately 60/min, double the other lookups. ForeignNumbersScreen
+  // polls this every 4s (POLL_INTERVAL_MS) while the user waits for their
+  // SMS code — 15/min sustained before the user touches anything. A 30/min
+  // ceiling would sit only 2x above normal use and could cut off a genuine
+  // wait if the screen were reopened or refreshed; 60 keeps 4x headroom
+  // while still stopping a scripted loop cold.
+  const rate = await enforceRateLimit(adminClient(), "foreign_number_status", user.id, 60, 60, user.id);
+  if (!rate.allowed) {
+    return json({
+      success: false,
+      error: "Please wait a moment and try again.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
+  }
 
   let body: any;
   try {

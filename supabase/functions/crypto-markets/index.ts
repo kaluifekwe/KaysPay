@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser } from "../_shared/auth.ts";
+import { adminClient, enforceRateLimit, getAuthUser } from "../_shared/auth.ts";
 import { getAllMarketTickers, isQuidaxConfigured } from "../_shared/quidax-client.ts";
 import { SUPPORTED_SWAP_ASSETS } from "../_shared/crypto-assets.ts";
 
@@ -22,6 +22,17 @@ serve(async (req: Request) => {
 
   const user = await getAuthUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
+
+  // Every call fans out to the exchange's full ticker list — the most
+  // expensive of the read endpoints, so it gets the same 30/min ceiling.
+  const rate = await enforceRateLimit(adminClient(), "crypto_markets", user.id, 30, 60, user.id);
+  if (!rate.allowed) {
+    return json({
+      success: false,
+      error: "Please wait a moment and try again.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
+  }
 
   if (!isQuidaxConfigured()) {
     return json({ success: false, error: "Live prices aren't available right now." }, 503);

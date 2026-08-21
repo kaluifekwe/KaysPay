@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { adminClient, getAuthUser } from "../_shared/auth.ts";
+import { adminClient, enforceRateLimit, getAuthUser } from "../_shared/auth.ts";
 import { getUsdNgnRate } from "../_shared/esim-catalog.ts";
 import { getMarketTicker, isQuidaxConfigured } from "../_shared/quidax-client.ts";
 
@@ -27,6 +27,21 @@ serve(async (req: Request) => {
 
   const user = await getAuthUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
+
+  // Read-only, but every call reaches the exchange. The Crypto screen fires
+  // this once per focus plus once per pull-to-refresh, so a burst of ~6 is
+  // normal and 30/min leaves a human ample headroom — while stopping a
+  // scripted loop from burning the provider quota for every other user.
+  // Named limitCheck, not `rate` — the FX fallback below already binds
+  // `rate` in this same scope.
+  const limitCheck = await enforceRateLimit(adminClient(), "crypto_quote", user.id, 30, 60, user.id);
+  if (!limitCheck.allowed) {
+    return json({
+      success: false,
+      error: "Please wait a moment and try again.",
+      retry_after_seconds: limitCheck.retryAfterSeconds,
+    }, 429);
+  }
 
   if (isQuidaxConfigured()) {
     try {

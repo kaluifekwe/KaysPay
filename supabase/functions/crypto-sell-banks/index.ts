@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser } from "../_shared/auth.ts";
+import { adminClient, enforceRateLimit, getAuthUser } from "../_shared/auth.ts";
 import { isQuidaxRampConfigured, listOffRampBanks } from "../_shared/quidax-ramp-client.ts";
 import { withBankLogos } from "../_shared/bank-logos.ts";
 import { redactSecrets } from "../_shared/redact.ts";
@@ -26,6 +26,15 @@ serve(async (req: Request) => {
 
   if (!isQuidaxRampConfigured()) {
     return json({ success: false, error: "Not available yet." }, 503);
+  }
+
+  const rate = await enforceRateLimit(adminClient(), "crypto_sell_banks", user.id, 20, 60, user.id);
+  if (!rate.allowed) {
+    return json({
+      success: false,
+      error: "Please wait a moment and try again.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
   }
 
   try {

@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser } from "../_shared/auth.ts";
+import { getAuthUser, adminClient, enforceRateLimit } from "../_shared/auth.ts";
 import { getServicePriceUSD, getAvailability, isSmspvaConfigured } from "../_shared/smspva-client.ts";
 import {
   FOREIGN_NUMBER_SERVICES,
@@ -28,6 +28,15 @@ serve(async (req: Request) => {
 
   const user = await getAuthUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
+
+  const rate = await enforceRateLimit(adminClient(), "foreign_number_price", user.id, 30, 60, user.id);
+  if (!rate.allowed) {
+    return json({
+      success: false,
+      error: "Please wait a moment and try again.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
+  }
 
   let body: any;
   try {

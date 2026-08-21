@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { adminClient, getAuthUser, isDeviceSessionAllowed, readJsonBody, RequestBodyError } from "../_shared/auth.ts";
+import { adminClient, enforceRateLimit, getAuthUser, isDeviceSessionAllowed, readJsonBody, RequestBodyError } from "../_shared/auth.ts";
 import { getOrCreateCryptoAccount } from "../_shared/crypto-account.ts";
 import { createDepositAddress, isQuidaxConfigured } from "../_shared/quidax-client.ts";
 
@@ -52,6 +52,16 @@ serve(async (req: Request) => {
 
   if (!(await isDeviceSessionAllowed(req, supabase, user.id))) {
     return json({ error: "This device session has been revoked. Please log in again." }, 401);
+  }
+
+  // Address creation is a write on the exchange side, not just a read.
+  const rate = await enforceRateLimit(supabase, "crypto_deposit_address", user.id, 30, 60, user.id);
+  if (!rate.allowed) {
+    return json({
+      success: false,
+      error: "Please wait a moment and try again.",
+      retry_after_seconds: rate.retryAfterSeconds,
+    }, 429);
   }
 
   try {
