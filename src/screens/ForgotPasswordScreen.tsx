@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,9 +6,11 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { authService } from '../services/auth.service';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
@@ -21,6 +23,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const [email, setEmail] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
   const [emailError, setEmailError] = useState('');
   const [focused, setFocused] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -58,7 +61,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.keyboardView}>
+      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
@@ -74,13 +77,12 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
           </Text>
         </View>
 
-        <KeyboardAwareScrollView
+        <ScrollView
+          ref={scrollRef}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          enableOnAndroid
-          extraScrollHeight={20}
         >
           <View style={styles.formCard}>
             <View style={styles.fieldContainer}>
@@ -98,7 +100,10 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
                     setEmail(t);
                     validate(t);
                   }}
-                  onFocus={() => setFocused(true)}
+                  onFocus={() => {
+                    setFocused(true);
+                    scrollRef.current?.scrollToEnd({ animated: true });
+                  }}
                   onBlur={() => setFocused(false)}
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -127,8 +132,8 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
               Remembered it? <Text style={styles.backLinkBold}>Back to Login</Text>
             </Text>
           </TouchableOpacity>
-        </KeyboardAwareScrollView>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

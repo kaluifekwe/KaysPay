@@ -6,9 +6,11 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { authService } from '../services/auth.service';
 import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
@@ -51,6 +53,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
   const [error, setError] = useState('');
 
   const passwordRef = useRef<TextInput>(null);
+  const scrollRef = useRef<ScrollView>(null);
   const confirmRef = useRef<TextInput>(null);
 
   const codeValid = /^\d{6}$/.test(code);
@@ -109,7 +112,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.keyboardView}>
+      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
@@ -126,13 +129,12 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
           </Text>
         </View>
 
-        <KeyboardAwareScrollView
+        <ScrollView
+          ref={scrollRef}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          enableOnAndroid
-          extraScrollHeight={20}
         >
           <View style={styles.formCard}>
             {/* Code */}
@@ -209,7 +211,10 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
                   placeholderTextColor={theme.inkMuted}
                   value={confirm}
                   onChangeText={setConfirm}
-                  onFocus={() => setFocused('confirm')}
+                  onFocus={() => {
+                    setFocused('confirm');
+                    scrollRef.current?.scrollToEnd({ animated: true });
+                  }}
                   onBlur={() => setFocused(null)}
                   secureTextEntry={!showConfirm}
                   autoCapitalize="none"
@@ -244,8 +249,8 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
               Didn't get a code? <Text style={styles.resendBold}>{resending ? 'Sending...' : 'Resend'}</Text>
             </Text>
           </TouchableOpacity>
-        </KeyboardAwareScrollView>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

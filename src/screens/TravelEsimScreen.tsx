@@ -13,9 +13,9 @@ import {
   Linking,
   Platform,
   BackHandler,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { KeyboardAwareFlatList } from 'react-native-keyboard-aware-scroll-view';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
@@ -494,11 +494,9 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
         <Text style={styles.topTitle}>eSIM Store</Text>
       </View>
 
-      <View style={styles.keyboardView}>
+      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {tab === 'browse' ? (
-        <KeyboardAwareFlatList
-          enableOnAndroid
-          extraScrollHeight={20}
+        <FlatList
           data={browseData}
           keyExtractor={(item, i) => (item.type === 'country' ? item.country.code : `h-${item.label}-${i}`)}
           renderItem={({ item }) =>
@@ -554,7 +552,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
           showsVerticalScrollIndicator={false}
         />
       )}
-      </View>
+      </KeyboardAvoidingView>
 
       <Modal visible={!!viewingEsim} transparent animationType="slide" onRequestClose={() => setViewingEsim(null)}>
         <View style={styles.modalOverlay}>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,9 @@ import {
   ActivityIndicator,
   Modal,
   FlatList,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Ionicons } from '@expo/vector-icons';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
@@ -52,6 +52,7 @@ export default function TransferScreen({ navigation }: TransferScreenProps) {
   const [verifyError, setVerifyError] = useState<string | null>(null);
 
   const [amount, setAmount] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
   const [sendState, setSendState] = useState<SendState>('idle');
   const [resultMessage, setResultMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -182,13 +183,12 @@ export default function TransferScreen({ navigation }: TransferScreenProps) {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <KeyboardAwareScrollView
+        <ScrollView
+          ref={scrollRef}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          enableOnAndroid
-          extraScrollHeight={20}
         >
           <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => navigation.goBack()}>
             <Text style={styles.backText}>{'<'}</Text>
@@ -264,6 +264,7 @@ export default function TransferScreen({ navigation }: TransferScreenProps) {
                 onChangeText={(t) => setAmount(t.replace(/[^0-9]/g, '').slice(0, 9))}
                 keyboardType="numeric"
                 editable={sendState !== 'sending'}
+                onFocus={() => scrollRef.current?.scrollToEnd({ animated: true })}
               />
             </View>
             {numericAmount > 0 && !isValidAmount && (
@@ -276,7 +277,7 @@ export default function TransferScreen({ navigation }: TransferScreenProps) {
               <Text style={styles.errorText}>{errorMessage}</Text>
             </View>
           ) : null}
-        </KeyboardAwareScrollView>
+        </ScrollView>
 
         <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + Spacing.SCREEN_PADDING }]}>
           {selectedBank && verifiedName && (

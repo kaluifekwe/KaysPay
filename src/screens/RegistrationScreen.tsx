@@ -7,9 +7,11 @@ import {
   TouchableOpacity,
   Animated,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Ionicons } from '@expo/vector-icons';
 import { authService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
@@ -105,6 +107,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
   const networkAnim = useRef(new Animated.Value(0)).current;
 
   const emailRef = useRef<TextInput>(null);
+  const scrollRef = useRef<ScrollView>(null);
   const phoneRef = useRef<TextInput>(null);
   const confirmPasswordRef = useRef<TextInput>(null);
   const pinRefs = useRef<(TextInput | null)[]>([]);
@@ -396,7 +399,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
-      <View style={styles.keyboardView}>
+      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
@@ -423,12 +426,11 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
           </View>
         </View>
 
-        <KeyboardAwareScrollView
+        <ScrollView
+          ref={scrollRef}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-          enableOnAndroid
-          extraScrollHeight={20}
           keyboardShouldPersistTaps="handled"
         >
           {step === 1 ? (
@@ -487,7 +489,10 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                     placeholderTextColor={theme.inkMuted}
                     value={phone}
                     onChangeText={handlePhoneChange}
-                    onFocus={() => setFocusedField('phone')}
+                    onFocus={() => {
+                      setFocusedField('phone');
+                      scrollRef.current?.scrollToEnd({ animated: true });
+                    }}
                     onBlur={() => setFocusedField(null)}
                     keyboardType="numeric"
                     maxLength={15}
@@ -634,8 +639,8 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
             <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
             <Text style={styles.termsLink}>Privacy Policy</Text>.
           </Text>
-        </KeyboardAwareScrollView>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

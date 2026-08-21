@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import * as Clipboard from 'expo-clipboard';
 import {
   View,
@@ -14,10 +14,10 @@ import {
   Modal,
   FlatList,
   Image,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Ionicons } from '@expo/vector-icons';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -192,6 +192,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const insets = useSafeAreaInsets();
 
   const [tab, setTab] = useState<Tab>('deposit');
+  const scrollRef = useRef<ScrollView>(null);
   // Buy/Sell require identity verification (NIN/BVN) — Deposit doesn't.
   // null = not checked yet, so the real Buy/Sell forms never flash on
   // screen before this resolves; the gate below only renders once it's
@@ -920,15 +921,15 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
         <Text style={styles.topTitle}>Crypto</Text>
       </View>
 
-      <KeyboardAwareScrollView
-        style={styles.flex}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        showsVerticalScrollIndicator={false}
-        enableOnAndroid
-        extraScrollHeight={20}
-      >
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          ref={scrollRef}
+          style={styles.flex}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+        >
           {pendingRefund && (
             <TouchableOpacity
               style={styles.refundBanner}
@@ -1260,6 +1261,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   placeholderTextColor={theme.inkFaint}
                   keyboardType="decimal-pad"
                   autoFocus
+                  onFocus={() => scrollRef.current?.scrollToEnd({ animated: true })}
                 />
                 {buyBelowMin && buyLimits && (
                   <Text style={styles.errorText}>
@@ -1387,6 +1389,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   placeholder="e.g. 10"
                   placeholderTextColor={theme.inkFaint}
                   keyboardType="decimal-pad"
+                  onFocus={() => scrollRef.current?.scrollToEnd({ animated: true })}
                 />
                 {sellNgnEstimate != null && (
                   <Text style={styles.estimateText}>≈ {formatNaira(sellNgnEstimate)}</Text>
@@ -1547,7 +1550,8 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
               </View>
             )}
           </View>
-      </KeyboardAwareScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {pendingRefund && (
         <CryptoRefundBankModal

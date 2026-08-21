@@ -13,7 +13,6 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
@@ -379,14 +378,12 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView style={styles.scrollView} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <KeyboardAwareScrollView
+        <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          enableOnAndroid
-          extraScrollHeight={20}
         >
         <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={handleBack}>
           <Text style={styles.backText}>{'<'}</Text>
@@ -594,7 +591,7 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
             ) : null}
           </View>
         )}
-        </KeyboardAwareScrollView>
+        </ScrollView>
       </KeyboardAvoidingView>
 
       {step === 'confirm' && priceKobo !== null && (

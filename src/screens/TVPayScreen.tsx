@@ -9,10 +9,10 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ScrollView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Ionicons } from '@expo/vector-icons';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import ProviderLogo from '../components/ProviderLogo';
@@ -45,6 +45,7 @@ export default function TVPayScreen({ navigation, route }: any) {
   const verifyRequestRef = useRef(0);
 
   const [smartcardNumber, setSmartcardNumber] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
   const [bouquets, setBouquets] = useState<TVBouquet[]>([]);
   const [selectedBouquet, setSelectedBouquet] = useState<TVBouquet | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(true);
@@ -266,13 +267,12 @@ export default function TVPayScreen({ navigation, route }: any) {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <KeyboardAwareScrollView
+        <ScrollView
+          ref={scrollRef}
           style={styles.flex}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          enableOnAndroid
-          extraScrollHeight={20}
           showsVerticalScrollIndicator={false}
         >
           <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => navigation.goBack()}>
@@ -357,6 +357,7 @@ export default function TVPayScreen({ navigation, route }: any) {
                 placeholderTextColor={theme.inkMuted}
                 keyboardType="number-pad"
                 maxLength={13}
+                onFocus={() => scrollRef.current?.scrollToEnd({ animated: true })}
               />
             ) : null}
 
@@ -447,7 +448,7 @@ export default function TVPayScreen({ navigation, route }: any) {
           </View>
 
           {errorMessage ? <Text style={styles.verifyError}>{errorMessage}</Text> : null}
-        </KeyboardAwareScrollView>
+        </ScrollView>
 
         <View style={[styles.bottomBar, { paddingBottom: insets.bottom + Spacing.L }]}>
           {selectedBouquet && (

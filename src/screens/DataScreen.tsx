@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -10,9 +10,9 @@ import {
   ActivityIndicator,
   Alert,
   Switch,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../constants/colors';
@@ -69,6 +69,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   const styles = createStyles(theme);
   const insets = useSafeAreaInsets();
   const [phoneNumber, setPhoneNumber] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
   const [selectedNetwork, setSelectedNetwork] = useState<NetworkProvider | null>(null);
   const [selectedBundle, setSelectedBundle] = useState<DataBundle | null>(null);
   const [buyState, setBuyState] = useState<BuyState>('idle');
@@ -334,13 +335,12 @@ export default function DataScreen({ navigation }: DataScreenProps) {
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <KeyboardAwareScrollView
+        <ScrollView
+          ref={scrollRef}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          enableOnAndroid
-          extraScrollHeight={20}
         >
           <TouchableOpacity
             style={styles.backButton}
@@ -547,7 +547,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
               <Text style={styles.errorText}>{errorMessage}</Text>
             </View>
           ) : null}
-        </KeyboardAwareScrollView>
+        </ScrollView>
 
         <View style={[styles.bottomBar, { paddingBottom: insets.bottom + Spacing.L }]}>
           {selectedBundle && (

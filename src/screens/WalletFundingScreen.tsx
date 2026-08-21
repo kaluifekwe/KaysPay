@@ -5,10 +5,10 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { AppTheme } from '../constants/theme';
@@ -224,13 +224,11 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        <KeyboardAwareScrollView
+        <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
-          enableOnAndroid
-          extraScrollHeight={20}
-          >
+        >
             <Text style={styles.title}>Fund Wallet</Text>
 
             <TouchableOpacity
@@ -320,7 +318,7 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 )}
               </>
             )}
-        </KeyboardAwareScrollView>
+        </ScrollView>
       </View>
     </SafeAreaView>
   );

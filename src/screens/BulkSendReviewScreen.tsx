@@ -12,9 +12,9 @@ import {
   ActivityIndicator,
   StyleSheet,
   Switch,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
 import { AppTheme } from '../constants/theme';
@@ -118,6 +118,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
   // work grew linearly with the number of people, which is the opposite of
   // what the feature is for.
   const [bulkAmount, setBulkAmount] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
   // Measured height of the pinned footer, used to pad the scroll area so the
   // last recipient can always be scrolled clear of it. This was a hardcoded
   // guess, which silently went stale the moment the footer grew (the network
@@ -606,7 +607,8 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <KeyboardAwareScrollView
+        <ScrollView
+          ref={scrollRef}
           style={styles.scrollView}
           contentContainerStyle={[
             styles.scrollContent,
@@ -614,8 +616,6 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          enableOnAndroid
-          extraScrollHeight={20}
         >
           <TouchableOpacity
             style={styles.backButton}
@@ -980,7 +980,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
                   </View>
                 );
               })}
-        </KeyboardAwareScrollView>
+        </ScrollView>
 
         <View
           style={[styles.bottomContainer, { paddingBottom: insets.bottom + Spacing.SCREEN_PADDING }]}

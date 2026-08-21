@@ -6,9 +6,11 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { authService } from '../services/auth.service';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
@@ -32,6 +34,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
   const [passwordValid, setPasswordValid] = useState(false);
 
   const passwordRef = useRef<TextInput>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
   const validateEmailField = (value: string) => {
     if (!value.trim()) {
@@ -101,7 +104,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
-      <View style={styles.keyboardView}>
+      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
@@ -115,13 +118,12 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
           <Text style={styles.subtitle}>Sign in to your account</Text>
         </View>
 
-        <KeyboardAwareScrollView
+        <ScrollView
+          ref={scrollRef}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          enableOnAndroid
-          extraScrollHeight={20}
         >
           <View style={styles.formCard}>
             {/* Email */}
@@ -173,7 +175,10 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
                     setPassword(text);
                     validatePasswordField(text);
                   }}
-                  onFocus={() => setFocusedField('password')}
+                  onFocus={() => {
+                    setFocusedField('password');
+                    scrollRef.current?.scrollToEnd({ animated: true });
+                  }}
                   onBlur={() => setFocusedField(null)}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
@@ -232,8 +237,8 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
             <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
             <Text style={styles.termsLink}>Privacy Policy</Text>.
           </Text>
-        </KeyboardAwareScrollView>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
