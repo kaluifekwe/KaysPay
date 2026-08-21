@@ -228,6 +228,14 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     // notifications tab) so the balance and unread count stay current without a
     // manual app refresh.
     const unsubscribeFocus = navigation.addListener('focus', () => {
+      // Clear any stale push here first: realtimeBalance takes priority
+      // over walletData.balance below (see `balance` above), so once the
+      // Realtime subscription fires even once, its value silently masks
+      // every future focus-refresh forever if that connection later drops
+      // (Home never remounts to reset it, unlike stack-pushed screens).
+      // A dropped-then-restored connection will simply push a fresh value
+      // again on its own once reconnected.
+      setRealtimeBalance(null);
       loadData();
       loadUnread();
     });
