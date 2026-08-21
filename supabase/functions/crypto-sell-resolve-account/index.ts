@@ -23,6 +23,16 @@ import { redactSecrets } from "../_shared/redact.ts";
 // runs its own separate initiate+attach with a fresh reference, so this
 // probe never shares state with (or blocks) the actual sale. No crypto ever
 // moves here — confirm/withdraw only happen in crypto-sell itself.
+//
+// Must match crypto-sell/index.ts's own MIN_USDT/MAX_USDT exactly: this
+// probe used to only check crypto_amount > 0, so an amount below Quidax's
+// real minimum (e.g. 0.9) still got sent to their off-ramp initiate call,
+// which rejected it with a bare "Invalid amount" — surfacing here as the
+// generic "Could not verify this account" and wrongly pointing the
+// customer at their bank details instead of the amount they typed.
+const MIN_USDT = 1;
+const MAX_USDT = 2000;
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -73,8 +83,8 @@ serve(async (req: Request) => {
   if (!bankCode) {
     return json({ success: false, error: "Select a bank." }, 400);
   }
-  if (!Number.isFinite(cryptoAmount) || cryptoAmount <= 0) {
-    return json({ success: false, error: "Enter an amount first." }, 400);
+  if (!Number.isFinite(cryptoAmount) || cryptoAmount < MIN_USDT || cryptoAmount > MAX_USDT) {
+    return json({ success: false, error: `Enter an amount between ${MIN_USDT} and ${MAX_USDT} USDT` }, 400);
   }
 
   try {
