@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Keyboard, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ProviderLogo from '../components/ProviderLogo';
@@ -56,7 +56,7 @@ export default function ExamPinsScreen({ navigation }: ExamPinsScreenProps) {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}>
           <Text style={styles.backText}>{'<'}</Text>
         </TouchableOpacity>
 

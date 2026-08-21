@@ -5,6 +5,7 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -51,7 +52,7 @@ export default function BillsScreen({ navigation }: BillsScreenProps) {
         <TouchableOpacity
           style={styles.backButton}
           activeOpacity={0.6}
-          onPress={() => navigation.goBack()}
+          onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}
         >
           <Text style={styles.backText}>{'<'}</Text>
         </TouchableOpacity>

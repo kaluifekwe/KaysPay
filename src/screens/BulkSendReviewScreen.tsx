@@ -13,6 +13,7 @@ import {
   StyleSheet,
   Switch,
   ScrollView,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -620,7 +621,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
           <TouchableOpacity
             style={styles.backButton}
             activeOpacity={0.6}
-            onPress={() => navigation.goBack()}
+            onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}
           >
             <Text style={styles.backText}>{'<'}</Text>
           </TouchableOpacity>
@@ -1044,7 +1045,7 @@ export default function BulkSendReviewScreen({ navigation, route }: BulkSendRevi
           {phase !== 'review' ? (
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => navigation.goBack()}
+              onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}
               activeOpacity={0.8}
             >
               <Text style={styles.actionButtonText}>{Strings.BUTTON_DONE}</Text>

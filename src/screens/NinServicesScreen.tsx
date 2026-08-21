@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Image,
   Alert,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Asset } from 'expo-asset';
@@ -1281,7 +1282,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
         >
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.backButton} onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}>
             <Text style={styles.backText}>{'<'}</Text>
           </TouchableOpacity>
 

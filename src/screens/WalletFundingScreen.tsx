@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -218,7 +219,7 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => navigation.goBack()}
+            onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}
           >
             <Text style={styles.backText}>{'<'}</Text>
           </TouchableOpacity>

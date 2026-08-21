@@ -8,6 +8,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   StatusBar,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -246,7 +247,7 @@ const TransactionHistoryScreen: React.FC = () => {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => navigation.goBack()}
+            onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}
           >
             <Text style={styles.backButtonText}>{'<'}</Text>
           </TouchableOpacity>
@@ -269,7 +270,7 @@ const TransactionHistoryScreen: React.FC = () => {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}
         >
           <Text style={styles.backButtonText}>{'<'}</Text>
         </TouchableOpacity>

@@ -222,7 +222,7 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
           <TouchableOpacity
             style={styles.backButton}
             activeOpacity={0.6}
-            onPress={() => navigation.goBack()}
+            onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}
           >
             <Text style={styles.backText}>{'<'}</Text>
           </TouchableOpacity>

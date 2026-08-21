@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
   ScrollView,
+  Keyboard,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -275,7 +276,7 @@ export default function TVPayScreen({ navigation, route }: any) {
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
         >
-          <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}>
             <Text style={styles.backText}>{'<'}</Text>
           </TouchableOpacity>
 

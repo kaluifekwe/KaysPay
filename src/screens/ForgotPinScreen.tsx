@@ -10,6 +10,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppTheme } from '../constants/theme';
@@ -92,7 +93,7 @@ export default function ForgotPinScreen({ navigation }: { navigation: any }) {
     <SafeAreaView style={styles.container} edges={['top']}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.back} onPress={() => navigation.goBack()}><Text style={styles.backText}>{'<'}</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.back} onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}><Text style={styles.backText}>{'<'}</Text></TouchableOpacity>
           <Text style={styles.headerTitle}>Forgot transaction PIN</Text><View style={styles.back} />
         </View>
         <View style={styles.content}>

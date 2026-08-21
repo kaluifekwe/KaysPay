@@ -7,6 +7,7 @@ import {
   Alert,
   ActivityIndicator,
   StyleSheet,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppTheme } from '../constants/theme';
@@ -206,7 +207,7 @@ export default function DollarCardsScreen({ navigation }: DollarCardsScreenProps
         <TouchableOpacity
           style={styles.backButton}
           activeOpacity={0.6}
-          onPress={() => navigation.goBack()}
+          onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}
         >
           <Text style={styles.backText}>{'<'}</Text>
         </TouchableOpacity>

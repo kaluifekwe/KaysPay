@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppTheme } from '../constants/theme';
@@ -142,7 +143,7 @@ export default function OTPVerifyScreen({ navigation, route }: OTPVerifyScreenPr
           <TouchableOpacity
             style={styles.backButton}
             activeOpacity={0.6}
-            onPress={() => navigation.goBack()}
+            onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Text style={styles.backArrow}>←</Text>

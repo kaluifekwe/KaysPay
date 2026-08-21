@@ -11,6 +11,7 @@ import {
   Alert,
   Switch,
   ScrollView,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -345,7 +346,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
           <TouchableOpacity
             style={styles.backButton}
             activeOpacity={0.6}
-            onPress={() => navigation.goBack()}
+            onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}
           >
             <Text style={styles.backText}>{'<'}</Text>
           </TouchableOpacity>

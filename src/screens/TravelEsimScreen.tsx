@@ -14,6 +14,7 @@ import {
   Platform,
   BackHandler,
   KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppTheme } from '../constants/theme';
@@ -488,7 +489,7 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.backButton} activeOpacity={0.6} onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}>
           <Text style={styles.backText}>{'<'}</Text>
         </TouchableOpacity>
         <Text style={styles.topTitle}>eSIM Store</Text>

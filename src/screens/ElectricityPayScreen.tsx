@@ -357,7 +357,7 @@ export default function ElectricityPayScreen(props: any) {
             <Text style={styles.secondaryButtonText}>Share Receipt</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.doneButton} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.doneButton} onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}>
             <Text style={styles.doneButtonText}>Done</Text>
           </TouchableOpacity>
         </ScrollView>
@@ -381,7 +381,7 @@ export default function ElectricityPayScreen(props: any) {
           <TouchableOpacity
             style={styles.backButton}
             activeOpacity={0.6}
-            onPress={() => navigation.goBack()}
+            onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}
           >
             <Text style={styles.backText}>{'<'}</Text>
           </TouchableOpacity>

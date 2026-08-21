@@ -9,6 +9,7 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { emailVerificationService } from '../services/emailVerification.service';
@@ -211,7 +212,7 @@ export default function EmailCodeScreen(props: any) {
             <TouchableOpacity
               style={styles.backButton}
               activeOpacity={0.6}
-              onPress={() => navigation.goBack()}
+              onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Text style={styles.backArrow}>←</Text>

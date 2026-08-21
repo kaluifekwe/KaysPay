@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
@@ -31,7 +31,7 @@ export default function TVScreen({ navigation }: TVScreenProps) {
         <TouchableOpacity
           style={styles.backButton}
           activeOpacity={0.6}
-          onPress={() => navigation.goBack()}
+          onPress={() => { Keyboard.dismiss(); navigation.goBack(); }}
         >
           <Text style={styles.backText}>{'<'}</Text>
         </TouchableOpacity>
