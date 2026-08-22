@@ -688,11 +688,11 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
         transactionId: result.transactionId ?? '',
         expiresAt: Date.now() + 30 * 60 * 1000,
       });
-      setBuyStep('pick');
-      setSelectedBuyAsset(null);
-      setBuyNgn('');
-      setBuyDestAddress('');
-      setBuyDestVerified(false);
+      // Deliberately NOT resetting buyStep/selectedBuyAsset/buyNgn here —
+      // cancelling out of the bank-details screen needs to land back on
+      // the amount screen with the coin and amount still filled in, not on
+      // a blank coin picker. These only clear once the user actually
+      // commits via "Done — I'll transfer now" below.
       loadAll();
     } else {
       setActionError(result.error || 'Purchase failed. Please try again.');
@@ -952,6 +952,14 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             onPress={() => {
               const txId = pendingBuyPayment?.transactionId;
               setPendingBuyPayment(null);
+              // Only clear the coin/amount now that the user has committed
+              // to actually making the transfer — cancelling instead (below)
+              // deliberately leaves these alone.
+              setBuyStep('pick');
+              setSelectedBuyAsset(null);
+              setBuyNgn('');
+              setBuyDestAddress('');
+              setBuyDestVerified(false);
               if (txId) {
                 setActionAmountNgn(payment.amount);
                 setActionMessage("We're watching for your transfer — this updates automatically.");
@@ -961,6 +969,12 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             }}
           >
             <Text style={styles.copyAddressButtonText}>Done — I'll transfer now</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.cancelPurchaseButton}
+            onPress={() => setPendingBuyPayment(null)}
+          >
+            <Text style={styles.cancelPurchaseButtonText}>Cancel this purchase</Text>
           </TouchableOpacity>
           </>
           )}
@@ -2070,6 +2084,14 @@ function createStyles(theme: AppTheme) {
     marginTop: Spacing.L,
     marginBottom: Spacing.XL,
   },
+  cancelPurchaseButton: {
+    height: Spacing.BUTTON_HEIGHT_PRIMARY,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: -Spacing.M,
+    marginBottom: Spacing.XL,
+  },
+  cancelPurchaseButtonText: { ...Typography.BUTTON_TEXT, color: theme.inkMuted },
 
   search: {
     flexDirection: 'row',
