@@ -288,9 +288,11 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionAmountNgn, setActionAmountNgn] = useState<number | null>(null);
 
-  // Buy is a 4-step flow: pick a coin from live prices, set a USDT budget,
-  // review the quote, then (USDT only) choose where it's delivered.
-  const [buyStep, setBuyStep] = useState<'pick' | 'amount' | 'destination'>('pick');
+  // Buy is a 2-step flow: pick a coin from live prices, then set an amount
+  // and (USDT only) choose where it's delivered together on one screen —
+  // owner decision 2026-08-22, collapsing the previous separate destination
+  // step since there was nothing left to review between the two.
+  const [buyStep, setBuyStep] = useState<'pick' | 'amount'>('pick');
   // The amount field's onFocus alone isn't fully reliable here: it carries
   // autoFocus, so it fires the instant this step's View mounts, before
   // onLayout may have reported the section's position back yet. Triggering
@@ -334,7 +336,22 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     asset: BuyAsset;
     pendingSwap: boolean;
     transactionId: string;
+    expiresAt: number;
   } | null>(null);
+  // Quidax's one-time bank account is only valid for 30 minutes (owner
+  // confirmed 2026-08-22) — not something the API returns, so tracked
+  // client-side from the moment the account is generated. Ticks once a
+  // second only while this screen is actually showing.
+  const [buyPaymentSecondsLeft, setBuyPaymentSecondsLeft] = useState(0);
+  useEffect(() => {
+    if (!pendingBuyPayment) return;
+    const update = () => {
+      setBuyPaymentSecondsLeft(Math.max(0, Math.round((pendingBuyPayment.expiresAt - Date.now()) / 1000)));
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [pendingBuyPayment]);
   // Polling this order's status live after "Done — I'll transfer now", so the
   // purchase visibly lands instead of just going quiet until the screen is
   // manually reopened.
@@ -640,7 +657,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     if (!canBuy || !selectedBuyAsset) return;
     const subtitle = buyToExternal
       ? `To ${buyDestNetwork} wallet ${buyDestAddress.trim()}`
-      : 'To your KaysPay crypto account';
+      : 'To your KaysPay Wallet';
     const authResult = await authorize({
       title: `Confirm ${selectedBuyAsset} Purchase`,
       amount: numericBuyNgn || undefined,
@@ -663,6 +680,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
         asset: result.asset ?? selectedBuyAsset,
         pendingSwap: !!result.pendingSwap,
         transactionId: result.transactionId ?? '',
+        expiresAt: Date.now() + 30 * 60 * 1000,
       });
       setBuyStep('pick');
       setSelectedBuyAsset(null);
@@ -753,7 +771,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       if (cancelled) return;
 
       if (result?.status === 'completed') {
-        setActionMessage("Your crypto has landed — it's in your KaysPay account now.");
+        setActionMessage("Your crypto has landed — it's in your KaysPay Wallet now.");
         setActionState('success');
         setBuyPollTxId(null);
         loadAll();
@@ -817,6 +835,9 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
   if (pendingBuyPayment) {
     const { payment, estimatedCrypto, destinationType, asset, pendingSwap } = pendingBuyPayment;
+    const buyPaymentExpired = buyPaymentSecondsLeft <= 0;
+    const countdownMinutes = Math.floor(buyPaymentSecondsLeft / 60);
+    const countdownSeconds = buyPaymentSecondsLeft % 60;
     return (
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <StatusBar barStyle={theme.mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={theme.background} />
@@ -827,6 +848,30 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
           <Text style={styles.topTitle}>Complete your purchase</Text>
         </View>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {buyPaymentExpired ? (
+            <View style={styles.expiredBox}>
+              <Ionicons name="time-outline" size={28} color={theme.down} />
+              <Text style={styles.expiredTitle}>This bank account has expired</Text>
+              <Text style={styles.expiredText}>
+                Quidax's one-time account is only valid for 30 minutes. Start a new purchase to get a fresh one.
+              </Text>
+              <TouchableOpacity
+                style={styles.copyAddressButton}
+                onPress={() => setPendingBuyPayment(null)}
+              >
+                <Text style={styles.copyAddressButtonText}>Start over</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.expiryBanner}>
+              <Ionicons name="time-outline" size={16} color={theme.gold} />
+              <Text style={styles.expiryBannerText}>
+                Expires in {countdownMinutes}:{countdownSeconds.toString().padStart(2, '0')}
+              </Text>
+            </View>
+          )}
+          {!buyPaymentExpired && (
+          <>
           <View style={styles.confirmBox}>
             <Text style={styles.hintText}>Transfer exactly</Text>
             <TouchableOpacity onPress={handleCopyBuyAmount} activeOpacity={0.7}>
@@ -879,8 +924,8 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
           <Text style={styles.hintText}>
             {pendingSwap
-              ? `Into your KaysPay crypto account — first as USDT once the transfer clears, then automatically converted to ${asset}.`
-              : `Into ${destinationType === 'external_wallet' ? 'your external wallet' : 'your KaysPay crypto account'} once the transfer clears.`}
+              ? `Into your KaysPay Wallet — first as USDT once the transfer clears, then automatically converted to ${asset}.`
+              : `Into ${destinationType === 'external_wallet' ? 'your external wallet' : 'your KaysPay Wallet'} once the transfer clears.`}
           </Text>
 
           <View style={styles.confirmWarningBox}>
@@ -905,6 +950,8 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
           >
             <Text style={styles.copyAddressButtonText}>Done — I'll transfer now</Text>
           </TouchableOpacity>
+          </>
+          )}
         </ScrollView>
       </SafeAreaView>
     );
@@ -1322,94 +1369,71 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   </Text>
                 )}
 
-                <View style={styles.confirmBox}>
-                  <Text style={styles.confirmText}>
-                    Delivered to your KaysPay crypto account. The exact amount of {selectedBuyAsset} you receive is
-                    confirmed on the next screen, once your transfer is priced.
-                  </Text>
-                </View>
+                {selectedMarket?.stablecoin ? (
+                  <>
+                    <TouchableOpacity
+                      style={styles.destinationToggleRow}
+                      onPress={() => setBuyToExternal((v) => !v)}
+                      activeOpacity={0.75}
+                    >
+                      <View style={[styles.checkbox, buyToExternal && styles.checkboxChecked]}>
+                        {buyToExternal && <Text style={styles.checkboxMark}>✓</Text>}
+                      </View>
+                      <Text style={styles.checkLabel}>Send to a different wallet instead of my KaysPay Wallet</Text>
+                    </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[styles.primaryButton, (!canBuy || buyLoading) && styles.primaryButtonDisabled]}
-                  onPress={() => {
-                    if (selectedMarket?.stablecoin) {
-                      setBuyStep('destination');
-                    } else {
-                      handleBuy();
-                    }
-                  }}
-                  disabled={!canBuy || buyLoading}
-                >
-                  {buyLoading ? (
-                    <ActivityIndicator color={theme.background} />
-                  ) : (
-                    <Text style={styles.primaryButtonText}>{selectedMarket?.stablecoin ? 'Continue' : 'Buy Now'}</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            )}
+                    {buyToExternal && (
+                      <View>
+                        <Text style={styles.label}>Network</Text>
+                        <View style={styles.networkRow}>
+                          {CRYPTO_NETWORKS.map((n) => (
+                            <TouchableOpacity
+                              key={n.key}
+                              style={[styles.networkChip, buyDestNetwork === n.key && styles.networkChipSelected]}
+                              onPress={() => setBuyDestNetwork(n.key)}
+                            >
+                              <Text style={[styles.networkChipText, buyDestNetwork === n.key && styles.networkChipTextSelected]}>
+                                {n.label}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
 
-            {tab === 'buy' && buyStep === 'destination' && selectedBuyAsset && kycVerified !== false && (
-              <View>
-                <TouchableOpacity style={styles.backLink} onPress={() => setBuyStep('amount')}>
-                  <Ionicons name="chevron-back" size={16} color={theme.inkFaint} />
-                  <Text style={styles.backLinkText}>Edit amount</Text>
-                </TouchableOpacity>
+                        <Text style={styles.label}>Wallet Address</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={buyDestAddress}
+                          onChangeText={setBuyDestAddress}
+                          placeholder={`Paste your ${buyDestNetwork} address`}
+                          placeholderTextColor={theme.inkFaint}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                        {buyDestAddressError && <Text style={styles.errorText}>{buyDestAddressError}</Text>}
 
-                <TouchableOpacity
-                  style={styles.destinationToggleRow}
-                  onPress={() => setBuyToExternal((v) => !v)}
-                  activeOpacity={0.75}
-                >
-                  <View style={[styles.checkbox, buyToExternal && styles.checkboxChecked]}>
-                    {buyToExternal && <Text style={styles.checkboxMark}>✓</Text>}
-                  </View>
-                  <Text style={styles.checkLabel}>Send to a different wallet instead of my crypto account</Text>
-                </TouchableOpacity>
-
-                {buyToExternal && (
-                  <View>
-                    <Text style={styles.label}>Network</Text>
-                    <View style={styles.networkRow}>
-                      {CRYPTO_NETWORKS.map((n) => (
-                        <TouchableOpacity
-                          key={n.key}
-                          style={[styles.networkChip, buyDestNetwork === n.key && styles.networkChipSelected]}
-                          onPress={() => setBuyDestNetwork(n.key)}
-                        >
-                          <Text style={[styles.networkChipText, buyDestNetwork === n.key && styles.networkChipTextSelected]}>
-                            {n.label}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    <Text style={styles.label}>Wallet Address</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={buyDestAddress}
-                      onChangeText={setBuyDestAddress}
-                      placeholder={`Paste your ${buyDestNetwork} address`}
-                      placeholderTextColor={theme.inkFaint}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                    {buyDestAddressError && <Text style={styles.errorText}>{buyDestAddressError}</Text>}
-
-                    {buyDestAddressValid && (
-                      <View style={styles.confirmBox}>
-                        <Text style={styles.confirmWarning}>
-                          This is riskier than a withdrawal: the USDT is delivered straight out of this purchase, with
-                          no KaysPay balance to recover it from if the address or network is wrong.
-                        </Text>
-                        <TouchableOpacity style={styles.checkRow} onPress={() => setBuyDestVerified((v) => !v)}>
-                          <View style={[styles.checkbox, buyDestVerified && styles.checkboxChecked]}>
-                            {buyDestVerified && <Text style={styles.checkboxMark}>✓</Text>}
+                        {buyDestAddressValid && (
+                          <View style={styles.confirmBox}>
+                            <Text style={styles.confirmWarning}>
+                              This is riskier than a withdrawal: the USDT is delivered straight out of this purchase, with
+                              no KaysPay balance to recover it from if the address or network is wrong.
+                            </Text>
+                            <TouchableOpacity style={styles.checkRow} onPress={() => setBuyDestVerified((v) => !v)}>
+                              <View style={[styles.checkbox, buyDestVerified && styles.checkboxChecked]}>
+                                {buyDestVerified && <Text style={styles.checkboxMark}>✓</Text>}
+                              </View>
+                              <Text style={styles.checkLabel}>I've checked this address and network are correct</Text>
+                            </TouchableOpacity>
                           </View>
-                          <Text style={styles.checkLabel}>I've checked this address and network are correct</Text>
-                        </TouchableOpacity>
+                        )}
                       </View>
                     )}
+                  </>
+                ) : (
+                  <View style={styles.confirmBox}>
+                    <Text style={styles.confirmText}>
+                      Delivered to your KaysPay Wallet. The exact amount of {selectedBuyAsset} you receive is
+                      confirmed once your transfer is priced.
+                    </Text>
                   </View>
                 )}
 
@@ -1421,7 +1445,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   {buyLoading ? (
                     <ActivityIndicator color={theme.background} />
                   ) : (
-                    <Text style={styles.primaryButtonText}>Confirm & Pay</Text>
+                    <Text style={styles.primaryButtonText}>Confirm</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -1513,7 +1537,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             {tab === 'withdraw' && (
               <View>
                 <Text style={styles.notLiveBanner}>
-                  Sends the USDT held in your crypto account to any external wallet. Network fees are deducted by the
+                  Sends the USDT held in your KaysPay Wallet to any external wallet. Network fees are deducted by the
                   network itself.
                 </Text>
 
@@ -1685,6 +1709,27 @@ function createStyles(theme: AppTheme) {
   refundBannerTextWrap: { flex: 1 },
   refundBannerTitle: { ...Typography.BODY, fontWeight: '700', color: theme.ink },
   refundBannerSub: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: 2 },
+
+  expiryBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.S,
+    backgroundColor: theme.goldSoft,
+    borderRadius: Spacing.CARD_RADIUS,
+    padding: Spacing.M,
+    marginBottom: Spacing.M,
+  },
+  expiryBannerText: { ...Typography.BODY, fontWeight: '700', color: theme.gold },
+  expiredBox: {
+    alignItems: 'center',
+    backgroundColor: theme.surfaceRaised,
+    borderRadius: Spacing.CARD_RADIUS,
+    padding: Spacing.L,
+    gap: Spacing.S,
+  },
+  expiredTitle: { ...Typography.SECTION_HEADING, color: theme.ink, textAlign: 'center' },
+  expiredText: { ...Typography.BODY, color: theme.inkMuted, textAlign: 'center', marginBottom: Spacing.S },
 
   // Fixed dark-green surface, independent of light/dark mode — theme.brandDark
   // is a dark tone in BOTH themes, so the hardcoded white text below always
