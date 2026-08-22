@@ -194,34 +194,43 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
   const [tab, setTab] = useState<Tab>('deposit');
   const scrollRef = useRef<ScrollView>(null);
-  const scrollOffsetRef = useRef(0);
-  const buyAmountInputRef = useRef<TextInput>(null);
-  const sellAmountInputRef = useRef<TextInput>(null);
   // The Buy/Sell amount fields sit well below the balance card, asset list,
   // and action row — not near the top of the screen the way they first
   // look within their own section. scrollToEnd() used to run here, but that
   // scrolls past the field to the true bottom of the form (Sell has Bank +
   // Account Number below it, Buy has a confirm box + button), which could
   // push the field itself off the TOP of the visible area instead of
-  // showing it. This measures the field's actual on-screen position and
-  // scrolls exactly enough to clear it above the keyboard, matching the
-  // way an app-managed scroll-into-view is supposed to work in a plain
-  // ScrollView (React Native does not do this automatically).
-  const scrollFieldIntoView = useCallback((inputRef: React.RefObject<TextInput | null>) => {
-    // 300ms, not 120: long enough for the Android keyboard's own show
-    // animation (and this section's own layout, for the auto-focused Buy
-    // field below) to fully settle before measuring — too short a delay
-    // measures a stale/pre-layout position and silently decides there's
-    // nothing to scroll.
+  // showing it.
+  //
+  // A prior attempt measured the field itself via TextInput.measure() (the
+  // legacy imperative UIManager callback), on the theory that its timing
+  // just needed tuning against the keyboard's show animation. Neither a
+  // short nor a long delay changed anything on a real device — the same
+  // "no scroll happened at all" result both times, which pointed at the API
+  // itself rather than its timing: measure()'s callback is known to be
+  // unreliable (stale, zeroed, or simply never firing) under this app's New
+  // Architecture / bridgeless renderer (RN 0.81, see AGENTS.md), not just a
+  // one-off race.
+  //
+  // This avoids it entirely. Each step's own wrapping View reports its
+  // position via onLayout — a plain layout event Fabric fully supports,
+  // not an imperative measurement call — captured once when that step
+  // renders. Scrolling on focus is then a fixed calculation, no runtime
+  // measurement at all.
+  const buySectionYRef = useRef(0);
+  const sellSectionYRef = useRef(0);
+  const scrollSectionIntoView = useCallback((sectionYRef: React.RefObject<number>) => {
+    // A short delay only to let onLayout report back first on a section
+    // that just became visible this same render (the autoFocus case below)
+    // — the target position itself doesn't depend on keyboard timing at
+    // all, unlike the old measure()-based approach, since onLayout's y is
+    // fixed content-space position, not a live on-screen measurement.
     setTimeout(() => {
-      inputRef.current?.measure((_x, _y, _width, _height, _pageX, pageY) => {
-        const desiredTopOffset = 140;
-        const delta = pageY - desiredTopOffset;
-        if (delta > 0) {
-          scrollRef.current?.scrollTo({ y: scrollOffsetRef.current + delta, animated: true });
-        }
-      });
-    }, 300);
+      const y = sectionYRef.current;
+      if (y > 0) {
+        scrollRef.current?.scrollTo({ y: Math.max(y - 20, 0), animated: true });
+      }
+    }, 50);
   }, []);
   // Buy/Sell require identity verification (NIN/BVN) — Deposit doesn't.
   // null = not checked yet, so the real Buy/Sell forms never flash on
@@ -282,15 +291,15 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // Buy is a 4-step flow: pick a coin from live prices, set a USDT budget,
   // review the quote, then (USDT only) choose where it's delivered.
   const [buyStep, setBuyStep] = useState<'pick' | 'amount' | 'destination'>('pick');
-  // The amount field's onFocus alone isn't reliable here: it carries
-  // autoFocus, so it fires the instant this step's View mounts, racing the
-  // step's own layout. Triggering the same scroll again off buyStep itself
-  // removes that race entirely — by the time this runs, the field is
-  // already focused (autoFocus already fired) and mounted for a full
-  // render cycle, so measuring it is safe.
+  // The amount field's onFocus alone isn't fully reliable here: it carries
+  // autoFocus, so it fires the instant this step's View mounts, before
+  // onLayout may have reported the section's position back yet. Triggering
+  // the same scroll again off buyStep itself is a redundant, harmless
+  // second attempt — scrollSectionIntoView already no-ops if the ref is
+  // still unset.
   useEffect(() => {
-    if (buyStep === 'amount') scrollFieldIntoView(buyAmountInputRef);
-  }, [buyStep, scrollFieldIntoView]);
+    if (buyStep === 'amount') scrollSectionIntoView(buySectionYRef);
+  }, [buyStep, scrollSectionIntoView]);
   const [markets, setMarkets] = useState<MarketCoin[]>([]);
   const [marketsLoading, setMarketsLoading] = useState(false);
   const [coinSearch, setCoinSearch] = useState('');
@@ -968,8 +977,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
-          onScroll={(e) => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y; }}
-          scrollEventThrottle={16}
         >
           {pendingRefund && (
             <TouchableOpacity
@@ -1268,7 +1275,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             )}
 
             {tab === 'buy' && buyStep === 'amount' && selectedBuyAsset && kycVerified !== false && (
-              <View>
+              <View onLayout={(e) => { buySectionYRef.current = e.nativeEvent.layout.y; }}>
                 <TouchableOpacity style={styles.backLink} onPress={() => setBuyStep('pick')}>
                   <Ionicons name="chevron-back" size={16} color={theme.inkFaint} />
                   <Text style={styles.backLinkText}>Change coin</Text>
@@ -1295,7 +1302,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   </Text>
                 )}
                 <TextInput
-                  ref={buyAmountInputRef}
                   style={styles.input}
                   value={buyNgn}
                   onChangeText={(t) => setBuyNgn(t.replace(/[^0-9.]/g, ''))}
@@ -1303,7 +1309,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   placeholderTextColor={theme.inkFaint}
                   keyboardType="decimal-pad"
                   autoFocus
-                  onFocus={() => scrollFieldIntoView(buyAmountInputRef)}
+                  onFocus={() => scrollSectionIntoView(buySectionYRef)}
                 />
                 {buyBelowMin && buyLimits && (
                   <Text style={styles.errorText}>
@@ -1422,17 +1428,16 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             )}
 
             {tab === 'sell' && kycVerified !== false && (
-              <View>
+              <View onLayout={(e) => { sellSectionYRef.current = e.nativeEvent.layout.y; }}>
                 <Text style={styles.label}>Amount (USDT)</Text>
                 <TextInput
-                  ref={sellAmountInputRef}
                   style={styles.input}
                   value={sellUsdt}
                   onChangeText={(t) => setSellUsdt(t.replace(/[^0-9.]/g, ''))}
                   placeholder="e.g. 10"
                   placeholderTextColor={theme.inkFaint}
                   keyboardType="decimal-pad"
-                  onFocus={() => scrollFieldIntoView(sellAmountInputRef)}
+                  onFocus={() => scrollSectionIntoView(sellSectionYRef)}
                 />
                 {sellNgnEstimate != null && (
                   <Text style={styles.estimateText}>≈ {formatNaira(sellNgnEstimate)}</Text>
