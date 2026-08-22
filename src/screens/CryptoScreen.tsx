@@ -208,6 +208,11 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // way an app-managed scroll-into-view is supposed to work in a plain
   // ScrollView (React Native does not do this automatically).
   const scrollFieldIntoView = useCallback((inputRef: React.RefObject<TextInput | null>) => {
+    // 300ms, not 120: long enough for the Android keyboard's own show
+    // animation (and this section's own layout, for the auto-focused Buy
+    // field below) to fully settle before measuring — too short a delay
+    // measures a stale/pre-layout position and silently decides there's
+    // nothing to scroll.
     setTimeout(() => {
       inputRef.current?.measure((_x, _y, _width, _height, _pageX, pageY) => {
         const desiredTopOffset = 140;
@@ -216,7 +221,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
           scrollRef.current?.scrollTo({ y: scrollOffsetRef.current + delta, animated: true });
         }
       });
-    }, 120);
+    }, 300);
   }, []);
   // Buy/Sell require identity verification (NIN/BVN) — Deposit doesn't.
   // null = not checked yet, so the real Buy/Sell forms never flash on
@@ -277,6 +282,15 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // Buy is a 4-step flow: pick a coin from live prices, set a USDT budget,
   // review the quote, then (USDT only) choose where it's delivered.
   const [buyStep, setBuyStep] = useState<'pick' | 'amount' | 'destination'>('pick');
+  // The amount field's onFocus alone isn't reliable here: it carries
+  // autoFocus, so it fires the instant this step's View mounts, racing the
+  // step's own layout. Triggering the same scroll again off buyStep itself
+  // removes that race entirely — by the time this runs, the field is
+  // already focused (autoFocus already fired) and mounted for a full
+  // render cycle, so measuring it is safe.
+  useEffect(() => {
+    if (buyStep === 'amount') scrollFieldIntoView(buyAmountInputRef);
+  }, [buyStep, scrollFieldIntoView]);
   const [markets, setMarkets] = useState<MarketCoin[]>([]);
   const [marketsLoading, setMarketsLoading] = useState(false);
   const [coinSearch, setCoinSearch] = useState('');
