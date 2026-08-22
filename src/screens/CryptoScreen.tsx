@@ -194,6 +194,30 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
   const [tab, setTab] = useState<Tab>('deposit');
   const scrollRef = useRef<ScrollView>(null);
+  const scrollOffsetRef = useRef(0);
+  const buyAmountInputRef = useRef<TextInput>(null);
+  const sellAmountInputRef = useRef<TextInput>(null);
+  // The Buy/Sell amount fields sit well below the balance card, asset list,
+  // and action row — not near the top of the screen the way they first
+  // look within their own section. scrollToEnd() used to run here, but that
+  // scrolls past the field to the true bottom of the form (Sell has Bank +
+  // Account Number below it, Buy has a confirm box + button), which could
+  // push the field itself off the TOP of the visible area instead of
+  // showing it. This measures the field's actual on-screen position and
+  // scrolls exactly enough to clear it above the keyboard, matching the
+  // way an app-managed scroll-into-view is supposed to work in a plain
+  // ScrollView (React Native does not do this automatically).
+  const scrollFieldIntoView = useCallback((inputRef: React.RefObject<TextInput | null>) => {
+    setTimeout(() => {
+      inputRef.current?.measure((_x, _y, _width, _height, _pageX, pageY) => {
+        const desiredTopOffset = 140;
+        const delta = pageY - desiredTopOffset;
+        if (delta > 0) {
+          scrollRef.current?.scrollTo({ y: scrollOffsetRef.current + delta, animated: true });
+        }
+      });
+    }, 120);
+  }, []);
   // Buy/Sell require identity verification (NIN/BVN) — Deposit doesn't.
   // null = not checked yet, so the real Buy/Sell forms never flash on
   // screen before this resolves; the gate below only renders once it's
@@ -930,6 +954,8 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
+          onScroll={(e) => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y; }}
+          scrollEventThrottle={16}
         >
           {pendingRefund && (
             <TouchableOpacity
@@ -1255,6 +1281,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   </Text>
                 )}
                 <TextInput
+                  ref={buyAmountInputRef}
                   style={styles.input}
                   value={buyNgn}
                   onChangeText={(t) => setBuyNgn(t.replace(/[^0-9.]/g, ''))}
@@ -1262,6 +1289,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   placeholderTextColor={theme.inkFaint}
                   keyboardType="decimal-pad"
                   autoFocus
+                  onFocus={() => scrollFieldIntoView(buyAmountInputRef)}
                 />
                 {buyBelowMin && buyLimits && (
                   <Text style={styles.errorText}>
@@ -1383,12 +1411,14 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
               <View>
                 <Text style={styles.label}>Amount (USDT)</Text>
                 <TextInput
+                  ref={sellAmountInputRef}
                   style={styles.input}
                   value={sellUsdt}
                   onChangeText={(t) => setSellUsdt(t.replace(/[^0-9.]/g, ''))}
                   placeholder="e.g. 10"
                   placeholderTextColor={theme.inkFaint}
                   keyboardType="decimal-pad"
+                  onFocus={() => scrollFieldIntoView(sellAmountInputRef)}
                 />
                 {sellNgnEstimate != null && (
                   <Text style={styles.estimateText}>≈ {formatNaira(sellNgnEstimate)}</Text>
