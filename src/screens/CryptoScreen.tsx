@@ -662,6 +662,12 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       title: `Confirm ${selectedBuyAsset} Purchase`,
       amount: numericBuyNgn || undefined,
       subtitle,
+      // Buy is paid by bank transfer straight to Quidax's one-time account
+      // -- it never debits the KaysPay wallet (see crypto-buy/index.ts) --
+      // so a wallet-balance check here is comparing against the wrong
+      // number entirely and can wrongly block a purchase the user can
+      // actually afford.
+      skipBalanceCheck: true,
     });
     if (!authResult) return;
     setBuyLoading(true);
@@ -700,6 +706,12 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       title: 'Confirm Crypto Sale',
       amount: sellNgnEstimate ?? undefined,
       subtitle: `${sellBank.name} · ${sellAccountNumber}`,
+      // Sell pays the customer's bank account directly from Quidax's own
+      // liquidity -- it never touches the KaysPay wallet (see
+      // crypto-sell/index.ts) -- and sellNgnEstimate is proceeds the user
+      // is about to RECEIVE, not an amount spent from the wallet, so a
+      // wallet-balance check against it is backwards.
+      skipBalanceCheck: true,
     });
     if (!authResult) return;
     setActionAmountNgn(sellNgnEstimate);
