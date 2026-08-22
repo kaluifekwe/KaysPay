@@ -1040,6 +1040,15 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             </TouchableOpacity>
           )}
 
+          {/* Hidden while actively entering an amount (Buy's combined amount
+              screen, or Sell) — this balance card, asset list, and action
+              row push the amount field far enough down the page that the
+              keyboard covers it, even after it's brought into view, since
+              there's nowhere higher left to scroll to. Removing them here
+              is a structural fix rather than another scroll calculation:
+              with nothing above it, the field sits at the top on its own. */}
+          {!((tab === 'buy' && buyStep === 'amount') || tab === 'sell') && (
+          <>
           <View style={styles.hero}>
             <View style={styles.heroTop}>
               <Text style={styles.heroLabel}>Total Crypto Balance</Text>
@@ -1167,6 +1176,8 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
               </TouchableOpacity>
             ))}
           </View>
+          </>
+          )}
 
           <View style={styles.panel}>
             {(tab === 'buy' || tab === 'sell') && kycVerified === false && (
