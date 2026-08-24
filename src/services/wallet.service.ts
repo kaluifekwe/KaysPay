@@ -32,7 +32,13 @@ export interface TransactionSummaryResult {
 export const walletService = {
   async getWallet(): Promise<WalletResult> {
     try {
-      const { data: { user } } = await withTimeout(supabase.auth.getUser());
+      // getSession() reads the token from local storage — no network round
+      // trip unless it's actually expired. getUser() always hits the Auth
+      // server, adding a full extra round trip to every balance check on
+      // top of the wallet query itself; useCachedData was fixed for this
+      // exact reason (see its own comment) but this service still paid it.
+      const { data: { session } } = await withTimeout(supabase.auth.getSession());
+      const user = session?.user;
       if (!user) return { success: false, error: 'Not authenticated' };
 
       const { data, error } = await withTimeout(
@@ -77,7 +83,8 @@ export const walletService = {
 
   async getRecentTransactions(limit: number = 10): Promise<TransactionResult> {
     try {
-      const { data: { user } } = await withTimeout(supabase.auth.getUser());
+      const { data: { session } } = await withTimeout(supabase.auth.getSession());
+      const user = session?.user;
       if (!user) return { success: false, error: 'Not authenticated' };
 
       const { data, error } = await withTimeout(
@@ -104,7 +111,8 @@ export const walletService = {
 
   async getTransactionSummary(): Promise<TransactionSummaryResult> {
     try {
-      const { data: { user } } = await withTimeout(supabase.auth.getUser());
+      const { data: { session } } = await withTimeout(supabase.auth.getSession());
+      const user = session?.user;
       if (!user) return { success: false, error: 'Not authenticated' };
 
       const { data, error } = await withTimeout((async () => supabase.rpc('get_user_transaction_summary'))());
@@ -135,7 +143,8 @@ export const walletService = {
     let active = true;
 
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user || !active) return;
 
       subscription = supabase

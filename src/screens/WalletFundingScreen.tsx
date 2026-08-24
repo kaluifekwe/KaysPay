@@ -22,6 +22,7 @@ import ProviderFundingBlock from '../components/ProviderFundingBlock';
 import { supabase } from '../lib/supabase';
 import { useCachedData } from '../hooks/useCachedData';
 import { Ionicons } from '@expo/vector-icons';
+import { analytics } from '../services/analytics.service';
 
 const QUICK_AMOUNTS = [500, 1000, 2000, 5000, 10000, 20000];
 
@@ -48,15 +49,18 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const displayedBalanceRef = useRef<number | null>(null);
   const rapidCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rapidCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialObservedBalanceRef = useRef<number | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      void analytics.track('funding_viewed', { outcome: 'view', metadata: { entry_point: 'wallet_funding' } });
+    }, []),
+  );
 
   useEffect(() => {
     paystackCheckStatusRef.current = paystackCheckStatus;
   }, [paystackCheckStatus]);
 
-  const [accounts, setAccounts] = useState<Record<VirtualAccountProvider, VirtualAccount | null>>({
-    flutterwave: null,
-    paystack: null,
-  });
   // Bank-transfer funding requires a verified identity (CBN requires BVN/NIN
   // to issue a dedicated account number, and this reuses the app's own
   // verified-NIN flow instead of the old raw, unverified entry). null =
@@ -76,10 +80,6 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         .catch(() => setKycVerified(false));
     }, []),
   );
-  // True until the first getAllMine() resolves — so users who already have
-  // an account see a loader instead of a flash of "Get my account number".
-  const [accountsInitialLoading, setAccountsInitialLoading] = useState(BANK_TRANSFER_FUNDING_ENABLED);
-
   // Shows the last-known balance immediately (even on a bad connection),
   // then quietly refreshes in the background. A failed refresh never wipes
   // out a real cached balance to show ₦0.00 — that's the "genuinely empty
@@ -100,18 +100,26 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   useEffect(() => {
     displayedBalanceRef.current = realtimeBalance ?? balance;
+    const current = realtimeBalance ?? balance;
+    if (current !== null && initialObservedBalanceRef.current === null) initialObservedBalanceRef.current = current;
   }, [balance, realtimeBalance]);
 
-  useEffect(() => {
+  // Same last-known-good caching as the balance above — these account
+  // numbers essentially never change once issued, so showing yesterday's
+  // cached value instantly while a fresh check runs in the background is
+  // always correct, unlike a balance which can genuinely go stale.
+  const fetchAccountsOrThrow = useCallback(async () => {
     if (!BANK_TRANSFER_FUNDING_ENABLED) {
-      setAccountsInitialLoading(false);
-      return;
+      return { flutterwave: null, paystack: null } as Record<VirtualAccountProvider, VirtualAccount | null>;
     }
-    virtualAccountService
-      .getAllMine()
-      .then(setAccounts)
-      .finally(() => setAccountsInitialLoading(false));
+    return virtualAccountService.getAllMine();
   }, []);
+  const {
+    data: cachedAccounts,
+    loading: accountsInitialLoading,
+    refresh: refreshAccounts,
+  } = useCachedData('virtual_accounts', fetchAccountsOrThrow);
+  const accounts = cachedAccounts ?? { flutterwave: null, paystack: null };
 
   // Keep the balance current without the user having to leave and come back:
   // refresh when the screen regains focus (e.g. returning from the Paystack
@@ -135,6 +143,10 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         const previousBalance = displayedBalanceRef.current;
         displayedBalanceRef.current = newBalance;
         setRealtimeBalance(newBalance);
+        if (initialObservedBalanceRef.current === 0 && newBalance > 0) {
+          initialObservedBalanceRef.current = newBalance;
+          void analytics.track('first_funding_completed', { outcome: 'completed', metadata: { funding_method: 'bank_transfer' } });
+        }
         if (
           paystackCheckStatusRef.current === 'checking' &&
           previousBalance !== null &&
@@ -292,7 +304,7 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       account={accounts.flutterwave}
                       initialLoading={accountsInitialLoading}
                       verifiedNin={verifiedNin}
-                      onCreated={(acct) => setAccounts((prev) => ({ ...prev, flutterwave: acct }))}
+                      onCreated={() => refreshAccounts()}
                     />
                     {PAYSTACK_FUNDING_ENABLED && (
                       <ProviderFundingBlock
@@ -301,7 +313,7 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                         account={accounts.paystack}
                         initialLoading={accountsInitialLoading}
                         verifiedNin={verifiedNin}
-                        onCreated={(acct) => setAccounts((prev) => ({ ...prev, paystack: acct }))}
+                        onCreated={() => refreshAccounts()}
                         onPaystackCheckStarted={startPaystackBalanceCheck}
                         onPaystackCheckFailed={stopPaystackBalanceCheck}
                       />
