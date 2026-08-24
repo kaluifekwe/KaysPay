@@ -22,6 +22,7 @@ import ProviderFundingBlock from '../components/ProviderFundingBlock';
 import { supabase } from '../lib/supabase';
 import { useCachedData } from '../hooks/useCachedData';
 import { Ionicons } from '@expo/vector-icons';
+import { analytics } from '../services/analytics.service';
 
 const QUICK_AMOUNTS = [500, 1000, 2000, 5000, 10000, 20000];
 
@@ -48,6 +49,13 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const displayedBalanceRef = useRef<number | null>(null);
   const rapidCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rapidCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialObservedBalanceRef = useRef<number | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      void analytics.track('funding_viewed', { outcome: 'view', metadata: { entry_point: 'wallet_funding' } });
+    }, []),
+  );
 
   useEffect(() => {
     paystackCheckStatusRef.current = paystackCheckStatus;
@@ -92,6 +100,8 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   useEffect(() => {
     displayedBalanceRef.current = realtimeBalance ?? balance;
+    const current = realtimeBalance ?? balance;
+    if (current !== null && initialObservedBalanceRef.current === null) initialObservedBalanceRef.current = current;
   }, [balance, realtimeBalance]);
 
   // Same last-known-good caching as the balance above — these account
@@ -133,6 +143,10 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         const previousBalance = displayedBalanceRef.current;
         displayedBalanceRef.current = newBalance;
         setRealtimeBalance(newBalance);
+        if (initialObservedBalanceRef.current === 0 && newBalance > 0) {
+          initialObservedBalanceRef.current = newBalance;
+          void analytics.track('first_funding_completed', { outcome: 'completed', metadata: { funding_method: 'bank_transfer' } });
+        }
         if (
           paystackCheckStatusRef.current === 'checking' &&
           previousBalance !== null &&
