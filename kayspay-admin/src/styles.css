@@ -366,3 +366,14 @@ textarea {
 
 tr.clickable { cursor: pointer; }
 tr.clickable:hover { background: var(--bg); }
+
+/* Automatic Data Markup Engine settings */
+.engine-settings { margin-bottom: 20px; }
+.engine-toggles { display: flex; flex-wrap: wrap; gap: 10px 24px; padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.engine-config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px 16px; margin-bottom: 16px; }
+.engine-config-grid label { display: grid; gap: 6px; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; }
+.engine-config-grid input { text-align: right; }
+.engine-config-actions { display: flex; justify-content: flex-end; }
+@media (max-width: 620px) {
+  .engine-config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

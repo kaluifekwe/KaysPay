@@ -548,65 +548,71 @@ export default function PricingPage() {
             {engineConfig && (() => {
               const draft = resolvedConfigDraft()!;
               return (
-                <div className="row" style={{ gap: 16, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
-                  <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <input
-                      type="checkbox" checked={draft.enabled} disabled={!canEdit}
-                      onChange={(event) => setConfigField('enabled', event.target.checked)}
-                    />
-                    Engine enabled
-                  </label>
-                  <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <input
-                      type="checkbox" checked={draft.value_density_enabled} disabled={!canEdit}
-                      onChange={(event) => setConfigField('value_density_enabled', event.target.checked)}
-                    />
-                    Value-density adjustment
-                  </label>
-                  <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    Max adjust %
-                    <input
-                      className="mono" style={{ width: 60, textAlign: 'right' }} disabled={!canEdit}
-                      value={draft.max_adjust}
-                      onChange={(event) => setConfigField('max_adjust', event.target.value)}
-                    />
-                  </label>
-                  <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    Sibling price window %
-                    <input
-                      className="mono" style={{ width: 60, textAlign: 'right' }} disabled={!canEdit}
-                      value={draft.price_window}
-                      onChange={(event) => setConfigField('price_window', event.target.value)}
-                    />
-                  </label>
-                  <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    Markup floor (₦)
-                    <input
-                      className="mono" style={{ width: 80, textAlign: 'right' }} disabled={!canEdit}
-                      value={draft.floor}
-                      onChange={(event) => setConfigField('floor', event.target.value)}
-                    />
-                  </label>
-                  <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    Discount % of markup
-                    <input
-                      className="mono" style={{ width: 60, textAlign: 'right' }} disabled={!canEdit}
-                      value={draft.discount}
-                      onChange={(event) => setConfigField('discount', event.target.value)}
-                    />
-                  </label>
-                  <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    Cashback % of markup
-                    <input
-                      className="mono" style={{ width: 60, textAlign: 'right' }} disabled={!canEdit}
-                      value={draft.cashback}
-                      onChange={(event) => setConfigField('cashback', event.target.value)}
-                    />
-                  </label>
+                <div className="engine-settings">
+                  <div className="engine-toggles">
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox" checked={draft.enabled} disabled={!canEdit}
+                        onChange={(event) => setConfigField('enabled', event.target.checked)}
+                      />
+                      Engine enabled
+                    </label>
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox" checked={draft.value_density_enabled} disabled={!canEdit}
+                        onChange={(event) => setConfigField('value_density_enabled', event.target.checked)}
+                      />
+                      Value-density adjustment
+                    </label>
+                  </div>
+                  <div className="engine-config-grid">
+                    <label>
+                      Max adjust %
+                      <input
+                        className="mono" disabled={!canEdit}
+                        value={draft.max_adjust}
+                        onChange={(event) => setConfigField('max_adjust', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Sibling price window %
+                      <input
+                        className="mono" disabled={!canEdit}
+                        value={draft.price_window}
+                        onChange={(event) => setConfigField('price_window', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Markup floor (₦)
+                      <input
+                        className="mono" disabled={!canEdit}
+                        value={draft.floor}
+                        onChange={(event) => setConfigField('floor', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Discount % of markup
+                      <input
+                        className="mono" disabled={!canEdit}
+                        value={draft.discount}
+                        onChange={(event) => setConfigField('discount', event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Cashback % of markup
+                      <input
+                        className="mono" disabled={!canEdit}
+                        value={draft.cashback}
+                        onChange={(event) => setConfigField('cashback', event.target.value)}
+                      />
+                    </label>
+                  </div>
                   {canEdit && (
-                    <button className="primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === 'engine_config'} onClick={() => void saveEngineConfig()}>
-                      Save settings
-                    </button>
+                    <div className="engine-config-actions">
+                      <button className="primary" disabled={busy === 'engine_config'} onClick={() => void saveEngineConfig()}>
+                        Save settings
+                      </button>
+                    </div>
                   )}
                 </div>
               );
