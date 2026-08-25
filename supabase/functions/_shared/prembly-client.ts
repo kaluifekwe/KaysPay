@@ -34,6 +34,27 @@ export async function verifyNin(nin: string): Promise<{ status: number; data: an
   return { status: res.status, data: await res.json() };
 }
 
+// NIN Basic — the cheaper tier used for KYC identity checks (not the printable
+// slip). Confirmed against Prembly's own docs: POST /verification/vnin-basic,
+// body { number } (NOT number_nin like the full /vnin endpoint), response
+// record at data.nin_data with snake_case fields (firstname/middlename/
+// surname/birthdate/telephoneno) — no photo/signature/next-of-kin/address,
+// which is exactly the data KYC needs and nothing more.
+export async function verifyNinBasic(nin: string): Promise<{ status: number; data: any }> {
+  if (!PREMBLY_API_KEY) throw new PremblyError("Prembly API key not configured");
+
+  const res = await fetchWithTimeout(`${PREMBLY_BASE_URL}/verification/vnin-basic`, {
+    method: "POST",
+    headers: {
+      "x-api-key": PREMBLY_API_KEY,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ number: nin }),
+  }, 25_000);
+  return { status: res.status, data: await res.json() };
+}
+
 // BVN verification — confirmed against Prembly's own docs (2026-07-05):
 // POST /verification/bvn_validation, body { number }, response record at
 // data.data with camelCase fields (firstName/middleName/lastName/

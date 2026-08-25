@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient } from "../_shared/auth.ts";
 import {
-  verifyNin as verifyNinPrembly,
+  verifyNinBasic as verifyNinPrembly,
   verifyBvn as verifyBvnPrembly,
   isPremblyConfigured,
 } from "../_shared/prembly-client.ts";
