@@ -16,6 +16,8 @@ export const StorageKeys = {
   // some devices when the underlying key doesn't exist yet).
   BIOMETRIC_PIN_SET: 'biometric_pin_set',
   ONBOARDING_COMPLETED: 'onboarding_completed',
+  // Random analytics identity only — no hardware/device fingerprint and no PII.
+  ANALYTICS_INSTALLATION_ID: 'analytics_installation_id',
   LAST_CONTACT_REFRESH: 'last_contact_refresh',
   // Android Storage Access Framework directory URI the user picked once for
   // "Download PDF" — reused on every later download so the folder picker

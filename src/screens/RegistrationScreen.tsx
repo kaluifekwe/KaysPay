@@ -19,6 +19,7 @@ import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password'
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
+import { analytics } from '../services/analytics.service';
 
 const NIGERIAN_PREFIXES = [
   '0703', '0706', '0802', '0803', '0805', '0806', '0807', '0808', '0809', '0810',
@@ -101,6 +102,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
+  const [marketingEmailOptIn, setMarketingEmailOptIn] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
 
   const buttonScale = useRef(new Animated.Value(1)).current;
@@ -112,6 +114,10 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
   const confirmPasswordRef = useRef<TextInput>(null);
   const pinRefs = useRef<(TextInput | null)[]>([]);
   const confirmPinRefs = useRef<(TextInput | null)[]>([]);
+
+  useEffect(() => {
+    void analytics.track('registration_started', { outcome: 'started' });
+  }, []);
 
   useEffect(() => {
     validateFullName(fullName);
@@ -217,7 +223,10 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
   };
 
   const handleNext = () => {
-    if (!isStep1Valid) return;
+    if (!isStep1Valid) {
+      void analytics.track('registration_validation_failed', { outcome: 'failed', failureCode: 'personal_details_invalid' });
+      return;
+    }
     setStep(2);
   };
 
@@ -268,16 +277,21 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
     }
 
     setSubmitting(true);
+    void analytics.track('registration_submitted', { outcome: 'started' });
     try {
       const result = await authService.signUpWithEmail(email.trim().toLowerCase(), password, {
         full_name: fullName.trim(),
         phone: formattedPhone || null,
+        marketing_email_opt_in: marketingEmailOptIn,
       });
 
       if (!result.success) {
+        void analytics.track('registration_validation_failed', { outcome: 'failed', failureCode: 'signup_rejected' });
         Alert.alert('Sign Up Failed', result.error || 'Something went wrong. Please try again.');
         return;
       }
+
+      void analytics.track('account_created', { outcome: 'completed' });
 
       if (result.needsEmailConfirmation) {
         // Shouldn't normally happen once "Confirm email" is off in Supabase,
@@ -333,6 +347,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
         // silently dropping the user onto the PIN gate.
         console.warn('Signup: PIN save failed after retries:', lastPinError);
       } else if (newUserId) {
+        void analytics.track('pin_setup_completed', { outcome: 'completed' });
         // Saved immediately — clear the stash now rather than leaving it on
         // the device for ensurePinSaved to find later (it won't run again
         // once hasPin is true, so this is the only cleanup this account gets).
@@ -343,6 +358,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
       // detects the new session and swaps to the email-verify gate on its
       // own (see RequireEmailVerifyNavigator).
     } catch (error: any) {
+      void analytics.track('registration_validation_failed', { outcome: 'failed', failureCode: 'signup_unavailable' });
       Alert.alert('Sign Up Failed', error.message || 'Something went wrong. Please try again.');
     } finally {
       setSubmitting(false);
@@ -610,6 +626,23 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                 {renderError(pinError)}
               </View>
 
+              <TouchableOpacity
+                style={styles.marketingConsentRow}
+                onPress={() => setMarketingEmailOptIn((value) => !value)}
+                activeOpacity={0.75}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: marketingEmailOptIn }}
+                accessibilityLabel="Receive occasional KaysPay product and onboarding emails"
+              >
+                <View style={[styles.marketingCheckbox, marketingEmailOptIn && styles.marketingCheckboxChecked]}>
+                  {marketingEmailOptIn && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
+                </View>
+                <View style={styles.marketingConsentCopy}>
+                  <Text style={styles.marketingConsentTitle}>Email me helpful KaysPay updates</Text>
+                  <Text style={styles.marketingConsentDescription}>Optional. Receive occasional onboarding tips and product offers. You can unsubscribe at any time.</Text>
+                </View>
+              </TouchableOpacity>
+
               <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
                 <TouchableOpacity
                   style={[styles.createButton, (!isStep2Valid || submitting) && styles.createButtonDisabled]}
@@ -707,6 +740,12 @@ function createStyles(theme: AppTheme) {
   createButtonDisabled: { opacity: 0.6 },
   createButtonText: { fontFamily: 'Helvetica-Bold', fontSize: 16, color: '#FFFFFF' },
   createButtonArrowIcon: { marginLeft: 8 },
+  marketingConsentRow: { minHeight: 52, flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16, paddingVertical: 4 },
+  marketingCheckbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 1.5, borderColor: theme.border, alignItems: 'center', justifyContent: 'center', marginRight: 12, marginTop: 1 },
+  marketingCheckboxChecked: { backgroundColor: theme.brand, borderColor: theme.brand },
+  marketingConsentCopy: { flex: 1 },
+  marketingConsentTitle: { fontSize: 13, fontWeight: '600', color: theme.ink, marginBottom: 3 },
+  marketingConsentDescription: { fontSize: 11, lineHeight: 16, color: theme.inkMuted },
   loginLink: { alignItems: 'center', marginTop: 20, marginBottom: 20 },
   loginLinkText: { fontSize: 14, color: theme.inkMuted },
   loginLinkBold: { color: theme.brand, fontWeight: '700', textDecorationLine: 'underline' },

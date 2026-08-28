@@ -40,6 +40,7 @@ import { deviceSessionService } from '../services/deviceSession.service';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
+import { analytics } from '../services/analytics.service';
 
 const RootStack = createNativeStackNavigator<any>();
 const MainStack = createNativeStackNavigator<any>();
@@ -298,6 +299,7 @@ export default function AppNavigator() {
                     // best-effort — the stash is scoped per-account and harmless if it lingers
                   }
                   setNeedsBiometricPrompt(false);
+                  void analytics.track('biometric_offer_completed', { outcome: 'completed' });
                 }}
               />
             )}

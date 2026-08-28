@@ -17,6 +17,7 @@ import { safeErrorMessage } from '../utils/errorMessages';
 import { storageHelpers } from '../lib/mmkv';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
+import { analytics } from '../services/analytics.service';
 
 const RESEND_COOLDOWN_MS = 60 * 1000;
 
@@ -52,6 +53,7 @@ export default function EmailCodeScreen(props: any) {
   const inputRefs = useRef<(TextInput | null)[]>([]);
 
   useEffect(() => {
+    void analytics.track('email_verification_started', { outcome: 'started', metadata: { verification_method: 'email_otp' } });
     sendInitialCode();
   }, []);
 
@@ -92,12 +94,14 @@ export default function EmailCodeScreen(props: any) {
 
       const result = await emailVerificationService.sendCode();
       if (!result.success) {
+        void analytics.track('email_verification_failed', { outcome: 'failed', failureCode: 'code_send_failed', metadata: { verification_method: 'email_otp' } });
         setInitError(safeErrorMessage(result.error, 'Could not send verification code.'));
         return;
       }
       await storageHelpers.setNumber(key, Date.now());
       setResendTimer(59);
     } catch (error: any) {
+      void analytics.track('email_verification_failed', { outcome: 'failed', failureCode: 'code_send_unavailable', metadata: { verification_method: 'email_otp' } });
       setInitError(safeErrorMessage(error, 'Could not send verification code.'));
     } finally {
       setInitializing(false);
@@ -152,6 +156,7 @@ export default function EmailCodeScreen(props: any) {
       const result = await emailVerificationService.verifyCode(codeString);
 
       if (!result.success) {
+        void analytics.track('email_verification_failed', { outcome: 'failed', failureCode: 'code_rejected', metadata: { verification_method: 'email_otp' } });
         Alert.alert('Verification Failed', safeErrorMessage(result.error, 'Invalid code. Please try again.'));
         setCode(['', '', '', '', '', '']);
         inputRefs.current[0]?.focus();
@@ -159,11 +164,13 @@ export default function EmailCodeScreen(props: any) {
       }
 
       await storageHelpers.delete(lastSentStorageKey(email));
+      void analytics.track('email_verified', { outcome: 'completed', metadata: { verification_method: 'email_otp' } });
 
       // Nothing to navigate to — RequireEmailVerifyNavigator's onComplete
       // swaps the whole root stack once this resolves.
       onVerified?.();
     } catch (error: any) {
+      void analytics.track('email_verification_failed', { outcome: 'failed', failureCode: 'verification_unavailable', metadata: { verification_method: 'email_otp' } });
       Alert.alert('Verification Failed', safeErrorMessage(error, 'Invalid code. Please try again.'));
       setCode(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();

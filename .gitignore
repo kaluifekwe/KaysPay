@@ -72,3 +72,5 @@ supabase/.temp/
 /.scratch-generated/
 /scratch-runwatch.sh
 .env*
+
+.vercel

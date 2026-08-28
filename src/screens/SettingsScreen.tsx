@@ -20,6 +20,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { authService } from '../services/auth.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import { useTheme } from '../components/ThemeProvider';
+import { marketingPreferencesService } from '../services/marketingPreferences.service';
 
 interface SettingsScreenProps {
   navigation: any;
@@ -47,6 +48,9 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
   const styles = createStyles(theme);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [marketingEmailOptIn, setMarketingEmailOptIn] = useState(false);
+  const [marketingPreferenceLoading, setMarketingPreferenceLoading] = useState(true);
+  const [marketingPreferenceSaving, setMarketingPreferenceSaving] = useState(false);
 
   useEffect(() => {
     // Accounts that enabled biometric before the PIN/biometric rework have
@@ -61,6 +65,30 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       setBiometricEnabled(enabled && hasPin);
     })();
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    marketingPreferencesService.getEmailOptIn()
+      .then((value) => { if (active) setMarketingEmailOptIn(value); })
+      .catch(() => { if (active) Alert.alert('Email Preferences', 'Could not load your email preference. It remains off on this screen.'); })
+      .finally(() => { if (active) setMarketingPreferenceLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const handleMarketingEmailToggle = async (value: boolean) => {
+    if (marketingPreferenceSaving) return;
+    const previous = marketingEmailOptIn;
+    setMarketingEmailOptIn(value);
+    setMarketingPreferenceSaving(true);
+    try {
+      await marketingPreferencesService.setEmailOptIn(value);
+    } catch {
+      setMarketingEmailOptIn(previous);
+      Alert.alert('Update Failed', 'Your email preference was not changed. Check your connection and try again.');
+    } finally {
+      setMarketingPreferenceSaving(false);
+    }
+  };
 
   const handleBiometricToggle = async (value: boolean) => {
     if (value) {
@@ -153,6 +181,13 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
       title: 'Preferences',
       items: [
         {
+          icon: 'mail-outline',
+          label: marketingPreferenceLoading ? 'Loading email preference…' : 'Product & onboarding emails',
+          hasToggle: true,
+          toggleValue: marketingEmailOptIn,
+          onToggle: handleMarketingEmailToggle,
+        },
+        {
           icon: 'cash-outline',
           label: 'Currency',
           value: 'NGN',
@@ -205,6 +240,7 @@ export default function SettingsScreen({ navigation }: SettingsScreenProps) {
           <Switch
             value={item.toggleValue}
             onValueChange={item.onToggle}
+            disabled={item.label.startsWith('Loading') || marketingPreferenceSaving}
             trackColor={{ false: theme.surfaceRaised2, true: theme.brandSoft }}
             thumbColor={item.toggleValue ? theme.brand : theme.inkFaint}
             ios_backgroundColor={theme.surfaceRaised2}

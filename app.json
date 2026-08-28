@@ -2,7 +2,7 @@
   "expo": {
     "name": "KaysPay",
     "slug": "KaysPay",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon-green.png",
     "userInterfaceStyle": "light",
@@ -56,7 +56,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#1A5C3A"
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "eas": {

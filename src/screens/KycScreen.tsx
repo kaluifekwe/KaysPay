@@ -18,6 +18,7 @@ import { safeErrorMessage } from '../utils/errorMessages';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
+import { analytics } from '../services/analytics.service';
 
 export default function KycScreen({ navigation, route }: any) {
   // Reached either from Settings/Profile (verification is optional for the
@@ -60,22 +61,27 @@ export default function KycScreen({ navigation, route }: any) {
 
   const handleVerify = async () => {
     if (idValue.length !== 11) {
+      void analytics.track('kyc_failed', { outcome: 'failed', failureCode: 'identity_length_invalid', metadata: { verification_method: idType } });
       setError(`Enter a valid 11-digit ${idLabel}`);
       return;
     }
     setError('');
     setSubmitting(true);
+    void analytics.track('kyc_started', { outcome: 'started', metadata: { verification_method: idType } });
     try {
       const result = idType === 'nin'
         ? await kycService.verifyNin(idValue)
         : await kycService.verifyBvn(idValue);
       if (!result.success) {
+        void analytics.track('kyc_failed', { outcome: 'failed', failureCode: 'identity_rejected', metadata: { verification_method: idType } });
         setError(safeErrorMessage(result.error, `Could not verify this ${idLabel}. Please try again.`));
         return;
       }
       setVerified(true);
       setVerifiedName(result.verifiedName);
+      void analytics.track('kyc_completed', { outcome: 'completed', metadata: { verification_method: idType } });
     } catch (e) {
+      void analytics.track('kyc_failed', { outcome: 'failed', failureCode: 'verification_unavailable', metadata: { verification_method: idType } });
       setError(safeErrorMessage(e, `Could not verify this ${idLabel}. Please try again.`));
     } finally {
       setSubmitting(false);

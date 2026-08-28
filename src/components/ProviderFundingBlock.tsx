@@ -15,6 +15,7 @@ import { Spacing } from '../constants/spacing';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from './ThemeProvider';
 import { virtualAccountService, VirtualAccount, VirtualAccountProvider } from '../services/virtualAccount.service';
+import { analytics } from '../services/analytics.service';
 
 interface ProviderFundingBlockProps {
   provider: VirtualAccountProvider;
@@ -84,22 +85,28 @@ export default function ProviderFundingBlock({
       Alert.alert('Bank Transfer', 'Please verify your identity first.');
       return;
     }
+    void analytics.track('funding_started', { outcome: 'started', metadata: { funding_method: provider } });
     setLoading(true);
     const res = await virtualAccountService.create(provider, verifiedNin || '');
     setLoading(false);
     if (res.success && res.account) {
       onCreated(res.account);
     } else {
+      void analytics.track('funding_failed', { outcome: 'failed', failureCode: 'virtual_account_unavailable', metadata: { funding_method: provider } });
       Alert.alert('Bank Transfer', res.error || 'Could not set up your account number.');
     }
   };
 
   const handleRequery = async () => {
+    void analytics.track('funding_started', { outcome: 'started', metadata: { funding_method: provider } });
     onPaystackCheckStarted?.();
     setRequeryLoading(true);
     const result = await virtualAccountService.requeryPaystack();
     setRequeryLoading(false);
-    if (!result.success) onPaystackCheckFailed?.();
+    if (!result.success) {
+      void analytics.track('funding_failed', { outcome: 'failed', failureCode: 'transfer_not_confirmed', metadata: { funding_method: provider } });
+      onPaystackCheckFailed?.();
+    }
     Alert.alert(
       result.success ? 'Checking transfer' : 'Could not check transfer',
       result.message || result.error || 'Please try again later.',

@@ -30,6 +30,7 @@ import { supabase } from '../lib/supabase';
 import { withTimeout } from '../utils/network';
 import { useCachedData } from '../hooks/useCachedData';
 import type { Transaction } from '../types/app.types';
+import { analytics } from '../services/analytics.service';
 
 interface HomeScreenProps {
   navigation: any;
@@ -174,6 +175,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
   useFocusEffect(
     useCallback(() => {
+      void analytics.track('home_viewed', { outcome: 'view' });
       kycService.getStatus().then((s) => setKycVerified(s.verified)).catch(() => {});
       cryptoService.isEnabled().then(setCryptoEnabled).catch(() => {});
     }, []),

@@ -7,6 +7,7 @@ import { AppPrivacyGate } from './src/components/AppPrivacyGate';
 import { OtaUpdateController } from './src/components/OtaUpdateController';
 import { ThemeProvider, useTheme } from './src/components/ThemeProvider';
 import { loadAppSettings } from './src/services/appSettings.service';
+import { initializeAnalytics } from './src/services/analytics.service';
 
 function ThemedStatusBar() {
   const { theme } = useTheme();
@@ -19,6 +20,7 @@ export default function App() {
   // last persisted or build-time value, so startup never waits on this.
   useEffect(() => {
     void loadAppSettings();
+    return initializeAnalytics();
   }, []);
 
   return (

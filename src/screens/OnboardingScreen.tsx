@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -13,6 +13,7 @@ import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Strings } from '../constants/strings';
 import { StorageKeys, storageHelpers } from '../lib/mmkv';
+import { analytics } from '../services/analytics.service';
 
 const { width, height } = Dimensions.get('window');
 
@@ -55,6 +56,11 @@ export default function OnboardingScreen({ navigation }: OnboardingScreenProps) 
   const flatListRef = useRef<FlatList>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
 
+  useEffect(() => {
+    void analytics.track('onboarding_started', { outcome: 'started' });
+    void analytics.track('onboarding_slide_viewed', { outcome: 'view', metadata: { slide_index: 0 } });
+  }, []);
+
   const handleNext = () => {
     if (currentIndex < slides.length - 1) {
       flatListRef.current?.scrollToIndex({ index: currentIndex + 1 });
@@ -64,6 +70,7 @@ export default function OnboardingScreen({ navigation }: OnboardingScreenProps) 
   };
 
   const handleSkip = () => {
+    void analytics.track('onboarding_skipped', { outcome: 'skipped', metadata: { slide_index: currentIndex } });
     handleGetStarted();
   };
 
@@ -74,7 +81,9 @@ export default function OnboardingScreen({ navigation }: OnboardingScreenProps) 
 
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems.length > 0) {
-      setCurrentIndex(viewableItems[0].index);
+      const nextIndex = viewableItems[0].index as number;
+      setCurrentIndex(nextIndex);
+      void analytics.track('onboarding_slide_viewed', { outcome: 'view', metadata: { slide_index: nextIndex } });
     }
   }).current;
 
