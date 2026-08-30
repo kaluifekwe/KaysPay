@@ -154,7 +154,25 @@ serve(async (req: Request) => {
     const swapId = String(data?.swap_quotation?.id || data?.id || "");
     if (swapId) {
       const { data: buyTxId } = await supabase.rpc("fail_crypto_buy_swap", { p_swap_id: swapId, p_reason: "swap_failed" });
-      if (!buyTxId) {
+      if (buyTxId) {
+        // Same "settled as USDT instead of the requested coin" case as the
+        // confirm_failed path in crypto-buy-settle.ts — leg 1's USDT already
+        // landed, so this still deserves the completion notification.
+        const { data: buyTx } = await supabase
+          .from("transactions")
+          .select("user_id, metadata")
+          .eq("id", buyTxId)
+          .maybeSingle();
+        const settledMicro = Number(buyTx?.metadata?.crypto_micro);
+        if (buyTx && Number.isFinite(settledMicro) && settledMicro > 0) {
+          await notifyCryptoBuyCompleted(supabase, {
+            userId: buyTx.user_id,
+            asset: "USDT",
+            amount: settledMicro / 1_000_000,
+            destinationType: buyTx.metadata?.destination_type,
+          });
+        }
+      } else {
         await supabase.rpc("fail_crypto_sell", { p_swap_id: swapId, p_reason: "swap_failed" });
       }
     }

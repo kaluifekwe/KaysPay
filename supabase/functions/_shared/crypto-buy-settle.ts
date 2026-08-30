@@ -117,7 +117,23 @@ export async function settleCryptoBuySuccess(
     } catch (confirmError) {
       const detail = confirmError instanceof Error ? confirmError.message : String(confirmError);
       console.error(`${logPrefix}: buy swap confirm failed:`, detail);
-      await supabase.rpc("fail_crypto_buy_swap", { p_swap_id: quotation.id, p_reason: "confirm_failed" });
+      const { data: settledTxId } = await supabase.rpc("fail_crypto_buy_swap", {
+        p_swap_id: quotation.id,
+        p_reason: "confirm_failed",
+      });
+      // The swap never happened, but leg 1's USDT already did — this still
+      // settles 'completed' (see fail_crypto_buy_swap), just delivered as
+      // USDT instead of the coin the customer picked. Same notification as
+      // any other completed Buy so they aren't left checking the app to
+      // find out their money landed.
+      if (settledTxId) {
+        await notifyCryptoBuyCompleted(supabase, {
+          userId: order.user_id,
+          asset: "USDT",
+          amount: receivedUsdt,
+          destinationType: order.metadata?.destination_type,
+        });
+      }
     }
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
