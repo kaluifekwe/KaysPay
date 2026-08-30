@@ -3,6 +3,29 @@ import { confirmSwapQuotation, createSwapQuotation } from "./quidax-client.ts";
 import { findSwapAsset } from "./crypto-assets.ts";
 
 /**
+ * Best-effort in-app + push notification that a Buy has fully landed.
+ * Delivered via the `notifications` table (migration 050) and the
+ * notifications-push cron (migration 051, runs every minute). Never allowed
+ * to fail the settlement itself — the purchase already completed by the
+ * time this runs, a notification is a bonus on top, not a condition of it.
+ */
+export async function notifyCryptoBuyCompleted(
+  supabase: SupabaseClient,
+  params: { userId: string; asset: string; amount: number; destinationType?: string | null },
+): Promise<void> {
+  const destination = params.destinationType === "external_wallet" ? "your external wallet" : "your KaysPay Wallet";
+  const amountDisplay = String(Math.round(params.amount * 1_000_000) / 1_000_000);
+  const { error } = await supabase.from("notifications").insert({
+    user_id: params.userId,
+    title: "Crypto delivered",
+    body: `${amountDisplay} ${params.asset} has landed in ${destination}.`,
+    type: "transaction",
+    data: { kind: "crypto_buy_completed" },
+  });
+  if (error) console.error("notifyCryptoBuyCompleted: insert failed:", error.message);
+}
+
+/**
  * Settles a Buy whose leg 1 (Ramp: NGN -> USDT into the customer's own
  * sub-account) has completed. Shared between crypto-ramp-webhook (the normal
  * path) and crypto-buy-reconcile (the safety net for a webhook that never
@@ -47,7 +70,16 @@ export async function settleCryptoBuySuccess(
       p_crypto_micro: Math.round(receivedUsdt * 1_000_000),
       p_tx_hash: txHash,
     });
-    if (error) console.error(`${logPrefix}: complete_crypto_buy failed:`, error.message);
+    if (error) {
+      console.error(`${logPrefix}: complete_crypto_buy failed:`, error.message);
+      return;
+    }
+    await notifyCryptoBuyCompleted(supabase, {
+      userId: order.user_id,
+      asset: "USDT",
+      amount: receivedUsdt,
+      destinationType: order.metadata?.destination_type,
+    });
     return;
   }
 

@@ -3,6 +3,7 @@ import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/auth.ts";
 import { verifyQuidaxWebhookSignature } from "../_shared/quidax-client.ts";
 import { sweepNairaToMainAccount } from "../_shared/crypto-sell-sweep.ts";
+import { notifyCryptoBuyCompleted } from "../_shared/crypto-buy-settle.ts";
 
 // Receives Quidax's webhook deliveries and settles everything that Quidax
 // completes asynchronously: incoming deposits, sales (swap USDT -> NGN, then
@@ -109,7 +110,22 @@ serve(async (req: Request) => {
       console.error("crypto-quidax-webhook: complete_crypto_buy_swap failed:", buyError.message);
       return json({ error: "Could not settle purchase" }, 500);
     }
-    if (buyTxId) return json({ received: true });
+    if (buyTxId) {
+      const { data: buyTx } = await supabase
+        .from("transactions")
+        .select("user_id, metadata")
+        .eq("id", buyTxId)
+        .maybeSingle();
+      if (buyTx) {
+        await notifyCryptoBuyCompleted(supabase, {
+          userId: buyTx.user_id,
+          asset: toCurrency,
+          amount: received,
+          destinationType: buyTx.metadata?.destination_type,
+        });
+      }
+      return json({ received: true });
+    }
 
     if (toCurrency !== "NGN") {
       console.error("crypto-quidax-webhook: swap_transaction.complete matched neither a buy nor a sell", JSON.stringify(payload).slice(0, 300));
