@@ -66,6 +66,33 @@ serve(async (req: Request) => {
       return json({ received: true });
     }
 
+    // Quidax's deposit.successful fires for ANY crypto landing in this
+    // sub-account -- including a Buy's own leg 1 (Ramp NGN -> USDT), which
+    // is not an external deposit at all. Without this check, every single
+    // completed Buy also produced a second, redundant crypto_deposit row
+    // (amount_ngn hardcoded 0) duplicating what the crypto_buy transaction
+    // already fully represents -- confusing both the customer's own History
+    // and anything the admin panel sums from this table. A recently
+    // settled/settling Buy for the same user+asset means this deposit is
+    // that Buy landing, not a real external deposit. 30 minutes covers the
+    // ~2-3 minute typical settlement time with generous headroom; the real
+    // crypto balance is always read live from Quidax, never summed from
+    // these rows, so the only possible downside of a false match is one
+    // missing Deposit history row, never a wrong balance.
+    const { data: recentBuy } = await supabase
+      .from("transactions")
+      .select("id")
+      .eq("user_id", account.user_id)
+      .eq("type", "crypto_buy")
+      .eq("metadata->>asset", asset)
+      .in("status", ["pending", "completed"])
+      .gte("created_at", new Date(Date.now() - 30 * 60 * 1000).toISOString())
+      .limit(1)
+      .maybeSingle();
+    if (recentBuy) {
+      return json({ received: true });
+    }
+
     const cryptoMicro = Math.round(amount * 1_000_000);
     const { error } = await supabase.rpc("record_crypto_deposit", {
       p_user_id: account.user_id,
