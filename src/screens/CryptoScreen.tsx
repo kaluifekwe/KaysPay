@@ -26,7 +26,6 @@ import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
 import { formatNaira } from '../utils/formatCurrency';
 import { storageHelpers, StorageKeys } from '../lib/mmkv';
-import { walletService } from '../services/wallet.service';
 import {
   cryptoService,
   isValidCryptoAddress,
@@ -37,6 +36,7 @@ import {
   type CryptoBuyPayment,
   type BuyAsset,
   type MarketCoin,
+  type CryptoSellQuote,
 } from '../services/crypto.service';
 import { kycService } from '../services/kyc.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
@@ -45,6 +45,7 @@ import { CRYPTO_LOGOS } from '../utils/providerLogos';
 import ResultStatusView, { type ResultStatus } from '../components/ResultStatusView';
 import QrCodeView from '../components/QrCodeView';
 import CryptoRefundBankModal from '../components/CryptoRefundBankModal';
+import { supabase } from '../lib/supabase';
 
 interface CryptoScreenProps {
   navigation: { goBack: () => void; navigate: (screen: string, params?: any) => void };
@@ -56,7 +57,6 @@ type Tab = 'deposit' | 'buy' | 'sell' | 'withdraw';
 // and loadAll() below. Never consulted by any balance check that actually
 // gates a Buy/Sell/Withdraw, which always re-fetch live.
 interface CryptoScreenCache {
-  ngnBalance: number | null;
   usdtBalance: number | null;
   rate: number | null;
   buyRate: number | null;
@@ -259,7 +259,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // Shares the same StorageKeys.BALANCE_VISIBLE flag as the Home screen —
   // "hide my balance" is one app-wide privacy preference, not a per-screen one.
   const [balanceVisible, setBalanceVisible] = useState(true);
-  const [ngnBalance, setNgnBalance] = useState<number | null>(null);
   const [usdtBalance, setUsdtBalance] = useState<number | null>(null);
   // Live USDT/NGN market price from Quidax. buyRate is the ask, sellRate the
   // bid — each side of the screen quotes the price it would really get.
@@ -369,6 +368,9 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [sellVerifyState, setSellVerifyState] = useState<'idle' | 'checking' | 'verified' | 'failed'>('idle');
   const [sellVerifiedName, setSellVerifiedName] = useState<string | null>(null);
   const [sellVerifyError, setSellVerifyError] = useState<string | null>(null);
+  const [sellQuote, setSellQuote] = useState<CryptoSellQuote | null>(null);
+  const [sellQuoteLoading, setSellQuoteLoading] = useState(false);
+  const [sellQuoteError, setSellQuoteError] = useState<string | null>(null);
 
   const [wdNetwork, setWdNetwork] = useState<CryptoNetwork>('TRC20');
   const [wdAddress, setWdAddress] = useState('');
@@ -382,16 +384,13 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [refundModalVisible, setRefundModalVisible] = useState(false);
 
   const loadAll = useCallback(async () => {
-    const [walletResult, usdt, liveRate, saved, quidaxAccount, refund] = await Promise.all([
-      walletService.getWallet(),
+    const [usdt, liveRate, saved, quidaxAccount, refund] = await Promise.all([
       cryptoService.getBalance('USDT'),
       cryptoService.getQuoteRate(),
       cryptoService.listSavedAddresses('USDT'),
       cryptoService.getOrCreateAccount(),
       cryptoService.getPendingBuyRefund(),
     ]);
-    const freshNgnBalance = walletResult.success && walletResult.wallet ? walletResult.wallet.available_balance : null;
-    if (freshNgnBalance != null) setNgnBalance(freshNgnBalance);
     setUsdtBalance(usdt);
     setRate(liveRate?.rate ?? null);
     setBuyRate(liveRate?.buyRate ?? null);
@@ -412,7 +411,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       // would silently fail to cache at all) — only the ones actually held
       // are ever shown anyway, so only those are worth caching.
       storageHelpers.setObject<CryptoScreenCache>(StorageKeys.CRYPTO_SCREEN_CACHE, {
-        ngnBalance: freshNgnBalance,
         usdtBalance: usdt,
         rate: liveRate?.rate ?? null,
         buyRate: liveRate?.buyRate ?? null,
@@ -441,7 +439,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     // screen for the second or two Quidax's live balance/price calls take.
     storageHelpers.getObject<CryptoScreenCache>(StorageKeys.CRYPTO_SCREEN_CACHE).then((cached) => {
       if (!cached) return;
-      if (cached.ngnBalance != null) setNgnBalance(cached.ngnBalance);
       if (cached.usdtBalance != null) setUsdtBalance(cached.usdtBalance);
       if (cached.rate != null) setRate(cached.rate);
       if (cached.buyRate != null) setBuyRate(cached.buyRate);
@@ -497,8 +494,13 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // which only backs the not-yet-migrated Buy flow.
   const quidaxUsdtBalance = quidaxUsdt ? Number(quidaxUsdt.balance) : null;
 
-  // Every coin the wallet hero and asset list show — not just USDT.
-  const heldWallets = quidaxWallets.filter((w) => Number(w.balance) > 0);
+  // Only actual crypto belongs in the crypto total and asset list. Quidax
+  // also returns its fiat NGN wallet; mixing that into `heldWallets` made
+  // the screen describe Naira as a crypto asset and obscured the fact that
+  // an old conversion could still be awaiting settlement.
+  const heldWallets = quidaxWallets.filter((w) => w.isCrypto && Number(w.balance) > 0);
+  const quidaxNgnWallet = quidaxWallets.find((w) => w.currency === 'NGN');
+  const quidaxNgnBalance = quidaxNgnWallet ? Number(quidaxNgnWallet.balance) : 0;
   const priceOfNgn = useCallback(
     (currency: string): number | null => {
       if (currency === 'USDT') return usdtNgnRate ?? rate ?? null;
@@ -587,7 +589,26 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   }, [sellUsdt, sellBank, sellAccountNumber]);
 
   useEffect(() => {
-    if (!sellBank || sellAccountNumber.length !== 10 || !(numericSellUsdt > 0)) return;
+    setSellQuote(null);
+    setSellQuoteError(null);
+    if (!Number.isFinite(numericSellUsdt) || numericSellUsdt < 1 || numericSellUsdt > 2000) {
+      setSellQuoteLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      setSellQuoteLoading(true);
+      const result = await cryptoService.getSellQuote(numericSellUsdt);
+      if (cancelled) return;
+      setSellQuoteLoading(false);
+      if (result.success && result.quote) setSellQuote(result.quote);
+      else setSellQuoteError(result.error || 'Could not calculate the live network fee.');
+    }, 400);
+    return () => { cancelled = true; clearTimeout(handle); };
+  }, [numericSellUsdt]);
+
+  useEffect(() => {
+    if (!sellBank || sellAccountNumber.length !== 10 || sellQuote?.sufficient !== true) return;
     const handle = setTimeout(async () => {
       setSellVerifyState('checking');
       const res = await cryptoService.resolveSellAccount(numericSellUsdt, sellBank.code, sellAccountNumber);
@@ -603,7 +624,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     }, 700);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sellBank, sellAccountNumber, numericSellUsdt]);
+  }, [sellBank, sellAccountNumber, numericSellUsdt, sellQuote?.sufficient]);
 
   const selectedMarket = markets.find((m) => m.code === selectedBuyAsset) || null;
 
@@ -648,8 +669,26 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     && (!buyToExternal || (buyDestAddressValid && buyDestVerified));
   const sellAccountNumberValid = /^\d{10}$/.test(sellAccountNumber);
   const canSell = Number.isFinite(numericSellUsdt) && numericSellUsdt >= 1 && numericSellUsdt <= 2000
-    && quidaxUsdtBalance != null && numericSellUsdt <= quidaxUsdtBalance
+    && sellQuote?.sufficient === true
     && !!sellBank && sellAccountNumberValid && sellVerifyState === 'verified';
+
+  const handleSellMax = useCallback(async () => {
+    if (quidaxUsdtBalance == null || quidaxUsdtBalance < 1) return;
+    setSellQuoteLoading(true);
+    const result = await cryptoService.getSellQuote(Math.min(2000, quidaxUsdtBalance));
+    setSellQuoteLoading(false);
+    if (!result.success || !result.quote) {
+      setSellQuoteError(result.error || 'Could not calculate the maximum sale amount.');
+      return;
+    }
+    const maximum = Math.floor(result.quote.maxSell * 1_000_000) / 1_000_000;
+    if (maximum < result.quote.minSell) {
+      setSellQuote(result.quote);
+      setSellQuoteError(`Your balance cannot cover the minimum ${result.quote.minSell} USDT sale plus the ${result.quote.networkFee} USDT network fee.`);
+      return;
+    }
+    setSellUsdt(String(maximum));
+  }, [quidaxUsdtBalance]);
   const canWithdraw = Number.isFinite(numericWdAmount) && numericWdAmount >= 5 && numericWdAmount <= 2000
     && quidaxUsdtBalance != null && numericWdAmount <= quidaxUsdtBalance && wdAddressValid && wdVerified;
 
@@ -776,34 +815,61 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     let attempts = 0;
     const MAX_ATTEMPTS = 90; // ~6 minutes at 4s apart — generous for a bank transfer to clear
 
-    const poll = async () => {
-      if (cancelled) return;
-      attempts++;
-      const result = await cryptoService.getBuyOrderStatus(buyPollTxId);
-      if (cancelled) return;
-
-      if (result?.status === 'completed') {
+    const applyStatus = (result: Awaited<ReturnType<typeof cryptoService.getBuyOrderStatus>>) => {
+      if (!result || cancelled) return false;
+      if (result.status === 'completed') {
         setActionMessage("Your crypto has landed — it's in your KaysPay Wallet now.");
         setActionState('success');
         setBuyPollTxId(null);
         loadAll();
-        return;
+        return true;
       }
-      if (result?.needsRefundBankDetails) {
-        // Quidax is auto-refunding this one (name mismatch) — hand off to
-        // the banner/modal on the main screen rather than duplicating that
-        // flow here.
+      if (result.needsRefundBankDetails) {
         setActionState('idle');
         setBuyPollTxId(null);
         loadAll();
-        return;
+        return true;
       }
-      if (result?.status === 'failed') {
+      if (result.status === 'failed') {
         setActionError(result.failureReason || 'This purchase could not be completed.');
         setActionState('failed');
         setBuyPollTxId(null);
-        return;
+        return true;
       }
+      return false;
+    };
+
+    // Realtime removes the normal 0–4 second polling delay once the signed
+    // webhook updates this exact row. RLS still limits the caller to their
+    // own transaction; the primary-key filter avoids unrelated traffic.
+    const channel = supabase
+      .channel(`crypto-buy-${buyPollTxId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'transactions', filter: `id=eq.${buyPollTxId}` },
+        (payload) => {
+          const row = payload.new as { status?: string; metadata?: Record<string, unknown> };
+          applyStatus({
+            status: String(row.status || 'pending'),
+            failureReason: typeof row.metadata?.failure_reason === 'string' ? row.metadata.failure_reason : undefined,
+            needsRefundBankDetails: row.metadata?.needs_refund_bank_details === true,
+          });
+        },
+      )
+      .subscribe();
+
+    const poll = async () => {
+      if (cancelled) return;
+      attempts++;
+      // Every third pass (~12s), ask the backend to query Quidax directly.
+      // Other passes are cheap database reads. This closes a delayed-webhook
+      // gap without allowing the client to settle money or hammer Quidax.
+      const refreshed = attempts % 3 === 0
+        ? await cryptoService.refreshBuyOrderStatus(buyPollTxId)
+        : null;
+      const result = refreshed ?? await cryptoService.getBuyOrderStatus(buyPollTxId);
+      if (cancelled) return;
+      if (applyStatus(result)) return;
       if (attempts >= MAX_ATTEMPTS) {
         // Still pending after a generous wait — stop polling rather than
         // spin forever. Nothing is lost: the reconcile sweep and the push
@@ -817,7 +883,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     };
     poll();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
   }, [buyPollTxId, loadAll]);
 
   const handleCopyBuyAccount = useCallback(async () => {
@@ -1136,20 +1205,22 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             )}
           </View>
 
-          <View style={styles.nairaCard}>
-            <View style={styles.nairaLeft}>
-              <View style={styles.nairaIcon}>
-                <Text style={styles.nairaIconText}>₦</Text>
+          {quidaxNgnBalance > 0 && (
+            <View style={styles.nairaCard}>
+              <View style={styles.nairaLeft}>
+                <View style={styles.nairaIcon}>
+                  <Text style={styles.nairaIconText}>₦</Text>
+                </View>
+                <View style={styles.nairaCopy}>
+                  <Text style={styles.nairaName}>Naira settlement balance</Text>
+                  <Text style={styles.nairaHint}>From a crypto conversion · separate from your KaysPay wallet</Text>
+                </View>
               </View>
-              <View>
-                <Text style={styles.nairaName}>Naira Wallet</Text>
-                <Text style={styles.nairaHint}>For funding your next Buy</Text>
-              </View>
+              <Text style={styles.nairaValue}>
+                {balanceVisible ? formatNaira(quidaxNgnBalance) : '₦ ••••••'}
+              </Text>
             </View>
-            <Text style={styles.nairaValue}>
-              {ngnBalance != null ? (balanceVisible ? formatNaira(ngnBalance) : '₦ ••••••') : '—'}
-            </Text>
-          </View>
+          )}
 
           {heldWallets.length > 0 && (
             <View style={styles.assetsSection}>
@@ -1500,12 +1571,29 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   keyboardType="decimal-pad"
                   onFocus={() => scrollSectionIntoView(sellSectionYRef)}
                 />
+                <View style={styles.sellBalanceRow}>
+                  <Text style={styles.hintText}>Available: {quidaxUsdtBalance?.toFixed(6) ?? '—'} USDT</Text>
+                  <TouchableOpacity onPress={handleSellMax} disabled={sellQuoteLoading || quidaxUsdtBalance == null}>
+                    <Text style={styles.sellMaxText}>Sell Max</Text>
+                  </TouchableOpacity>
+                </View>
                 {sellNgnEstimate != null && (
                   <Text style={styles.estimateText}>≈ {formatNaira(sellNgnEstimate)}</Text>
                 )}
-                {quidaxUsdtBalance != null && numericSellUsdt > quidaxUsdtBalance && (
-                  <Text style={styles.errorText}>Insufficient USDT balance.</Text>
+                {sellQuoteLoading && <Text style={styles.hintText}>Checking live network fee…</Text>}
+                {sellQuote && (
+                  <View style={styles.sellQuoteCard}>
+                    <Text style={styles.sellQuoteText}>Amount to sell: {sellQuote.amount} USDT</Text>
+                    <Text style={styles.sellQuoteText}>TRC20 network fee: {sellQuote.networkFee} USDT</Text>
+                    <Text style={styles.sellQuoteTotal}>Total required: {sellQuote.totalRequired} USDT</Text>
+                  </View>
                 )}
+                {sellQuote && !sellQuote.sufficient && (
+                  <Text style={styles.errorText}>
+                    You need {sellQuote.totalRequired} USDT, but only {sellQuote.available} USDT is available.
+                  </Text>
+                )}
+                {sellQuoteError && <Text style={styles.errorText}>{sellQuoteError}</Text>}
 
                 <Text style={styles.label}>Bank</Text>
                 <TouchableOpacity
@@ -1818,6 +1906,7 @@ function createStyles(theme: AppTheme) {
     marginBottom: Spacing.L,
   },
   nairaLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.M },
+  nairaCopy: { flex: 1 },
   nairaIcon: {
     width: 38,
     height: 38,
@@ -2065,6 +2154,11 @@ function createStyles(theme: AppTheme) {
   payDetailAccount: { ...Typography.BODY, fontFamily: MONO, color: theme.brand, fontWeight: '700', letterSpacing: 1 },
   feeBreakdown: { marginTop: Spacing.M, paddingHorizontal: Spacing.XS },
   feeLabel: { ...Typography.CAPTION, fontFamily: MONO, color: theme.inkMuted },
+  sellBalanceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sellMaxText: { ...Typography.BODY_SMALL, color: theme.brand, fontWeight: '700' },
+  sellQuoteCard: { marginTop: Spacing.S, padding: Spacing.M, borderRadius: 12, backgroundColor: theme.surfaceRaised },
+  sellQuoteText: { ...Typography.BODY_SMALL, color: theme.inkMuted, marginBottom: 4 },
+  sellQuoteTotal: { ...Typography.BODY, color: theme.ink, fontWeight: '700' },
   receiveRow: { marginTop: Spacing.S, paddingTop: Spacing.M, borderTopWidth: 1, borderTopColor: theme.hairline },
   receiveLabel: { ...Typography.BODY, fontWeight: '700', color: theme.ink },
   receiveValue: { ...Typography.BODY, fontFamily: MONO, fontWeight: '700', color: theme.brand },

@@ -69,6 +69,18 @@ export interface CryptoActionResult {
   message?: string;
 }
 
+export interface CryptoSellQuote {
+  amount: number;
+  network: string;
+  networkFee: number;
+  totalRequired: number;
+  available: number;
+  sufficient: boolean;
+  maxSell: number;
+  minSell: number;
+  maxLimit: number;
+}
+
 function newIdempotencyKey(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -333,6 +345,38 @@ export const cryptoService = {
     return (data.banks ?? []) as { code: string; name: string; logo?: string }[];
   },
 
+  async getSellQuote(cryptoAmount: number): Promise<{ success: boolean; quote?: CryptoSellQuote; error?: string }> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('crypto-sell-quote', { body: { crypto_amount: cryptoAmount } }),
+      );
+      if (error || !data?.success) {
+        let message = data?.error || 'Could not calculate the live network fee.';
+        try {
+          const body = await (error as any)?.context?.json?.();
+          if (body?.error) message = body.error;
+        } catch {}
+        return { success: false, error: message };
+      }
+      return {
+        success: true,
+        quote: {
+          amount: Number(data.amount),
+          network: String(data.network || 'trc20'),
+          networkFee: Number(data.network_fee),
+          totalRequired: Number(data.total_required),
+          available: Number(data.available),
+          sufficient: data.sufficient === true,
+          maxSell: Number(data.max_sell),
+          minSell: Number(data.min_sell),
+          maxLimit: Number(data.max_limit),
+        },
+      };
+    } catch {
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  },
+
   async resolveSellAccount(
     cryptoAmount: number,
     bankCode: string,
@@ -509,6 +553,35 @@ export const cryptoService = {
       failureReason: data.metadata?.failure_reason,
       needsRefundBankDetails: data.metadata?.needs_refund_bank_details === true,
     };
+  },
+
+  /**
+   * Asks the server to requery Quidax for this caller-owned purchase. This
+   * is deliberately separate from the cheap local status read so the UI can
+   * throttle provider calls while still polling the database frequently.
+   * Settlement stays server-side and uses the same idempotent routine as
+   * the signed webhook and scheduled reconciliation job.
+   */
+  async refreshBuyOrderStatus(transactionId: string): Promise<{
+    status: string;
+    failureReason?: string;
+    needsRefundBankDetails: boolean;
+  } | null> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('crypto-buy-status-refresh', {
+          body: { transaction_id: transactionId },
+        }),
+      );
+      if (error || !data?.success) return null;
+      return {
+        status: String(data.status || 'pending'),
+        failureReason: data.metadata?.failure_reason,
+        needsRefundBankDetails: data.metadata?.needs_refund_bank_details === true,
+      };
+    } catch {
+      return null;
+    }
   },
 
   /**
