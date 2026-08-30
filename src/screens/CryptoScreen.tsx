@@ -1905,7 +1905,7 @@ function createStyles(theme: AppTheme) {
     padding: Spacing.CARD_PADDING,
     marginBottom: Spacing.L,
   },
-  nairaLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.M },
+  nairaLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.M },
   nairaCopy: { flex: 1 },
   nairaIcon: {
     width: 38,
