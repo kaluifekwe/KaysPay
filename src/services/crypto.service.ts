@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { withTimeout, invokeWithRetry } from '../utils/network';
+import { safeErrorMessage } from '../utils/errorMessages';
 
 // Crypto buy/sell/withdraw, all against the customer's own Quidax
 // sub-account — KaysPay never fronts liquidity. Buy pays Quidax's Ramp
@@ -539,6 +540,7 @@ export const cryptoService = {
     status: string;
     failureReason?: string;
     needsRefundBankDetails: boolean;
+    fiatReceivedAt?: string;
   } | null> {
     const { data } = await withTimeout(
       (async () => await supabase
@@ -552,6 +554,7 @@ export const cryptoService = {
       status: data.status,
       failureReason: data.metadata?.failure_reason,
       needsRefundBankDetails: data.metadata?.needs_refund_bank_details === true,
+      fiatReceivedAt: data.metadata?.fiat_received_at,
     };
   },
 
@@ -566,6 +569,7 @@ export const cryptoService = {
     status: string;
     failureReason?: string;
     needsRefundBankDetails: boolean;
+    fiatReceivedAt?: string;
   } | null> {
     try {
       const { data, error } = await withTimeout(
@@ -578,6 +582,7 @@ export const cryptoService = {
         status: String(data.status || 'pending'),
         failureReason: data.metadata?.failure_reason,
         needsRefundBankDetails: data.metadata?.needs_refund_bank_details === true,
+        fiatReceivedAt: data.metadata?.fiat_received_at,
       };
     } catch {
       return null;

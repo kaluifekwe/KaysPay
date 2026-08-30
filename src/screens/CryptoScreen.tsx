@@ -355,6 +355,20 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // purchase visibly lands instead of just going quiet until the screen is
   // manually reopened.
   const [buyPollTxId, setBuyPollTxId] = useState<string | null>(null);
+  // Drives the 3-step progress checklist on the processing screen. Set once
+  // Quidax confirms the deposit (mark_crypto_buy_fiat_received) — never
+  // reset back to null mid-poll, so a slow/duplicate status read can't make
+  // a step that already lit up flicker back off.
+  const [buyFiatReceivedAt, setBuyFiatReceivedAt] = useState<string | null>(null);
+  const [buyPollStartedAt, setBuyPollStartedAt] = useState<number | null>(null);
+  const [buyElapsedSeconds, setBuyElapsedSeconds] = useState(0);
+  useEffect(() => {
+    if (!buyPollStartedAt) return;
+    const update = () => setBuyElapsedSeconds(Math.max(0, Math.round((Date.now() - buyPollStartedAt) / 1000)));
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [buyPollStartedAt]);
   const [sellUsdt, setSellUsdt] = useState('');
   // Sell pays a bank account directly (off-ramp) — no separate verify step
   // for this first version; a name mismatch surfaces as an error after
@@ -817,6 +831,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
 
     const applyStatus = (result: Awaited<ReturnType<typeof cryptoService.getBuyOrderStatus>>) => {
       if (!result || cancelled) return false;
+      if (result.fiatReceivedAt) setBuyFiatReceivedAt(result.fiatReceivedAt);
       if (result.status === 'completed') {
         setActionMessage("Your crypto has landed — it's in your KaysPay Wallet now.");
         setActionState('success');
@@ -853,6 +868,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             status: String(row.status || 'pending'),
             failureReason: typeof row.metadata?.failure_reason === 'string' ? row.metadata.failure_reason : undefined,
             needsRefundBankDetails: row.metadata?.needs_refund_bank_details === true,
+            fiatReceivedAt: typeof row.metadata?.fiat_received_at === 'string' ? row.metadata.fiat_received_at : undefined,
           });
         },
       )
@@ -1033,6 +1049,8 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 setActionAmountNgn(payment.amount);
                 setActionMessage("We're watching for your transfer — this updates automatically.");
                 setActionState('processing');
+                setBuyFiatReceivedAt(null);
+                setBuyPollStartedAt(Date.now());
                 setBuyPollTxId(txId);
               }
             }}
@@ -1060,19 +1078,56 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
         amount={actionAmountNgn ?? undefined}
         message={actionState === 'failed' ? actionError : actionMessage ?? undefined}
         processingHint={buyPollTxId ? 'Checking for your transfer…' : undefined}
-        onDone={() => { setActionMessage(null); setActionState('idle'); setBuyPollTxId(null); }}
+        onDone={() => {
+          setActionMessage(null);
+          setActionState('idle');
+          setBuyPollTxId(null);
+          setBuyFiatReceivedAt(null);
+          setBuyPollStartedAt(null);
+        }}
       >
         {actionState === 'processing' && buyPollTxId ? (
-          <TouchableOpacity
-            onPress={() => {
-              setActionMessage("We'll notify you the moment it's ready.");
-              setActionState('success');
-              setBuyPollTxId(null);
-            }}
-            style={{ marginTop: Spacing.L }}
-          >
-            <Text style={{ color: theme.brand, fontWeight: '600' }}>Check back later</Text>
-          </TouchableOpacity>
+          <View style={{ width: '100%' }}>
+            <Text style={styles.buyProgressHint}>
+              Usually a few minutes · {Math.floor(buyElapsedSeconds / 60)}:{(buyElapsedSeconds % 60).toString().padStart(2, '0')} elapsed
+            </Text>
+            <View style={styles.buyProgressList}>
+              <View style={styles.buyProgressRow}>
+                <View style={[styles.buyProgressDot, styles.buyProgressDotDone]}>
+                  <Ionicons name="checkmark" size={13} color="#FFFFFF" />
+                </View>
+                <Text style={styles.buyProgressLabel}>Payment sent</Text>
+              </View>
+              <View style={[styles.buyProgressLine, buyFiatReceivedAt ? styles.buyProgressLineDone : null]} />
+              <View style={styles.buyProgressRow}>
+                <View style={[styles.buyProgressDot, buyFiatReceivedAt ? styles.buyProgressDotDone : styles.buyProgressDotPending]}>
+                  {buyFiatReceivedAt && <Ionicons name="checkmark" size={13} color="#FFFFFF" />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.buyProgressLabel}>Payment received</Text>
+                  {!buyFiatReceivedAt && <Text style={styles.buyProgressSubLabel}>Waiting to confirm your transfer</Text>}
+                </View>
+              </View>
+              <View style={styles.buyProgressLine} />
+              <View style={styles.buyProgressRow}>
+                <View style={styles.buyProgressDotPending} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.buyProgressLabel}>Converting and delivering</Text>
+                  <Text style={styles.buyProgressSubLabel}>This screen updates on its own</Text>
+                </View>
+              </View>
+            </View>
+            <TouchableOpacity
+              onPress={() => {
+                setActionMessage("You can check back anytime — it'll show as completed here once it's done.");
+                setActionState('success');
+                setBuyPollTxId(null);
+              }}
+              style={{ marginTop: Spacing.L, alignSelf: 'center' }}
+            >
+              <Text style={{ color: theme.brand, fontWeight: '600' }}>Leave this screen</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
       </ResultStatusView>
     );
@@ -1447,6 +1502,16 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   <View>
                     <Text style={styles.coinName}>{selectedMarket?.name ?? selectedBuyAsset}</Text>
                     {selectedMarket && <Text style={styles.coinTicker}>{formatNaira(selectedMarket.priceNgn)}</Text>}
+                  </View>
+                </View>
+
+                <View style={styles.bankTransferNotice}>
+                  <Ionicons name="business-outline" size={20} color={theme.brand} style={{ marginTop: 1 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.bankTransferNoticeTitle}>Paid by direct bank transfer</Text>
+                    <Text style={styles.bankTransferNoticeText}>
+                      You don't need to fund your KaysPay Wallet first — you'll transfer straight to a one-time account.
+                    </Text>
                   </View>
                 </View>
 
@@ -2154,6 +2219,28 @@ function createStyles(theme: AppTheme) {
   payDetailAccount: { ...Typography.BODY, fontFamily: MONO, color: theme.brand, fontWeight: '700', letterSpacing: 1 },
   feeBreakdown: { marginTop: Spacing.M, paddingHorizontal: Spacing.XS },
   feeLabel: { ...Typography.CAPTION, fontFamily: MONO, color: theme.inkMuted },
+  buyProgressHint: { ...Typography.CAPTION, color: theme.inkMuted, textAlign: 'center', marginBottom: Spacing.M },
+  buyProgressList: { alignSelf: 'stretch' },
+  buyProgressRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.S },
+  buyProgressDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  buyProgressDotDone: { backgroundColor: theme.brand },
+  buyProgressDotPending: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: theme.brand,
+  },
+  buyProgressLine: { width: 2, height: 14, backgroundColor: theme.hairline, marginLeft: 10 },
+  buyProgressLineDone: { backgroundColor: theme.brand },
+  buyProgressLabel: { ...Typography.BODY_SMALL, fontWeight: '700', color: theme.ink },
+  buyProgressSubLabel: { ...Typography.CAPTION, color: theme.inkFaint },
   sellBalanceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sellMaxText: { ...Typography.BODY_SMALL, color: theme.brand, fontWeight: '700' },
   sellQuoteCard: { marginTop: Spacing.S, padding: Spacing.M, borderRadius: 12, backgroundColor: theme.surfaceRaised },
@@ -2168,6 +2255,16 @@ function createStyles(theme: AppTheme) {
     padding: Spacing.M,
     marginTop: Spacing.L,
   },
+  bankTransferNotice: {
+    flexDirection: 'row',
+    gap: Spacing.S,
+    backgroundColor: `${theme.brand}1A`,
+    borderRadius: Spacing.CARD_RADIUS,
+    padding: Spacing.M,
+    marginTop: Spacing.L,
+  },
+  bankTransferNoticeTitle: { ...Typography.BODY_SMALL, fontWeight: '700', color: theme.ink, marginBottom: 2 },
+  bankTransferNoticeText: { ...Typography.CAPTION, color: theme.inkMuted, lineHeight: 18 },
   doneButtonOutline: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     borderRadius: Spacing.BUTTON_RADIUS,
