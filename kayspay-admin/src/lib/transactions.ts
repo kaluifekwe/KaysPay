@@ -11,6 +11,10 @@ export interface TxRow {
   completed_at: string | null;
   funding_provider?: string | null;
   funding_reference?: string | null;
+  // Already returned by admin-transactions; typed here so the dashboard can
+  // read failure_reason and tell an abandoned checkout ("not_paid") apart
+  // from a purchase that genuinely failed.
+  metadata?: Record<string, unknown> | null;
   users: { full_name: string | null; phone: string | null } | null;
   service_refunds?: { reason: string; origin: string; created_at: string }[];
   refund_verification?: {

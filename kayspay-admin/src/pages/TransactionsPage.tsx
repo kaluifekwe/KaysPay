@@ -100,7 +100,17 @@ export default function TransactionsPage() {
                   <td>{formatNaira(r.amount_ngn)}</td>
                   <td>{(() => {
                     const status = r.service_refunds?.length ? 'refunded' : r.status;
-                    return <span className={`badge ${status}`}>{status}</span>;
+                    // An abandoned checkout is stored as 'failed' because the
+                    // status column only allows four values, but nothing
+                    // actually failed — the customer was issued a payment
+                    // account and never transferred. Showing those as
+                    // failures made the dashboard look like the product was
+                    // breaking when it was not.
+                    const notPaid = status === 'failed'
+                      && (r.metadata as { failure_reason?: string } | null)?.failure_reason === 'not_paid';
+                    return notPaid
+                      ? <span className="badge pending" title="Payment account was issued but the customer never transferred">not paid</span>
+                      : <span className={`badge ${status}`}>{status}</span>;
                   })()}</td>
                   <td className="muted">{r.type === 'wallet_fund'
                     ? (r.funding_reference || '—')

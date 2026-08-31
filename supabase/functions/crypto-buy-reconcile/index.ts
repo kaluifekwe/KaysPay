@@ -20,6 +20,20 @@ import { settleCryptoBuySuccess } from "../_shared/crypto-buy-settle.ts";
 // order that's genuinely still in progress, which is worse than leaving a
 // truly-dead one stuck as "pending" a while longer.
 const TERMINAL_FAILURE_STATUSES = new Set(["failed", "needs_attention", "abandoned"]);
+
+// Terminal statuses that mean the customer simply never transferred the
+// money. These are abandoned checkouts, not failures: nothing went wrong,
+// somebody just changed their mind after the payment account was issued.
+// They are closed quietly and never alerted on — alerting here would bury
+// the genuinely dangerous case (below) in noise about people who walked
+// away. Recorded with failure_reason "not_paid" so the admin dashboard can
+// label them accurately instead of showing an alarming "failed".
+const UNPAID_TERMINAL_STATUSES = new Set(["abandoned", "expired", "cancelled"]);
+
+// Past this age an order that is STILL not terminal on Quidax's side is
+// not going to resolve itself. Escalated once for human eyes rather than
+// left invisible, which is how eight orders accumulated unnoticed.
+const STALE_ESCALATION_MS = 7 * 24 * 60 * 60 * 1000;
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
@@ -34,20 +48,25 @@ serve(async (req: Request) => {
 
   const result = await withJobLock(supabase, "crypto-buy-reconcile", async () => {
     const floor = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
+    // There used to be a 48-hour ceiling here as well. Anything older simply
+    // stopped being checked — permanently, and with no alert — so an order
+    // that got stuck just went quiet. Eight of them accumulated that way over
+    // twelve days, worth over a million naira in total, and nobody knew.
+    // Oldest first, so the longest-stuck orders are always cleared before
+    // newer ones rather than being starved by a busy day's traffic.
     const { data: stuck, error } = await supabase
       .from("transactions")
-      .select("id, metadata")
+      .select("id, created_at, metadata")
       .eq("status", "pending")
       .eq("type", "crypto_buy")
       .lte("created_at", floor)
-      .gte("created_at", cutoff)
+      .order("created_at", { ascending: true })
       .limit(50);
 
     if (error) return { checked: 0, error: error.message };
 
-    let completed = 0, failed = 0, stillPending = 0, skipped = 0;
+    let completed = 0, failed = 0, notPaid = 0, stillPending = 0, escalated = 0, skipped = 0;
 
     for (const tx of stuck || []) {
       const meta = (tx.metadata as any) || {};
@@ -100,18 +119,69 @@ serve(async (req: Request) => {
           logPrefix: "crypto-buy-reconcile",
         });
         completed++;
-      } else if (TERMINAL_FAILURE_STATUSES.has(remote.status)) {
+      } else if (TERMINAL_FAILURE_STATUSES.has(remote.status) || UNPAID_TERMINAL_STATUSES.has(remote.status)) {
+        // Did money actually reach Quidax? Two independent signals, and
+        // EITHER one saying yes is treated as yes: our own fiat_received_at
+        // (set by the ramp webhook, which has silently 401'd in the past, so
+        // its absence proves nothing) and Quidax's own status. Only when
+        // both agree nobody paid is this closed quietly.
+        const weSawPayment = !!meta.fiat_received_at;
+        const quidaxSaysUnpaid = UNPAID_TERMINAL_STATUSES.has(remote.status);
+        const neverPaid = quidaxSaysUnpaid && !weSawPayment;
+
         await supabase.rpc("fail_crypto_buy", {
           p_merchant_reference: merchantReference,
-          p_reason: remote.errorMessage || `reconcile_${remote.status}`,
+          p_reason: neverPaid ? "not_paid" : (remote.errorMessage || `reconcile_${remote.status}`),
         });
-        failed++;
+
+        if (neverPaid) {
+          // An abandoned checkout. Nothing went wrong and no money is
+          // involved, so it is closed without an alert.
+          notPaid++;
+        } else {
+          // Money is known or suspected to have reached the provider while
+          // the customer got nothing. This is the case worth waking someone
+          // for, and the whole reason the noisy cases above stay silent.
+          failed++;
+          await supabase.rpc("record_monitoring_alert", {
+            p_fingerprint: `crypto_buy_paid_undelivered_${tx.id}`,
+            p_type: "crypto_buy_paid_but_undelivered",
+            p_severity: "critical",
+            p_details: {
+              transaction_id: tx.id,
+              merchant_reference: merchantReference,
+              quidax_status: remote.status,
+              fiat_received_at: meta.fiat_received_at ?? null,
+              error_message: remote.errorMessage ?? null,
+            },
+          });
+        }
       } else {
         stillPending++;
+        // Not terminal on Quidax's side, but old enough that it is not
+        // going to resolve on its own. Raise it once (record_monitoring_alert
+        // dedupes on fingerprint) so it gets human attention instead of
+        // sitting pending forever.
+        const ageMs = Date.now() - new Date(tx.created_at as string).getTime();
+        if (ageMs > STALE_ESCALATION_MS) {
+          escalated++;
+          await supabase.rpc("record_monitoring_alert", {
+            p_fingerprint: `crypto_buy_stale_${tx.id}`,
+            p_type: "crypto_buy_stuck_pending",
+            p_severity: meta.fiat_received_at ? "critical" : "warning",
+            p_details: {
+              transaction_id: tx.id,
+              merchant_reference: merchantReference,
+              quidax_status: remote.status,
+              age_days: Math.floor(ageMs / 86_400_000),
+              fiat_received_at: meta.fiat_received_at ?? null,
+            },
+          });
+        }
       }
     }
 
-    return { checked: stuck?.length ?? 0, completed, failed, stillPending, skipped };
+    return { checked: stuck?.length ?? 0, completed, failed, notPaid, stillPending, escalated, skipped };
   });
 
   return json(result);
