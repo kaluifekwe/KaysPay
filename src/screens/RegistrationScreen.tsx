@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -377,8 +378,8 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
   );
 
   const renderStatusIcon = (hasError: boolean, isValid: boolean) => {
-    if (hasError) return <Text style={styles.errorIcon}>×</Text>;
-    if (isValid) return <Text style={styles.validIcon}>✓</Text>;
+    if (hasError) return <Ionicons name="close-circle" size={18} color={theme.down} style={styles.statusIcon} />;
+    if (isValid) return <Ionicons name="checkmark-circle" size={18} color={theme.brand} style={styles.statusIcon} />;
     return null;
   };
 
@@ -425,6 +426,12 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
           >
             <Text style={styles.backArrow}>{Icons.back}</Text>
           </TouchableOpacity>
+          <View style={styles.brandRow}>
+            <View style={styles.brandTile}>
+              <Image source={require('../../assets/icon-green.png')} style={styles.brandTileImg} resizeMode="contain" />
+            </View>
+            <Text style={styles.brandName}>KaysPay</Text>
+          </View>
           <Text style={styles.title}>Create Account</Text>
           <Text style={styles.subtitle}>
             {step === 1 ? 'Fill in your details to get started' : 'Set a password and transaction PIN'}
@@ -688,6 +695,13 @@ function createStyles(theme: AppTheme) {
     justifyContent: 'center', alignItems: 'center', marginBottom: 16,
   },
   backArrow: { fontSize: 22, color: theme.ink, fontWeight: '600' },
+  brandRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
+  brandTile: {
+    width: 40, height: 40, borderRadius: 12, backgroundColor: theme.brand,
+    justifyContent: 'center', alignItems: 'center', marginRight: 10, overflow: 'hidden',
+  },
+  brandTileImg: { width: 40, height: 40 },
+  brandName: { fontFamily: 'Helvetica-Bold', fontSize: 15, color: theme.ink },
   title: { fontFamily: 'Helvetica-Bold', fontSize: 26, color: theme.ink, marginBottom: 4 },
   subtitle: { fontSize: 14, color: theme.inkMuted, marginBottom: 16 },
   progressContainer: { marginTop: 4 },
@@ -713,8 +727,7 @@ function createStyles(theme: AppTheme) {
   inputValid: { borderColor: theme.brand },
   fieldIconIonicon: { marginRight: 10 },
   input: { flex: 1, fontSize: 15, color: theme.ink, padding: 0 },
-  validIcon: { fontSize: 18, color: theme.brand, fontWeight: '700', marginLeft: 8 },
-  errorIcon: { fontSize: 18, color: theme.down, fontWeight: '700', marginLeft: 8 },
+  statusIcon: { marginLeft: 8 },
   errorText: { fontSize: 11, color: theme.down, marginTop: 6, marginLeft: 4 },
   hintText: { fontSize: 11, color: theme.inkMuted, marginTop: 6, marginLeft: 4 },
   strengthRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, marginLeft: 4 },

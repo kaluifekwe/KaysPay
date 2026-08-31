@@ -10,11 +10,14 @@ import {
   Platform,
   ScrollView,
   Keyboard,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { authService } from '../services/auth.service';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
+import { passwordValidationError } from '../utils/password';
 
 interface LoginScreenProps {
   navigation: any;
@@ -60,8 +63,9 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
       setPasswordValid(false);
       return false;
     }
-    if (value.length < 6) {
-      setPasswordError('Password must be at least 6 characters');
+    const err = passwordValidationError(value);
+    if (err) {
+      setPasswordError(err);
       setPasswordValid(false);
       return false;
     }
@@ -115,8 +119,14 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
           >
             <Text style={styles.backArrow}>‹</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Sign in to your account</Text>
+          <View style={styles.brandRow}>
+            <View style={styles.brandTile}>
+              <Image source={require('../../assets/icon-green.png')} style={styles.brandTileImg} resizeMode="contain" />
+            </View>
+            <Text style={styles.brandName}>KaysPay</Text>
+          </View>
+          <Text style={styles.title}>Welcome back</Text>
+          <Text style={styles.subtitle}>Log in to manage your wallet</Text>
         </View>
 
         <ScrollView
@@ -133,7 +143,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
                 Email Address<Text style={styles.required}> *</Text>
               </Text>
               <View style={[styles.inputWrapper, getFieldStyle(!!emailError, focusedField === 'email')]}>
-                <Text style={styles.fieldIcon}>✉</Text>
+                <Ionicons name="mail-outline" size={18} color={theme.inkMuted} style={styles.fieldIconIonicon} />
                 <TextInput
                   style={styles.input}
                   placeholder="example@gmail.com"
@@ -152,9 +162,9 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
                   onSubmitEditing={() => passwordRef.current?.focus()}
                 />
                 {email.length > 0 && !emailError && (
-                  <Text style={styles.validIcon}>✓</Text>
+                  <Ionicons name="checkmark-circle" size={18} color={theme.brand} style={styles.statusIcon} />
                 )}
-                {emailError ? <Text style={styles.errorIcon}>×</Text> : null}
+                {emailError ? <Ionicons name="close-circle" size={18} color={theme.down} style={styles.statusIcon} /> : null}
               </View>
               {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
             </View>
@@ -165,7 +175,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
                 Password<Text style={styles.required}> *</Text>
               </Text>
               <View style={[styles.inputWrapper, getFieldStyle(!!passwordError, focusedField === 'password')]}>
-                <Text style={styles.fieldIcon}>🔒</Text>
+                <Ionicons name="lock-closed-outline" size={18} color={theme.inkMuted} style={styles.fieldIconIonicon} />
                 <TextInput
                   ref={passwordRef}
                   style={styles.input}
@@ -192,7 +202,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
                   activeOpacity={0.7}
                   style={styles.eyeButton}
                 >
-                  <Text style={styles.eyeIcon}>{showPassword ? '👁' : '👁‍🗨'}</Text>
+                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color={theme.inkMuted} />
                 </TouchableOpacity>
               </View>
               {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
@@ -207,9 +217,8 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
             activeOpacity={0.8}
           >
             <Text style={styles.loginButtonText}>
-              {loading ? 'Signing in...' : 'Login'}
+              {loading ? 'Logging in...' : 'Log in'}
             </Text>
-            {!loading && <Text style={styles.loginButtonArrow}>→</Text>}
           </TouchableOpacity>
 
           {/* Forgot Password */}
@@ -273,6 +282,30 @@ function createStyles(theme: AppTheme) {
     color: theme.ink,
     fontWeight: '600',
   },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 22,
+  },
+  brandTile: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: theme.brand,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+    overflow: 'hidden',
+  },
+  brandTileImg: {
+    width: 40,
+    height: 40,
+  },
+  brandName: {
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 15,
+    color: theme.ink,
+  },
   title: {
     fontFamily: 'Helvetica-Bold',
     fontSize: 26,
@@ -330,10 +363,8 @@ function createStyles(theme: AppTheme) {
   inputError: {
     borderColor: theme.down,
   },
-  fieldIcon: {
-    fontSize: 18,
+  fieldIconIonicon: {
     marginRight: 10,
-    opacity: 0.5,
   },
   input: {
     flex: 1,
@@ -341,16 +372,7 @@ function createStyles(theme: AppTheme) {
     color: theme.ink,
     padding: 0,
   },
-  validIcon: {
-    fontSize: 18,
-    color: theme.brand,
-    fontWeight: '700',
-    marginLeft: 8,
-  },
-  errorIcon: {
-    fontSize: 18,
-    color: theme.down,
-    fontWeight: '700',
+  statusIcon: {
     marginLeft: 8,
   },
   errorText: {
@@ -362,9 +384,6 @@ function createStyles(theme: AppTheme) {
   eyeButton: {
     padding: 4,
     marginLeft: 8,
-  },
-  eyeIcon: {
-    fontSize: 18,
   },
   loginButton: {
     height: 56,
@@ -383,11 +402,6 @@ function createStyles(theme: AppTheme) {
     fontFamily: 'Helvetica-Bold',
     fontSize: 16,
     color: '#FFFFFF',
-  },
-  loginButtonArrow: {
-    fontSize: 18,
-    color: '#FFFFFF',
-    marginLeft: 8,
   },
   forgotLink: {
     alignItems: 'center',
