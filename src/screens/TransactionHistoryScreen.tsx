@@ -47,7 +47,29 @@ const TRANSACTION_LABELS: Record<string, string> = {
   nin_name_modification: 'NIN Name Update',
   nin_phone_modification: 'NIN Phone Update',
   nin_address_modification: 'NIN Address Update',
+  // Without these a crypto row fell through to `|| txn.type` and showed the
+  // raw column value, e.g. "crypto_deposit", in the customer's own history.
+  crypto_buy: 'Crypto Purchase',
+  crypto_sell: 'Crypto Sale',
+  crypto_deposit: 'Crypto Deposit',
+  crypto_withdraw: 'Crypto Withdrawal',
 };
+
+// Crypto deposits carry no naira value and sells are coin-denominated until
+// they settle: both leave amount_ngn at 0 and put the real figure in metadata
+// as crypto_micro. Printing the naira column for those showed "₦0.00" against
+// a deposit that was actually 9.8 USDT, which reads as an empty or broken
+// record rather than the amount it is.
+function formatTxAmount(amountNgn: number, metadata: any): string {
+  const micro = Number(metadata?.crypto_micro ?? 0);
+  if (amountNgn === 0 && micro > 0) {
+    const asset = String(metadata?.asset || '').toUpperCase() || 'CRYPTO';
+    const dp = asset === 'USDT' ? 2 : 8;
+    const amount = micro / 1_000_000;
+    return `${amount.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })} ${asset}`;
+  }
+  return formatNaira(amountNgn);
+}
 
 const getTransactionIcon = (direction: 'credit' | 'debit') => {
   return direction === 'credit' ? '↓' : '↑';
@@ -130,7 +152,15 @@ const TransactionHistoryScreen: React.FC = () => {
     }
     return response.transactions.map((txn: Transaction) => ({
       id: txn.id,
-      direction: (txn.type === 'wallet_fund' || txn.type === 'refund') ? 'credit' : 'debit',
+      // A crypto deposit is coin arriving from outside, so it is a credit.
+      // Falling through to 'debit' printed it as "-₦0.00": the wrong sign on
+      // an amount that was never in naira to begin with. Compared as a string
+      // because the Transaction type union predates the crypto types and does
+      // not list them, while the query itself ('select *', no type filter)
+      // returns them regardless.
+      direction: (txn.type === 'wallet_fund' || txn.type === 'refund' || String(txn.type) === 'crypto_deposit')
+        ? 'credit'
+        : 'debit',
       rawType: txn.type,
       label: TRANSACTION_LABELS[txn.type] || txn.type,
       recipientPhone: txn.recipient_phone || undefined,
@@ -201,7 +231,7 @@ const TransactionHistoryScreen: React.FC = () => {
             { color: item.direction === 'credit' ? theme.up : theme.down },
           ]}
         >
-          {item.direction === 'credit' ? '+' : '-'}{formatNaira(item.amount)}
+          {item.direction === 'credit' ? '+' : '-'}{formatTxAmount(item.amount, item.metadata)}
         </Text>
         <Text style={styles.timestamp}>{formatTimestamp(item.timestamp)}</Text>
       </View>

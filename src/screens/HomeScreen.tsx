@@ -463,13 +463,16 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             onPress={() => navigation.navigate('Kyc')}
           >
             <View style={styles.kycBannerIconWrap}>
-              <Ionicons name="shield-checkmark-outline" size={20} color={theme.brand} />
+              <Ionicons name="alert-circle-outline" size={20} color={theme.gold} />
             </View>
             <View style={styles.kycBannerTextWrap}>
+              <View style={styles.kycBannerPill}>
+                <Text style={styles.kycBannerPillText}>Action needed</Text>
+              </View>
               <Text style={styles.kycBannerTitle}>Complete your identity verification</Text>
               <Text style={styles.kycBannerSubtitle}>Required to fund your wallet or trade crypto</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={theme.brand} />
+            <Ionicons name="chevron-forward" size={18} color={theme.gold} />
           </TouchableOpacity>
         )}
 
@@ -668,12 +671,30 @@ function createStyles(theme: AppTheme) {
   kycBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.brandSoft,
+    // Gold, not brandSoft. In brand green this banner sat on a green header
+    // above a green wallet card and read as decoration — people scrolled past
+    // a step that blocks funding, then wondered why their transfer was held.
+    // Gold is already the app's "look here" accent (the New badges), so this
+    // draws the eye without introducing a colour the app doesn't use.
+    backgroundColor: theme.goldSoft,
     borderRadius: 12,
     paddingHorizontal: 13,
     paddingVertical: 12,
     marginBottom: 16,
     gap: 10,
+  },
+  kycBannerPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: theme.gold,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginBottom: 4,
+  },
+  kycBannerPillText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: theme.onBrand,
   },
   kycBannerIconWrap: {
     width: 36,

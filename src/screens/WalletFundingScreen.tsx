@@ -296,14 +296,28 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
             {fromCrypto && (
               <View style={styles.cryptoNudge}>
-                <Ionicons name="information-circle-outline" size={18} color={theme.gold} style={styles.cryptoNudgeIcon} />
                 <View style={styles.cryptoNudgeCopy}>
+                  {/* The point used to sit mid-sentence in a grey-toned line
+                      and got skimmed. Someone here to buy crypto would fund
+                      this wallet, wait, and find the money was never used for
+                      it. The heading now states the action first, the body
+                      says plainly that funding here will not pay for crypto,
+                      and the way out is a real button rather than a text
+                      link. */}
+                  <View style={styles.cryptoNudgeHeading}>
+                    <Ionicons name="arrow-forward-circle-outline" size={18} color={theme.gold} />
+                    <Text style={styles.cryptoNudgeTitle}>Buying crypto? Skip this step</Text>
+                  </View>
                   <Text style={styles.cryptoNudgeText}>
-                    Just here for crypto? You don't need to fund your wallet — crypto is paid by direct
-                    bank transfer.
+                    You pay for crypto by bank transfer to an account we show you — not from this
+                    wallet. Funding here won't be used for it.
                   </Text>
-                  <TouchableOpacity onPress={() => navigation.navigate('Crypto')} activeOpacity={0.7}>
-                    <Text style={styles.cryptoNudgeLink}>Back to Crypto →</Text>
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate('Crypto')}
+                    activeOpacity={0.85}
+                    style={styles.cryptoNudgeButton}
+                  >
+                    <Text style={styles.cryptoNudgeButtonText}>Take me back to Crypto</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -481,18 +495,35 @@ function createStyles(theme: AppTheme) {
     padding: Spacing.M,
     marginBottom: Spacing.L,
   },
-  cryptoNudgeIcon: { marginTop: 1 },
   cryptoNudgeCopy: { flex: 1 },
+  cryptoNudgeHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: 6,
+  },
+  cryptoNudgeTitle: {
+    ...Typography.CAPTION,
+    fontWeight: '700',
+    color: theme.ink,
+  },
+  cryptoNudgeButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: theme.brand,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    marginTop: 10,
+  },
+  cryptoNudgeButtonText: {
+    ...Typography.CAPTION,
+    fontWeight: '700',
+    color: theme.onBrand,
+  },
   cryptoNudgeText: {
     ...Typography.CAPTION,
     color: theme.ink,
     lineHeight: 18,
-  },
-  cryptoNudgeLink: {
-    ...Typography.CAPTION,
-    color: theme.gold,
-    fontWeight: '700',
-    marginTop: Spacing.S,
   },
   cbnNotice: {
     ...Typography.CAPTION,

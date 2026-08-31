@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { callAdmin, AdminApiError } from '../lib/adminApi';
-import { formatFundingProvider, isRefundable, formatNaira, serviceLabelForType, TxRow } from '../lib/transactions';
+import { formatFundingProvider, isRefundable, formatNaira, formatTxAmount, serviceLabelForType, TxRow } from '../lib/transactions';
 import { useAuth } from '../AuthContext';
+import ContactPhone from './ContactPhone';
 
 interface UserDetail {
   full_name: string | null;
@@ -34,7 +35,9 @@ export default function TransactionDetailModal({
   const hasConfirmedRefund = refundDone || !!transaction.service_refunds?.length || transaction.status === 'refunded';
 
   useEffect(() => {
-    callAdmin<{ user: UserDetail }>('admin-user-lookup', { query: { user_id: transaction.user_id } })
+    callAdmin<{ user: UserDetail }>('admin-user-lookup', {
+      query: { user_id: transaction.user_id, source: 'transaction_detail' },
+    })
       .then((r) => setUser(r.user))
       .catch((e) => setUserError(e instanceof AdminApiError ? e.message : 'Could not load user details'));
   }, [transaction.user_id]);
@@ -73,7 +76,7 @@ export default function TransactionDetailModal({
           <table>
             <tbody>
               <tr><td className="muted">Service</td><td>{serviceLabelForType(transaction.type)} <span className="muted">({transaction.type})</span></td></tr>
-              <tr><td className="muted">Amount paid</td><td><strong>{formatNaira(transaction.amount_ngn)}</strong></td></tr>
+              <tr><td className="muted">Amount paid</td><td><strong>{formatTxAmount(transaction)}</strong></td></tr>
               <tr><td className="muted">Status</td><td><span className={`badge ${hasConfirmedRefund ? 'refunded' : transaction.status}`}>{hasConfirmedRefund ? 'refunded' : transaction.status}</span></td></tr>
               {transaction.type === 'wallet_fund' ? (
                 <>
@@ -117,7 +120,7 @@ export default function TransactionDetailModal({
             <table>
               <tbody>
                 <tr><td className="muted">Name</td><td>{user.full_name || '—'}</td></tr>
-                <tr><td className="muted">Phone</td><td>{user.phone || '—'}</td></tr>
+                <tr><td className="muted">Phone</td><td><ContactPhone phone={user.phone} /></td></tr>
                 <tr><td className="muted">Email</td><td>{user.email || '—'}</td></tr>
                 <tr><td className="muted">Wallet balance</td><td>{formatNaira(user.wallet_balance_kobo ?? 0)}</td></tr>
                 <tr><td className="muted">KYC status</td><td><span className={`badge ${user.kyc_status === 'verified' ? 'enabled' : 'pending'}`}>{user.kyc_status}</span></td></tr>

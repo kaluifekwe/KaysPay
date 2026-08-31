@@ -86,6 +86,25 @@ export function formatNaira(kobo: number): string {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 });
 }
 
+// A crypto deposit has no naira value at all, and a sell is denominated in
+// the coin until it settles — both store the real figure as metadata
+// crypto_micro and leave amount_ngn at 0. Rendering the naira column for
+// those printed "₦0" against a deposit that was actually 9.8 USDT, which
+// reads as a broken or empty record rather than the amount it is.
+export function formatTxAmount(row: Pick<TxRow, 'type' | 'amount_ngn' | 'metadata'>): string {
+  const meta = row.metadata as { crypto_micro?: number; asset?: string } | null | undefined;
+  const micro = Number(meta?.crypto_micro ?? 0);
+  if (row.amount_ngn === 0 && micro > 0) {
+    const asset = String(meta?.asset || '').toUpperCase() || 'crypto';
+    // USDT is a dollar stablecoin, so 2dp reads naturally; a coin priced in
+    // thousands needs more places before the amount stops looking like zero.
+    const dp = asset === 'USDT' ? 2 : 8;
+    const amount = micro / 1_000_000;
+    return `${amount.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })} ${asset}`;
+  }
+  return formatNaira(row.amount_ngn);
+}
+
 export interface ServiceVolume {
   label: string;
   orderCount: number;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { callAdmin, AdminApiError } from '../lib/adminApi';
-import { formatFundingProvider, formatNaira, SERVICES, TxRow } from '../lib/transactions';
+import { formatFundingProvider, formatTxAmount, SERVICES, TxRow } from '../lib/transactions';
 import TransactionDetailModal from '../components/TransactionDetailModal';
 
 interface TxResponse {
@@ -97,7 +97,7 @@ export default function TransactionsPage() {
                   <td>{r.type === 'wallet_fund'
                     ? formatFundingProvider(r.funding_provider)
                     : <>{r.recipient_phone || '—'}{r.network ? ` (${r.network})` : ''}</>}</td>
-                  <td>{formatNaira(r.amount_ngn)}</td>
+                  <td>{formatTxAmount(r)}</td>
                   <td>{(() => {
                     const status = r.service_refunds?.length ? 'refunded' : r.status;
                     // An abandoned checkout is stored as 'failed' because the
