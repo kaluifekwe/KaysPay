@@ -79,8 +79,11 @@ function codeBlock(title: string, lead: string, code: string, note: string): str
     </td></tr>
     <tr><td style="padding:22px 28px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${SOFT};border:1px solid ${LINE};border-radius:12px;">
-        <tr><td align="center" style="padding:22px 0;">
-          <div style="font-size:34px;font-weight:800;letter-spacing:12px;color:${DEEP};font-family:${FONT};">${esc(code)}</div>
+        <tr><td align="center" style="padding:22px 0 6px;">
+          <div style="font-size:34px;font-weight:800;letter-spacing:6px;color:${DEEP};font-family:${FONT};">${esc(code)}</div>
+        </td></tr>
+        <tr><td align="center" style="padding:0 0 16px;">
+          <p style="margin:0;font-size:12px;color:${MUTED};">Tap and hold the code above, then Copy</p>
         </td></tr>
       </table>
     </td></tr>
