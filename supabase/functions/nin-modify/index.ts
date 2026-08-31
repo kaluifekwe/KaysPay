@@ -19,11 +19,11 @@ import {
   submitNinModification,
 } from "../_shared/ninbvn-client.ts";
 
-// CheckMyNINBVN only — Prembly does not offer modification/correction
+// CheckMyNINBVN only �?Prembly does not offer modification/correction
 // services, only verification (confirmed against Prembly's docs 2026-07-06).
 //
-// Retail price — ₦18,000, confirmed by owner 2026-07-06 (provider cost is
-// ₦16,000/order, charged upfront and only refunded if NIMC rejects it).
+// Retail price �?�?8,000, confirmed by owner 2026-07-06 (provider cost is
+// �?6,000/order, charged upfront and only refunded if NIMC rejects it).
 const MODIFICATION_PRICE_KOBO = 1800000;
 
 const TX_TYPE: Record<NinModificationType, string> = {
@@ -35,7 +35,7 @@ const TX_TYPE: Record<NinModificationType, string> = {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -216,7 +216,7 @@ serve(async (req: Request) => {
     return json({ success: false, error: "Could not start transaction" }, 500);
   }
 
-  // Not instant — a reviewed order (24-48h), same pattern as nin-validate.
+  // Not instant �?a reviewed order (24-48h), same pattern as nin-validate.
   // The transaction stays 'pending' until nin-reconcile's scheduled sweep
   // resolves it.
   try {

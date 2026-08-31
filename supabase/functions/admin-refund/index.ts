@@ -16,15 +16,15 @@ import {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
 // Types where the transaction row represents a single debit from
-// wallets.balance (never a credit, never a second balance) — the only
+// wallets.balance (never a credit, never a second balance) �?the only
 // types where refund_service_transaction / refund_completed_service_transaction
 // are safe to run as-is. wallet_fund/card_fund/refund/payroll/withdrawal
-// and crypto_buy/crypto_sell are all deliberately excluded — see the
+// and crypto_buy/crypto_sell are all deliberately excluded �?see the
 // Phase 2 plan for exactly why each one is dangerous here (double-credit,
 // two-sided balance, or dead/never-created).
 const SIMPLE_REFUNDABLE_TYPES = new Set([
@@ -194,7 +194,7 @@ serve(async (req) => {
   }
 
   // The RPC silently no-ops (no error) if its own precondition wasn't met
-  // (e.g. it was already refunded a moment ago) — re-check the actual
+  // (e.g. it was already refunded a moment ago) �?re-check the actual
   // outcome before reporting success rather than trusting "no error".
   const { data: after } = await db
     .from("transactions")

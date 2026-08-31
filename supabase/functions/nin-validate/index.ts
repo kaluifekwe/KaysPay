@@ -18,14 +18,14 @@ import {
   submitNinValidation,
 } from "../_shared/ninbvn-client.ts";
 
-// Retail price — CheckMyNINBVN charges us ₦6,000/order (auto-refunded to us
+// Retail price �?CheckMyNINBVN charges us �?,000/order (auto-refunded to us
 // if NIMC rejects it). Adjust to whatever markup you want to charge users.
 const NIN_VALIDATE_PRICE_KOBO = 800000; // ₦8,000
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -33,7 +33,7 @@ function newRequestId(): string {
   return `ninval${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// Confirms a NIN is genuinely issued/active in NIMC's database — this is
+// Confirms a NIN is genuinely issued/active in NIMC's database �?this is
 // NOT instant like nin-verify. It's a reviewed order (24-48h turnaround);
 // the transaction stays 'pending' until nin-reconcile's scheduled sweep
 // polls the provider and resolves it.
@@ -152,7 +152,7 @@ serve(async (req: Request) => {
       });
     }
 
-    // Stays 'pending' — nin-reconcile resolves it once NIMC's review
+    // Stays 'pending' �?nin-reconcile resolves it once NIMC's review
     // completes. Store the reference_id so the sweep can poll it.
     await supabase
       .from("transactions")

@@ -17,17 +17,16 @@ import {
 import { redactSecrets } from "../_shared/redact.ts";
 
 // Submits the customer's bank account as the destination for a refund Quidax
-// already decided to make (their own name-mismatch auto-refund on a Buy —
-// see crypto-ramp-webhook's buy_transaction.refund.details_requested
+// already decided to make (their own name-mismatch auto-refund on a Buy �?// see crypto-ramp-webhook's buy_transaction.refund.details_requested
 // handler). Re-resolves the account server-side rather than trusting
-// whatever name the client displayed on the previous screen — the same
+// whatever name the client displayed on the previous screen �?the same
 // discipline transfer-send uses before spending money, applied here even
 // though this function itself moves nothing; it only tells Quidax where to
 // send what they already committed to sending back.
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -84,7 +83,7 @@ serve(async (req: Request) => {
 
   if (!tx) return json({ success: false, error: "Purchase not found." }, 404);
 
-  // Already submitted (e.g. a double-tap) — nothing left to do, and calling
+  // Already submitted (e.g. a double-tap) �?nothing left to do, and calling
   // Quidax's submit endpoint a second time isn't something to risk.
   if (tx.status === "pending" && tx.metadata?.needs_refund_bank_details === false && tx.metadata?.refund_bank_code) {
     return json({ success: true, already_submitted: true });
@@ -115,7 +114,7 @@ serve(async (req: Request) => {
     if (error) {
       console.error("crypto-buy-refund-submit: record_crypto_buy_refund_submitted failed:", error.message);
       // Quidax already has the details even though our own record didn't
-      // save — don't tell the customer to retry and risk a duplicate
+      // save �?don't tell the customer to retry and risk a duplicate
       // submission to Quidax over an ambiguous outcome.
       return json({
         success: true,
