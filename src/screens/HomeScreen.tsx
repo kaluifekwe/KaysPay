@@ -202,13 +202,27 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
   const quickActions = useMemo(
     () => {
-      const available = BASE_QUICK_ACTIONS.filter((action) => action.screen !== 'TravelEsim' || esimEnabled);
+      // eSIM stays on the grid when the admin switch is off, marked "Soon"
+      // rather than disappearing. Hiding a service outright reads as though
+      // it never existed; showing it as upcoming sets the expectation that
+      // it is coming, and flipping the switch back on restores it fully
+      // with no deploy. Tapping it explains itself via the existing
+      // comingSoon alert used elsewhere on this grid.
+      const available = BASE_QUICK_ACTIONS.map((action) =>
+        action.screen === 'TravelEsim' && !esimEnabled
+          ? { ...action, comingSoon: true, badge: 'Soon' as const }
+          : action,
+      );
       return cryptoEnabled ? [...available, CRYPTO_QUICK_ACTION] : available;
     },
     [cryptoEnabled, esimEnabled],
   );
   const adverts = useMemo(
     () => {
+      // The advert stays filtered out, unlike the grid tile. It is a
+      // marketing push ("Stay online in 190+ countries") that reads as a
+      // live feature, so running it for something unavailable would just
+      // generate taps that dead-end.
       const available = BASE_ADVERTS.filter((advert) => advert.screen !== 'TravelEsim' || esimEnabled);
       return cryptoEnabled ? [...available, CRYPTO_ADVERT] : available;
     },
