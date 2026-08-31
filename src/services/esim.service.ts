@@ -58,6 +58,22 @@ function newIdempotencyKey(): string {
 }
 
 export const esimService = {
+  /**
+   * Client visibility for Travel eSIM. Fail closed so a disabled service
+   * never flashes on Home during a slow or unavailable network check.
+   * Purchase remains independently protected by the server-side switch.
+   */
+  async isEnabled(): Promise<boolean> {
+    try {
+      const { data, error } = await withTimeout(
+        (async () => supabase.rpc('is_client_feature_enabled', { p_service: 'esim' }))(),
+      );
+      return !error && data === true;
+    } catch {
+      return false;
+    }
+  },
+
   // The full, LIVE country list from the provider, each stamped with a "from"
   // price. Throws on failure so the caching layer (useCachedData) keeps the
   // last-known-good list on screen instead of going blank — there is no

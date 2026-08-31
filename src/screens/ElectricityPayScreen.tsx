@@ -226,17 +226,17 @@ export default function ElectricityPayScreen(props: any) {
 
   const handlePay = useCallback(async () => {
     if (!canProceed) return;
-
-    // Subtitle shows exactly what's being confirmed — disco, meter, and (if
-    // verified) the real customer name — so the PIN prompt is never a bare
-    // "enter your PIN" with no context to check against.
+    setBuyState('processing');
     const subtitle = convenienceFee > 0
       ? `${provider.name} · Meter ${meterNumber.trim()}${verifiedName ? ` · ${verifiedName}` : ''} · includes ${formatNaira(convenienceFee)} fee`
       : verifiedName
         ? `${provider.name} · Meter ${meterNumber.trim()} · ${verifiedName}`
         : `${provider.name} · Meter ${meterNumber.trim()}`;
     const authResult = await authorize({ title: 'Confirm Electricity Payment', amount: totalWithFee, subtitle });
-    if (!authResult) return;
+    if (!authResult) {
+      setBuyState('idle');
+      return;
+    }
 
     setErrorMessage('');
     // Go STRAIGHT to the result screen — it runs the purchase itself and shows

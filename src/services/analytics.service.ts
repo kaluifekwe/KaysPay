@@ -38,6 +38,10 @@ const MAX_QUEUE_SIZE = 100;
 const MAX_EVENT_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const sessionId = Crypto.randomUUID();
 
+// installationId is a random, non-PII identifier scoped to this app install.
+// It is used solely for analytics aggregation (grouping events by install)
+// and is never combined with personal data. It is cleared on sign-out so a
+// different account signing in later gets a fresh identity.
 let installationId: string | null = null;
 let initialized = false;
 let flushing = false;
@@ -165,6 +169,11 @@ export function initializeAnalytics(): () => void {
     if (state === 'active') void flush();
   });
   return () => subscription.remove();
+}
+
+export async function clearAnalyticsState(): Promise<void> {
+  installationId = null;
+  await storageHelpers.delete(StorageKeys.ANALYTICS_INSTALLATION_ID);
 }
 
 export const analytics = { track, flush };

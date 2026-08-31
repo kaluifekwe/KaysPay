@@ -8,7 +8,9 @@ import { Spacing } from '../constants/spacing';
 import { formatNaira } from '../utils/formatCurrency';
 import { formatDateTimeFull } from '../utils/formatDateTime';
 import { safeErrorMessage } from '../utils/errorMessages';
+import { isAppleInstallUrl } from '../utils/urlValidation';
 import { downloadPdf, sharePdf } from '../utils/pdf';
+import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 import { buildElectricityReceiptHtml, buildExamPinReceiptHtml, buildNinCorrectionReceiptHtml, buildTransactionReceiptHtml } from '../utils/receipts';
 import { vtuService } from '../services/vtu.service';
 import { supabase } from '../lib/supabase';
@@ -139,6 +141,7 @@ export default function TransactionDetailModal({
   transaction: TransactionDetailItem | null;
   onClose: () => void;
 }) {
+  useSensitiveScreenProtection();
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const [generatingPdf, setGeneratingPdf] = useState(false);
@@ -685,7 +688,10 @@ export default function TransactionDetailModal({
                 {Platform.OS === 'ios' && !!transaction.metadata?.apple_install_url && (
                   <TouchableOpacity
                     style={styles.receiptButton}
-                    onPress={() => Linking.openURL(String(transaction.metadata!.apple_install_url))}
+                    onPress={() => {
+                      const url = String(transaction.metadata!.apple_install_url);
+                      if (isAppleInstallUrl(url)) Linking.openURL(url);
+                    }}
                   >
                     <Text style={styles.receiptButtonText}>Install on this iPhone</Text>
                   </TouchableOpacity>

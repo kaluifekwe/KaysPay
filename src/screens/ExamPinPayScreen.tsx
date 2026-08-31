@@ -43,11 +43,12 @@ export default function ExamPinPayScreen({ navigation, route }: any) {
   const scrollRef = useRef<ScrollView>(null);
   const [quantity, setQuantity] = useState(exam.quantity_options[0] || 1);
   const [profileCode, setProfileCode] = useState('');
+  const [processing, setProcessing] = useState(false);
 
   const totalAmount = exam.amount * quantity;
   const needsProfileCode = !!exam.requiresProfileCode;
   const hasProfileCode = !needsProfileCode || profileCode.trim().length > 0;
-  const canProceed = exam.quantity_options.includes(quantity) && hasProfileCode;
+  const canProceed = exam.quantity_options.includes(quantity) && hasProfileCode && !processing;
 
   const payHint = useMemo(() => {
     if (needsProfileCode && !profileCode.trim()) return 'Enter your JAMB profile code';
@@ -60,12 +61,16 @@ export default function ExamPinPayScreen({ navigation, route }: any) {
 
   const handlePay = useCallback(async () => {
     if (!canProceed) return;
+    setProcessing(true);
     const authResult = await authorize({
       title: 'Confirm Exam PIN Purchase',
       amount: totalAmount,
       subtitle: `${exam.name} • Quantity ${quantity}`,
     });
-    if (!authResult) return;
+    if (!authResult) {
+      setProcessing(false);
+      return;
+    }
 
     navigation.navigate('TransactionStatus', {
       title: 'Exam PIN',

@@ -20,6 +20,7 @@ import { walletService } from '../services/wallet.service';
 import { formatNaira } from '../utils/formatCurrency';
 import { Transaction } from '../types/app.types';
 import { useCachedData } from '../hooks/useCachedData';
+import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 import TransactionDetailModal, { TransactionDetailItem } from '../components/TransactionDetailModal';
 
 type TransactionItem = TransactionDetailItem;
@@ -113,6 +114,7 @@ const formatTimestamp = (timestamp: string): string => {
 };
 
 const TransactionHistoryScreen: React.FC = () => {
+  useSensitiveScreenProtection();
   const navigation = useNavigation();
   const { theme } = useTheme();
   const styles = createStyles(theme);

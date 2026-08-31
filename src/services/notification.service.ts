@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { withTimeout } from '../utils/network';
+import { safeErrorMessage } from '../utils/errorMessages';
 
 export type NotificationType = 'funding' | 'withdrawal' | 'transaction' | 'system';
 
@@ -24,7 +25,7 @@ export const notificationService = {
           .order('created_at', { ascending: false })
           .limit(limit))(),
     );
-    if (error) throw new Error(error.message || 'Could not load notifications');
+    if (error) throw new Error(safeErrorMessage(error, 'Could not load notifications'));
     return (data || []).map((n: any) => ({
       id: String(n.id),
       type: (n.type as NotificationType) || 'system',
@@ -65,6 +66,6 @@ export const notificationService = {
     const { error } = await withTimeout(
       (async () => supabase.rpc('delete_notifications', { p_ids: ids }))(),
     );
-    if (error) throw new Error(error.message || 'Could not delete notifications');
+    if (error) throw new Error(safeErrorMessage(error, 'Could not delete notifications'));
   },
 };

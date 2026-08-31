@@ -59,6 +59,7 @@ export default function TVPayScreen({ navigation, route }: any) {
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [savedAccounts, setSavedAccounts] = useState<SavedBillingAccount[]>([]);
+  const [processing, setProcessing] = useState(false);
   // True until the first saved-accounts fetch settles. Without this, the
   // screen has no way to tell "still checking" apart from "genuinely none
   // saved" — savedAccounts starts as [], so the blank manual-entry box
@@ -228,7 +229,7 @@ export default function TVPayScreen({ navigation, route }: any) {
   }, [smartcardNumber, verifyState, handleVerifySmartcard]);
 
   const isValidSmartcard = smartcardNumber.length >= 8;
-  const canProceed = verifyState === 'verified' && !!verifiedName && !!selectedBouquet;
+  const canProceed = verifyState === 'verified' && !!verifiedName && !!selectedBouquet && !processing;
 
   const payHint = useMemo(() => {
     if (!isValidSmartcard) return 'Enter your smartcard number';
@@ -240,13 +241,17 @@ export default function TVPayScreen({ navigation, route }: any) {
 
   const handleBuy = useCallback(async () => {
     if (!canProceed || !selectedBouquet || !verifiedName) return;
+    setProcessing(true);
     const digits = smartcardNumber.replace(/\D/g, '');
     const authResult = await authorize({
       title: 'Confirm TV Subscription',
       amount: selectedBouquet.amount,
       subtitle: `${provider.name} • ${digits} • ${verifiedName}`,
     });
-    if (!authResult) return;
+    if (!authResult) {
+      setProcessing(false);
+      return;
+    }
 
     setErrorMessage('');
     navigation.navigate('TransactionStatus', {

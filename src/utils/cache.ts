@@ -5,6 +5,19 @@ import { Directory, File, Paths } from 'expo-file-system';
 // skips saving anything larger) and is meant for small secrets like PINs,
 // not general app data. A transaction list or service catalog can easily
 // exceed that, so this uses a plain JSON file instead.
+//
+// THREAT MODEL: the main risks to cached data are:
+//  1. A compromised/malicious app on the same device — mitigated by Android
+//     private app storage (other apps cannot read this directory).
+//  2. A rooted/jailbroken device with forensic tools — mitigated by root
+//     detection (see H-2) and the fact that cached catalogs contain no
+//     secrets, while transaction history is user-scoped (ownerId) so a
+//     stolen file from one user cannot be attributed to another.
+//
+// True encryption would require either a new dependency or chunking large
+// payloads through SecureStore, both of which are disproportionate to the
+// current risk. If the threat model changes (e.g. enterprise/mobile-device-
+// management deployments), revisit this and add encryption.
 const CACHE_DIR = new Directory(Paths.document, 'kp_cache');
 
 function ensureCacheDir(): void {

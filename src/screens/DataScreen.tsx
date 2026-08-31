@@ -46,6 +46,58 @@ interface DataScreenProps {
 }
 
 type BuyState = 'idle' | 'processing' | 'success' | 'error';
+type BundleFilter = 'all' | 'daily' | 'weekly' | 'monthly';
+
+const BUNDLE_FILTERS: { key: BundleFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'daily', label: 'Daily' },
+  { key: 'weekly', label: 'Weekly' },
+  { key: 'monthly', label: 'Monthly' },
+];
+
+function validityDays(validity: string): number | null {
+  const match = validity.toLowerCase().match(/(\d+(?:\.\d+)?)\s*(day|week|month)/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) return null;
+  if (match[2] === 'week') return value * 7;
+  if (match[2] === 'month') return value * 30;
+  return value;
+}
+
+function matchesBundleFilter(bundle: DataBundle, filter: BundleFilter): boolean {
+  if (filter === 'all') return true;
+  const days = validityDays(bundle.validity);
+  if (days === null) return false;
+  if (filter === 'daily') return days <= 1;
+  if (filter === 'weekly') return days > 1 && days <= 7;
+  return days > 7;
+}
+
+function bundlePresentation(bundle: DataBundle): {
+  title: string;
+  category: string | null;
+  warning: string | null;
+} {
+  const categoryMatches = [...bundle.name.matchAll(/\(([^)]+)\)/g)];
+  const category = categoryMatches.at(-1)?.[1]?.replace(/([a-z])([A-Z])/g, '$1 $2').trim() ?? null;
+  const restricted = isRestrictedPlanName(bundle.name);
+  let title = bundle.name
+    .replace(/\s*\([^)]+\)\s*/g, ' ')
+    .replace(/^do not buy\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (restricted) {
+    title = title.split(/\s+if\s+you\s+are\s+owing/i)[0]?.trim() || title;
+  }
+
+  return {
+    title,
+    category,
+    warning: restricted ? `Unavailable if owing ${networkLabel(bundle.network)} airtime` : null,
+  };
+}
 
 const NETWORKS: { key: NetworkProvider; label: string }[] = [
   { key: 'mtn', label: 'MTN' },
@@ -59,6 +111,9 @@ const NETWORK_COLORS: Record<NetworkProvider, string> = {
   glo: Colors.GLO,
   '9mobile': Colors.MOBILE,
 };
+
+const DATA_MIN = 100;
+const DATA_MAX = 50000;
 
 function networkLabel(network: NetworkProvider): string {
   return NETWORKS.find((n) => n.key === network)?.label ?? network;
@@ -81,6 +136,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   const [bundlesNetwork, setBundlesNetwork] = useState<NetworkProvider | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [cashbackBalance, setCashbackBalance] = useState(0);
+  const [bundleFilter, setBundleFilter] = useState<BundleFilter>('all');
   // Defaults off (owner-approved, 2026-08-16): auto-applying let cashback
   // earn on one purchase and get silently spent on the very next one before
   // it ever felt like it accumulated. Now it only spends when the user
@@ -124,6 +180,10 @@ export default function DataScreen({ navigation }: DataScreenProps) {
 
   const effectiveNetwork = selectedNetwork || autoDetectedNetwork;
   const displayedBundles = bundlesNetwork === effectiveNetwork ? bundles : [];
+  const filteredBundles = useMemo(
+    () => displayedBundles.filter((bundle) => matchesBundleFilter(bundle, bundleFilter)),
+    [displayedBundles, bundleFilter],
+  );
   const catalogTransitioning = effectiveNetwork !== null && bundlesNetwork !== effectiveNetwork;
   const catalogBusy = catalogLoading || catalogTransitioning;
 
@@ -180,6 +240,7 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   const handleNetworkSelect = useCallback((network: NetworkProvider) => {
     setSelectedNetwork((prev) => (prev === network ? null : network));
     setSelectedBundle(null);
+    setBundleFilter('all');
   }, []);
 
   const handleBundleSelect = useCallback((bundle: DataBundle) => {
@@ -258,11 +319,18 @@ export default function DataScreen({ navigation }: DataScreenProps) {
       return;
     }
 
-    // The balance pre-check only needs to cover the wallet-funded portion —
-    // cashback covers the rest, so checking against the full price would
-    // wrongly reject a purchase the user can actually afford.
+    const bundleAmount = selectedBundle.amount;
+    if (bundleAmount < DATA_MIN || bundleAmount > DATA_MAX) {
+      setErrorMessage(`Data bundle amount must be between ${formatNaira(DATA_MIN)} and ${formatNaira(DATA_MAX)}`);
+      return;
+    }
+
+    setBuyState('processing');
     const authResult = await authorize({ title: 'Confirm Data Purchase', amount: walletAmount });
-    if (!authResult) return;
+    if (!authResult) {
+      setBuyState('idle');
+      return;
+    }
 
     setErrorMessage('');
     // Go STRAIGHT to the result screen — it runs the purchase itself and shows
@@ -466,6 +534,28 @@ export default function DataScreen({ navigation }: DataScreenProps) {
           {effectiveNetwork && (catalogBusy || displayedBundles.length > 0) && (
             <View style={styles.section}>
               <Text style={styles.label}>Choose a Bundle</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.bundleFilters}
+              >
+                {BUNDLE_FILTERS.map((filter) => {
+                  const active = bundleFilter === filter.key;
+                  return (
+                    <TouchableOpacity
+                      key={filter.key}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      style={[styles.bundleFilterChip, active && styles.bundleFilterChipActive]}
+                      onPress={() => setBundleFilter(filter.key)}
+                    >
+                      <Text style={[styles.bundleFilterText, active && styles.bundleFilterTextActive]}>
+                        {filter.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
               {catalogBusy ? (
                 <View style={styles.catalogLoadingRow}>
                   <ActivityIndicator size="small" color={theme.brand} />
@@ -476,27 +566,46 @@ export default function DataScreen({ navigation }: DataScreenProps) {
                   </Text>
                 </View>
               ) : null}
-              {displayedBundles.map((bundle) => {
+              {filteredBundles.map((bundle) => {
                 const isSelected = selectedBundle?.id === bundle.id;
                 const hasDiscount = !!bundle.list_amount && bundle.list_amount > bundle.amount;
+                const presentation = bundlePresentation(bundle);
                 return (
                   <TouchableOpacity
                     key={bundle.id}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: isSelected }}
+                    accessibilityLabel={`${presentation.title}, ${bundle.validity}, pay ${formatNaira(bundle.amount)}`}
                     style={[
                       styles.bundleCard,
+                      presentation.warning && styles.bundleCardWarning,
                       isSelected && styles.bundleCardSelected,
                     ]}
                     onPress={() => handleBundleSelect(bundle)}
                   >
                     <View style={styles.bundleInfo}>
-                      <Text style={styles.bundleName}>{bundle.name}</Text>
-                      <Text style={styles.bundleValidity}>{bundle.validity}</Text>
+                      <Text style={styles.bundleName} numberOfLines={2}>{presentation.title}</Text>
+                      <View style={styles.bundleMetaRow}>
+                        {presentation.category && (
+                          <View style={styles.categoryBadge}>
+                            <Text style={styles.categoryBadgeText}>{presentation.category}</Text>
+                          </View>
+                        )}
+                        <Ionicons name="time-outline" size={14} color={theme.inkMuted} />
+                        <Text style={styles.bundleValidity}>{bundle.validity}</Text>
+                      </View>
+                      {presentation.warning && (
+                        <View style={styles.bundleWarningRow}>
+                          <Ionicons name="warning" size={14} color={Colors.AMBER} />
+                          <Text style={styles.bundleWarningText} numberOfLines={2}>{presentation.warning}</Text>
+                        </View>
+                      )}
                       {(hasDiscount || bundle.has_cashback) && (
                         <View style={styles.badgeRow}>
                           {hasDiscount && (
                             <View style={styles.discountBadge}>
                               <Text style={styles.discountBadgeText}>
-                                Discount {formatNaira((bundle.list_amount as number) - bundle.amount)}
+                                Save {formatNaira((bundle.list_amount as number) - bundle.amount)}
                               </Text>
                             </View>
                           )}
@@ -509,6 +618,9 @@ export default function DataScreen({ navigation }: DataScreenProps) {
                       )}
                     </View>
                     <View style={styles.bundleAmountColumn}>
+                      <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
+                        {isSelected && <View style={styles.radioInner} />}
+                      </View>
                       {hasDiscount && (
                         <Text style={styles.bundleListAmount}>{formatNaira(bundle.list_amount as number)}</Text>
                       )}
@@ -518,12 +630,17 @@ export default function DataScreen({ navigation }: DataScreenProps) {
                           isSelected && styles.bundleAmountSelected,
                         ]}
                       >
-                        {formatNaira(bundle.amount)}
+                        Pay {formatNaira(bundle.amount)}
                       </Text>
                     </View>
                   </TouchableOpacity>
                 );
               })}
+              {filteredBundles.length === 0 && !catalogBusy && (
+                <View style={styles.filteredEmptyState}>
+                  <Text style={styles.filteredEmptyText}>No {bundleFilter} bundles are currently available.</Text>
+                </View>
+              )}
             </View>
           )}
 
@@ -790,16 +907,47 @@ function createStyles(theme: AppTheme) {
     fontSize: 13,
     color: theme.ink,
   },
+  bundleFilters: {
+    gap: Spacing.S,
+    paddingBottom: Spacing.M,
+  },
+  bundleFilterChip: {
+    minWidth: 68,
+    minHeight: Spacing.TOUCH_TARGET_MIN,
+    paddingHorizontal: Spacing.M,
+    borderRadius: Spacing.TOUCH_TARGET_MIN / 2,
+    borderWidth: 1,
+    borderColor: theme.brand,
+    backgroundColor: theme.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bundleFilterChipActive: {
+    backgroundColor: theme.brand,
+  },
+  bundleFilterText: {
+    ...Typography.CAPTION,
+    fontWeight: '700',
+    color: theme.brand,
+  },
+  bundleFilterTextActive: {
+    color: '#FFFFFF',
+  },
   bundleCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    height: Spacing.LIST_ITEM_HEIGHT,
+    alignItems: 'stretch',
+    minHeight: 104,
     borderWidth: 1,
     borderColor: theme.border,
     borderRadius: Spacing.CARD_RADIUS,
-    paddingHorizontal: Spacing.CARD_PADDING,
-    marginBottom: Spacing.M,
+    paddingHorizontal: Spacing.M,
+    paddingVertical: Spacing.S + 2,
+    marginBottom: Spacing.S + 2,
+    backgroundColor: theme.surface,
+  },
+  bundleCardWarning: {
+    minHeight: 122,
   },
   catalogLoadingRow: {
     flexDirection: 'row',
@@ -818,20 +966,57 @@ function createStyles(theme: AppTheme) {
   },
   bundleInfo: {
     flex: 1,
+    paddingRight: Spacing.S,
+    justifyContent: 'center',
   },
   bundleName: {
     ...Typography.CARD_TITLE,
     color: theme.ink,
-    marginBottom: 2,
+    fontSize: 15,
+    lineHeight: 19,
+  },
+  bundleMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 5,
+    marginTop: 4,
+  },
+  categoryBadge: {
+    backgroundColor: theme.brandSoft,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  categoryBadgeText: {
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '700',
+    color: theme.brand,
   },
   bundleValidity: {
     ...Typography.CAPTION,
+    fontSize: 11,
     color: theme.inkMuted,
+  },
+  bundleWarningRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 4,
+    marginTop: 5,
+  },
+  bundleWarningText: {
+    flex: 1,
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '600',
+    color: Colors.AMBER,
   },
   badgeRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 6,
-    marginTop: 4,
+    marginTop: 6,
   },
   discountBadge: {
     backgroundColor: theme.brandSoft,
@@ -857,6 +1042,28 @@ function createStyles(theme: AppTheme) {
   },
   bundleAmountColumn: {
     alignItems: 'flex-end',
+    justifyContent: 'center',
+    minWidth: 88,
+    gap: 2,
+  },
+  radioOuter: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: theme.inkMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  radioOuterSelected: {
+    borderColor: theme.brand,
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: theme.brand,
   },
   bundleListAmount: {
     ...Typography.CAPTION,
@@ -865,10 +1072,24 @@ function createStyles(theme: AppTheme) {
   },
   bundleAmount: {
     ...Typography.AMOUNT_SMALL,
+    fontSize: 15,
     color: theme.ink,
   },
   bundleAmountSelected: {
     color: theme.brand,
+  },
+  filteredEmptyState: {
+    minHeight: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Spacing.CARD_RADIUS,
+    backgroundColor: theme.surfaceRaised,
+    paddingHorizontal: Spacing.M,
+  },
+  filteredEmptyText: {
+    ...Typography.CAPTION,
+    color: theme.inkMuted,
+    textAlign: 'center',
   },
   emptyState: {
     height: 80,

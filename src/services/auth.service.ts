@@ -3,7 +3,9 @@ import { supabase } from '../lib/supabase';
 import { storageHelpers, StorageKeys } from '../lib/mmkv';
 import { clearAllCache } from '../utils/cache';
 import { passwordValidationError } from '../utils/password';
+import { safeErrorMessage } from '../utils/errorMessages';
 import { withTimeout } from '../utils/network';
+import { clearAnalyticsState } from '../services/analytics.service';
 
 export interface AuthResult {
   success: boolean;
@@ -82,7 +84,7 @@ export const authService = {
       if (error) throw error;
       return { success: true };
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return { success: false, error: safeErrorMessage(error) };
     }
   },
 
@@ -96,7 +98,7 @@ export const authService = {
       if (error) throw error;
       return { success: true };
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return { success: false, error: safeErrorMessage(error) };
     }
   },
 
@@ -117,7 +119,7 @@ export const authService = {
       }
       return { success: true, message: data?.message };
     } catch (error: any) {
-      return { success: false, error: error.message || 'Network error. Please check your connection and try again.' };
+      return { success: false, error: safeErrorMessage(error, 'Network error. Please check your connection and try again.') };
     }
   },
 
@@ -142,7 +144,7 @@ export const authService = {
       }
       return { success: true };
     } catch (error: any) {
-      return { success: false, error: error.message || 'Network error. Please check your connection and try again.' };
+      return { success: false, error: safeErrorMessage(error, 'Network error. Please check your connection and try again.') };
     }
   },
 
@@ -169,7 +171,7 @@ export const authService = {
       }
       return { success: true, applied: !!data?.applied, sentTo: data?.sent_to };
     } catch (error: any) {
-      return { success: false, error: error.message || 'Network error. Please check your connection and try again.' };
+      return { success: false, error: safeErrorMessage(error, 'Network error. Please check your connection and try again.') };
     }
   },
 
@@ -192,7 +194,7 @@ export const authService = {
       }
       return { success: true, newValue: data?.new_value };
     } catch (error: any) {
-      return { success: false, error: error.message || 'Network error. Please check your connection and try again.' };
+      return { success: false, error: safeErrorMessage(error, 'Network error. Please check your connection and try again.') };
     }
   },
 
@@ -204,7 +206,7 @@ export const authService = {
       if (error) throw error;
       return { success: true };
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return { success: false, error: safeErrorMessage(error) };
     }
   },
 
@@ -236,7 +238,7 @@ export const authService = {
       }
       return { success: true, userId: data.session.user.id };
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return { success: false, error: safeErrorMessage(error) };
     }
   },
 
@@ -258,7 +260,7 @@ export const authService = {
       await storageHelpers.delete(StorageKeys.PIN_LOCKED_UNTIL);
       return { success: true };
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return { success: false, error: safeErrorMessage(error) };
     }
   },
 
@@ -434,7 +436,7 @@ export const authService = {
         token: data?.token,
       };
     } catch (error: any) {
-      return { valid: false, locked: false, error: error.message };
+      return { valid: false, locked: false, error: safeErrorMessage(error) };
     }
   },
 
@@ -594,6 +596,7 @@ export const authService = {
       }
       await storageHelpers.clearAll();
       clearAllCache();
+      await clearAnalyticsState().catch(() => {});
     }
   },
 

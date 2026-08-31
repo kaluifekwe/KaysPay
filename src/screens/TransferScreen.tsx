@@ -39,6 +39,7 @@ export default function TransferScreen({ navigation }: TransferScreenProps) {
   const styles = createStyles(theme);
   const { authorize } = useTransactionAuth();
   const insets = useSafeAreaInsets();
+  const [featureEnabled, setFeatureEnabled] = useState<boolean | null>(null);
 
   const [banks, setBanks] = useState<TransferBank[]>([]);
   const [banksLoading, setBanksLoading] = useState(true);
@@ -60,7 +61,16 @@ export default function TransferScreen({ navigation }: TransferScreenProps) {
 
   useEffect(() => {
     let cancelled = false;
-    transferService.listBanks().then((res) => {
+    const load = async () => {
+      const enabled = await transferService.isEnabled();
+      if (cancelled) return;
+      setFeatureEnabled(enabled);
+      if (!enabled) {
+        setBanksLoading(false);
+        return;
+      }
+
+      const res = await transferService.listBanks();
       if (cancelled) return;
       setBanksLoading(false);
       if (!res.success) {
@@ -68,7 +78,8 @@ export default function TransferScreen({ navigation }: TransferScreenProps) {
         return;
       }
       setBanks(res.banks);
-    });
+    };
+    void load();
     return () => { cancelled = true; };
   }, []);
 
@@ -130,13 +141,16 @@ export default function TransferScreen({ navigation }: TransferScreenProps) {
 
   const handleSend = useCallback(async () => {
     if (!canSend || !selectedBank || !verifiedName) return;
-
+    setSendState('sending');
     const authResult = await authorize({
       title: 'Confirm Transfer',
       amount: numericAmount,
       subtitle: `${selectedBank.name} · ${accountNumber} · ${verifiedName}`,
     });
-    if (!authResult) return;
+    if (!authResult) {
+      setSendState('idle');
+      return;
+    }
 
     setErrorMessage('');
     setSendState('sending');
@@ -160,6 +174,32 @@ export default function TransferScreen({ navigation }: TransferScreenProps) {
     if (navigation.popToTop) navigation.popToTop();
     else navigation.navigate('HomeTabs');
   }, [navigation]);
+
+  if (featureEnabled === null) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <View style={styles.resultContainer}>
+          <ActivityIndicator size="large" color={theme.brand} />
+          <Text style={[styles.resultDetail, { marginTop: Spacing.L }]}>Checking transfer availability…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!featureEnabled) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <View style={styles.resultContainer}>
+          <Ionicons name="lock-closed-outline" size={44} color={theme.inkMuted} />
+          <Text style={styles.resultTitle}>Transfers unavailable</Text>
+          <Text style={styles.resultDetail}>Wallet transfers are not available right now.</Text>
+          <TouchableOpacity style={styles.primaryButton} onPress={navigation.goBack}>
+            <Text style={styles.primaryButtonText}>Go back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (sendState === 'success') {
     return (

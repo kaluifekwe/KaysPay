@@ -26,6 +26,8 @@ import { notificationService } from '../services/notification.service';
 import { vtuService } from '../services/vtu.service';
 import { kycService } from '../services/kyc.service';
 import { cryptoService } from '../services/crypto.service';
+import { transferService } from '../services/transfer.service';
+import { esimService } from '../services/esim.service';
 import { supabase } from '../lib/supabase';
 import { withTimeout } from '../utils/network';
 import { useCachedData } from '../hooks/useCachedData';
@@ -172,22 +174,45 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   // flash away and back on every open; only actually hides once the check
   // comes back false. Re-checked on every focus, same as kycVerified above.
   const [cryptoEnabled, setCryptoEnabled] = useState(true);
+  // Wallet Transfer is a cash-out feature, so its visibility fails closed:
+  // it appears only after the live admin switch is confirmed enabled.
+  const [transferEnabled, setTransferEnabled] = useState(false);
+  // eSIM also fails closed: when the admin disables it (or its live state
+  // cannot be confirmed), neither the service tile nor advert is rendered.
+  const [esimEnabled, setEsimEnabled] = useState(false);
+
+  const refreshFeatureAvailability = useCallback(async () => {
+    const [crypto, transfer, esim] = await Promise.all([
+      cryptoService.isEnabled(),
+      transferService.isEnabled(),
+      esimService.isEnabled(),
+    ]);
+    setCryptoEnabled(crypto);
+    setTransferEnabled(transfer);
+    setEsimEnabled(esim);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
       void analytics.track('home_viewed', { outcome: 'view' });
       kycService.getStatus().then((s) => setKycVerified(s.verified)).catch(() => {});
-      cryptoService.isEnabled().then(setCryptoEnabled).catch(() => {});
-    }, []),
+      void refreshFeatureAvailability();
+    }, [refreshFeatureAvailability]),
   );
 
   const quickActions = useMemo(
-    () => (cryptoEnabled ? [...BASE_QUICK_ACTIONS, CRYPTO_QUICK_ACTION] : BASE_QUICK_ACTIONS),
-    [cryptoEnabled],
+    () => {
+      const available = BASE_QUICK_ACTIONS.filter((action) => action.screen !== 'TravelEsim' || esimEnabled);
+      return cryptoEnabled ? [...available, CRYPTO_QUICK_ACTION] : available;
+    },
+    [cryptoEnabled, esimEnabled],
   );
   const adverts = useMemo(
-    () => (cryptoEnabled ? [...BASE_ADVERTS, CRYPTO_ADVERT] : BASE_ADVERTS),
-    [cryptoEnabled],
+    () => {
+      const available = BASE_ADVERTS.filter((advert) => advert.screen !== 'TravelEsim' || esimEnabled);
+      return cryptoEnabled ? [...available, CRYPTO_ADVERT] : available;
+    },
+    [cryptoEnabled, esimEnabled],
   );
 
   // Shows the last-known balance/cashback immediately (even on a bad
@@ -289,7 +314,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    await Promise.all([loadData(), refreshFeatureAvailability()]);
     setRefreshing(false);
   };
 
@@ -390,9 +415,11 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             <TouchableOpacity style={styles.walletButton} onPress={() => navigation.navigate('WalletFunding')}>
               <Text style={styles.walletButtonText}>{Strings.HOME_FUND_WALLET}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.walletButtonSecondary} onPress={() => navigation.navigate('Transfer')}>
-              <Text style={styles.walletButtonTextSecondary}>{Strings.HOME_TRANSFER}</Text>
-            </TouchableOpacity>
+            {transferEnabled && (
+              <TouchableOpacity style={styles.walletButtonSecondary} onPress={() => navigation.navigate('Transfer')}>
+                <Text style={styles.walletButtonTextSecondary}>{Strings.HOME_TRANSFER}</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 

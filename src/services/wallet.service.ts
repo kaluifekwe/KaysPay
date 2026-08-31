@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import type { Wallet, Transaction } from '../types/app.types';
 import { koboToNaira } from '../utils/formatCurrency';
 import { withTimeout } from '../utils/network';
+import { safeErrorMessage } from '../utils/errorMessages';
 
 export interface WalletResult {
   success: boolean;
@@ -77,7 +78,7 @@ export const walletService = {
       };
       return { success: true, wallet };
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return { success: false, error: safeErrorMessage(error) };
     }
   },
 
@@ -105,7 +106,7 @@ export const walletService = {
       }));
       return { success: true, transactions };
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return { success: false, error: safeErrorMessage(error) };
     }
   },
 
@@ -131,7 +132,7 @@ export const walletService = {
         totalSpent: koboToNaira(totalSpentKobo),
       };
     } catch (error: unknown) {
-      return { success: false, error: error instanceof Error ? error.message : 'Could not load transaction summary' };
+      return { success: false, error: safeErrorMessage(error, 'Could not load transaction summary') };
     }
   },
 

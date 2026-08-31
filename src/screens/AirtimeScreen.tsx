@@ -180,9 +180,12 @@ export default function AirtimeScreen({ navigation }: AirtimeScreenProps) {
 
   const handlePay = useCallback(async () => {
     if (!canProceed || !selectedNetwork) return;
-
+    setIsProcessing(true);
     const authResult = await authorize({ title: 'Confirm Airtime Purchase', amount: numericAmount });
-    if (!authResult) return;
+    if (!authResult) {
+      setIsProcessing(false);
+      return;
+    }
 
     // Go STRAIGHT to the result screen — it runs the purchase itself and shows
     // Processing -> Successful. No spinner on the Pay button first.

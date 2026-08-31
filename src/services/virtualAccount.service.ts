@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { withTimeout } from '../utils/network';
+import { safeErrorMessage } from '../utils/errorMessages';
 
 export type VirtualAccountProvider = 'flutterwave' | 'paystack';
 
@@ -63,10 +64,10 @@ export const virtualAccountService = {
         }),
       );
       if (error) {
-        let msg = error.message || 'Could not set up your account';
+        let msg = safeErrorMessage(error, 'Could not set up your account');
         try {
           const body = await (error as any)?.context?.json?.();
-          if (body?.error) msg = body.error;
+          if (body?.error) msg = String(body.error);
         } catch {}
         return { success: false, error: msg };
       }
@@ -85,10 +86,10 @@ export const virtualAccountService = {
         supabase.functions.invoke('requery-paystack-dva', { body: {} }),
       );
       if (error) {
-        let message = error.message || 'Could not check the transfer';
+        let message = safeErrorMessage(error, 'Could not check the transfer');
         try {
           const body = await (error as any)?.context?.json?.();
-          if (body?.error) message = body.error;
+          if (body?.error) message = String(body.error);
         } catch {}
         return { success: false, error: message };
       }
@@ -98,7 +99,7 @@ export const virtualAccountService = {
     } catch (error: unknown) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Network error',
+        error: safeErrorMessage(error, 'Network error'),
       };
     }
   },

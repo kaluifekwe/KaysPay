@@ -21,6 +21,7 @@ import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
+import { isAppleInstallUrl } from '../utils/urlValidation';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 import { formatNaira } from '../utils/formatCurrency';
 import {
@@ -62,7 +63,49 @@ function formatDate(iso: string): string {
   }
 }
 
-export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) {
+export default function TravelEsimScreen(props: TravelEsimScreenProps) {
+  const { theme } = useTheme();
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    esimService.isEnabled().then((available) => {
+      if (active) setEnabled(available);
+    });
+    return () => { active = false; };
+  }, []);
+
+  if (enabled === null) {
+    return (
+      <SafeAreaView style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.background }}>
+        <ActivityIndicator color={theme.brand} />
+      </SafeAreaView>
+    );
+  }
+
+  if (!enabled) {
+    return (
+      <SafeAreaView style={{ flex: 1, padding: Spacing.XL, justifyContent: 'center', backgroundColor: theme.background }}>
+        <View style={{ alignItems: 'center', gap: Spacing.L }}>
+          <Text style={{ color: theme.ink, fontSize: 22, fontWeight: '700', textAlign: 'center' }}>Travel eSIM is unavailable</Text>
+          <Text style={{ color: theme.inkMuted, fontSize: 15, textAlign: 'center' }}>
+            This service is temporarily unavailable. Please check again later.
+          </Text>
+          <TouchableOpacity
+            onPress={props.navigation.goBack}
+            style={{ minHeight: 48, minWidth: 140, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: theme.brand }}
+          >
+            <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>Go back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return <TravelEsimContent {...props} />;
+}
+
+function TravelEsimContent({ navigation }: TravelEsimScreenProps) {
   useSensitiveScreenProtection();
   const { authorize } = useTransactionAuth();
   const { theme } = useTheme();
@@ -283,7 +326,10 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
                 {Platform.OS === 'ios' && resultAppleInstallUrl ? (
                   <TouchableOpacity
                     style={[styles.primaryButton, styles.installButton]}
-                    onPress={() => Linking.openURL(resultAppleInstallUrl)}
+                    onPress={() => {
+                      const url = String(resultAppleInstallUrl);
+                      if (isAppleInstallUrl(url)) Linking.openURL(url);
+                    }}
                   >
                     <Text style={styles.primaryButtonText}>Install on this iPhone</Text>
                   </TouchableOpacity>
@@ -574,7 +620,10 @@ export default function TravelEsimScreen({ navigation }: TravelEsimScreenProps) 
             {Platform.OS === 'ios' && !!viewingEsim?.appleInstallUrl && (
               <TouchableOpacity
                 style={styles.primaryButton}
-                onPress={() => Linking.openURL(String(viewingEsim.appleInstallUrl))}
+                onPress={() => {
+                  const url = String(viewingEsim.appleInstallUrl);
+                  if (isAppleInstallUrl(url)) Linking.openURL(url);
+                }}
               >
                 <Text style={styles.primaryButtonText}>Install on this iPhone</Text>
               </TouchableOpacity>

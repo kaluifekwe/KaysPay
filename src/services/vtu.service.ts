@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import { nairaToKobo } from '../utils/formatCurrency';
 import { withTimeout, invokeWithRetry } from '../utils/network';
 import { readCache, writeCache } from '../utils/cache';
+import { safeErrorMessage } from '../utils/errorMessages';
 
 export type NetworkProvider = 'mtn' | 'airtel' | 'glo' | '9mobile';
 

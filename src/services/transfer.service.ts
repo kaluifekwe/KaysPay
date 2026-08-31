@@ -47,6 +47,25 @@ async function extractErrorMessage(error: unknown, fallback: string): Promise<st
 }
 
 export const transferService = {
+  /**
+   * Client visibility for Wallet Transfer. The raw service-controls table is
+   * never exposed to the app; the RPC only answers for explicitly whitelisted
+   * features. Transfer endpoints still enforce the switch server-side.
+   *
+   * Fail closed: if availability cannot be confirmed, do not expose a
+   * cash-out flow that may be disabled.
+   */
+  async isEnabled(): Promise<boolean> {
+    try {
+      const { data, error } = await withTimeout(
+        (async () => supabase.rpc('is_client_feature_enabled', { p_service: 'transfer' }))(),
+      );
+      return !error && data === true;
+    } catch {
+      return false;
+    }
+  },
+
   async listBanks(): Promise<{ success: boolean; banks: TransferBank[]; error?: string }> {
     try {
       const { data, error } = await withTimeout(supabase.functions.invoke('transfer-banks', { body: {} }));

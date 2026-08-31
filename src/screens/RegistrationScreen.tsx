@@ -17,7 +17,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { authService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
 import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password';
-import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
 import { analytics } from '../services/analytics.service';
@@ -77,9 +76,6 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const [step, setStep] = useState<1 | 2>(1);
-  // Only Step 2 shows a password/PIN -- Step 1 (name/email/phone) has
-  // nothing sensitive, so it stays screenshottable.
-  useSensitiveScreenProtection(step === 2);
 
   // Step 1
   const [fullName, setFullName] = useState('');
