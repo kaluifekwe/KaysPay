@@ -23,7 +23,7 @@ import { getUsdNgnRate, usdToNgnKobo } from "../_shared/esim-catalog.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -33,10 +33,10 @@ function newIdempotencyKey() {
 
 /**
  * Re-fetches the CURRENT live price for a specific package straight from
- * the provider â€” the client only ever sends an opaque plan id, never a
+ * the provider â€?the client only ever sends an opaque plan id, never a
  * price. This is the same "never trust client-supplied price" principle as
  * every other purchase in this app, just applied to a live-fetched catalog
- * instead of a static one (there's no static eSIM catalog â€” 100+ countries
+ * instead of a static one (there's no static eSIM catalog â€?100+ countries
  * with several plans each isn't practical to hardcode).
  */
 async function resolveCurrentPrice(
@@ -131,7 +131,7 @@ serve(async (req: Request) => {
   }
 
   // Require server-verified proof the PIN/biometric step-up just ran for
-  // THIS request â€” a valid JWT alone is not enough to move money.
+  // THIS request â€?a valid JWT alone is not enough to move money.
   const authorized = await consumeAuthToken(supabase, user.id, body.auth_token);
   if (!authorized) {
     return json({
@@ -163,7 +163,7 @@ serve(async (req: Request) => {
   const amountKobo = usdToNgnKobo(current.priceUSD, fxRate);
   const requestId = String(body.idempotency_key || newIdempotencyKey());
 
-  // Idempotency short-circuit BEFORE any provider call â€” found by the
+  // Idempotency short-circuit BEFORE any provider call â€?found by the
   // 2026-08-20 Strix pentest (vuln-0015): Airalo's order endpoint has no
   // provider-side idempotency of its own (a retried request creates a
   // genuinely new order), so without this, a replayed request with the
@@ -215,6 +215,8 @@ serve(async (req: Request) => {
         region: region || null,
         price_usd: current.priceUSD,
         fx_rate: fxRate,
+        provider_cost_kobo: Math.round(current.priceUSD * fxRate * 100),
+        cost_source: "airalo_catalog_fx_snapshot",
       },
       p_idempotency_key: requestId,
     },
@@ -253,9 +255,9 @@ serve(async (req: Request) => {
       p_order_id: String(orderData?.id ?? ""),
     });
 
-    // Enrich the transaction metadata (service role, metadata only â€” no money
+    // Enrich the transaction metadata (service role, metadata only â€?no money
     // columns touched). Two purposes: (a) persist the delivered eSIM so the
-    // customer can re-open its QR any time from Transaction History â€” the
+    // customer can re-open its QR any time from Transaction History â€?the
     // order response is the ONLY place these appear; (b) record our REAL
     // Airalo cost (after the 20% reseller discount) for postpaid-invoice
     // reconciliation and true-margin reporting.

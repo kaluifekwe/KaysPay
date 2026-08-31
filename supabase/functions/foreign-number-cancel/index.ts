@@ -7,7 +7,7 @@ import { cancel as smspvaCancel, getSms, isSmspvaConfigured } from "../_shared/s
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -49,8 +49,7 @@ serve(async (req: Request) => {
   }
 
   // Found by the 2026-08-20 Strix pentest (vuln-0005): this endpoint only
-  // checked status='completed', never whether an OTP had already arrived â€”
-  // foreign-number-reconcile already treats code_received as "SMSPVA
+  // checked status='completed', never whether an OTP had already arrived â€?  // foreign-number-reconcile already treats code_received as "SMSPVA
   // charged us, do not refund", so a user could grab the code then call
   // this endpoint directly to claim the refund back anyway. Reject on the
   // locally-stored flag first, then re-check the provider directly in case

@@ -11,7 +11,7 @@ import {
   RequestBodyError,
 } from "../_shared/auth.ts";
 import { confirmServiceRefund } from "../_shared/service-refund.ts";
-import { getServicePriceKobo } from "../_shared/service-pricing.ts";
+import { getServicePricing } from "../_shared/service-pricing.ts";
 import {
   isPremblyConfigured,
   verifyBvnFull as verifyBvnPremblyFull,
@@ -21,8 +21,8 @@ import {
   verifyBvn as verifyBvnNinBvn,
 } from "../_shared/ninbvn-client.ts";
 
-// BVN slip prices (owner-set 2026-07-26): Regular Slip â‚¦500, Card â‚¦700.
-// SERVER-AUTHORITATIVE â€” the client sends the chosen slip type, but the price
+// BVN slip prices (owner-set 2026-07-26): Regular Slip â‚?00, Card â‚?00.
+// SERVER-AUTHORITATIVE â€?the client sends the chosen slip type, but the price
 // is looked up HERE; a tampered client amount can never change what is charged.
 // Kobo, since debit_for_service charges in kobo.
 const SLIP_PRICE_KOBO: Record<string, number> = { regular: 50000, card: 70000 };
@@ -31,7 +31,7 @@ const DEFAULT_SLIP_TIER = "regular";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -43,15 +43,14 @@ interface ProviderOutcome {
   ok: boolean;
   record?: any;
   errorMessage?: string;
-  // Provider reached and answered cleanly but has no record for this number â€”
-  // a definitive miss, not an outage. Callers skip the fallback on this.
+  // Provider reached and answered cleanly but has no record for this number â€?  // a definitive miss, not an outage. Callers skip the fallback on this.
   notFound?: boolean;
 }
 
 // Providers use different field names/casing for the same BVN record. Prembly
-// BVN 2.0 returns camelCase (enrollmentBank, lgaOfResidence, base64Image, â€¦),
+// BVN 2.0 returns camelCase (enrollmentBank, lgaOfResidence, base64Image, â€?,
 // usually nested under bvn_data; the older endpoints and CheckMyNINBVN use
-// snake_case (state_of_origin, â€¦). Normalize every plausible spelling into one
+// snake_case (state_of_origin, â€?. Normalize every plausible spelling into one
 // shape so the app (and the slip) never needs to know which provider/endpoint
 // answered. Fields the answering endpoint doesn't return stay undefined.
 function pick(c: any, ...keys: string[]): string | undefined {
@@ -111,7 +110,7 @@ function extractBvnRecord(data: any): any {
   return undefined;
 }
 
-// Prembly â€” PRIMARY (funded account, confirmed 2026-07-06).
+// Prembly â€?PRIMARY (funded account, confirmed 2026-07-06).
 async function tryPrembly(bvn: string): Promise<ProviderOutcome> {
   const { status, data } = await verifyBvnPremblyFull(bvn);
   const record = extractBvnRecord(data);
@@ -128,7 +127,7 @@ async function tryPrembly(bvn: string): Promise<ProviderOutcome> {
   };
 }
 
-// CheckMyNINBVN â€” FALLBACK.
+// CheckMyNINBVN â€?FALLBACK.
 async function tryNinBvn(bvn: string): Promise<ProviderOutcome> {
   const { status, data } = await verifyBvnNinBvn(bvn);
   const record = extractBvnRecord(data);
@@ -199,7 +198,7 @@ serve(async (req: Request) => {
   }
 
   // Require server-verified proof the PIN/biometric step-up just ran for
-  // THIS request â€” a valid JWT alone is not enough to move money.
+  // THIS request â€?a valid JWT alone is not enough to move money.
   const authorized = await consumeAuthToken(supabase, user.id, body.auth_token);
   if (!authorized) {
     return json({
@@ -211,18 +210,19 @@ serve(async (req: Request) => {
   const requestId = String(body.idempotency_key || newRequestId());
 
   // The slip type chosen up front decides the price. Validate against our own
-  // map â€” never trust a client-sent amount.
+  // map â€?never trust a client-sent amount.
   const slipTier = Object.prototype.hasOwnProperty.call(
       SLIP_PRICE_KOBO,
       String(body?.slip_tier),
     )
     ? String(body.slip_tier)
     : DEFAULT_SLIP_TIER;
-  const priceKobo = await getServicePriceKobo(
+  const pricing = await getServicePricing(
     supabase,
     slipTier === "card" ? "bvn_verify_card" : "bvn_verify_regular",
     SLIP_PRICE_KOBO[slipTier],
   );
+  const priceKobo = pricing.priceKobo;
 
   // Same 24h cache rationale as nin-verify: a BVN record doesn't change
   // day-to-day, so a repeat lookup shouldn't cost the user twice or risk
@@ -242,7 +242,7 @@ serve(async (req: Request) => {
 
   if (cachedTx?.metadata?.record?.firstname) {
     const cachedTier = cachedTx.metadata.slip_tier || DEFAULT_SLIP_TIER;
-    // Same BVN + same slip type within 24h â†’ free re-access (re-download).
+    // Same BVN + same slip type within 24h â†?free re-access (re-download).
     if (cachedTier === slipTier) {
       return json({
         success: true,
@@ -251,7 +251,7 @@ serve(async (req: Request) => {
         cached: true,
       });
     }
-    // Different slip type (e.g. upgrading Regular â†’ Card): reuse the already
+    // Different slip type (e.g. upgrading Regular â†?Card): reuse the already
     // verified record (no provider re-call), but charge the new type's price.
     const { data: upTxId, error: upErr } = await supabase.rpc(
       "debit_for_service",
@@ -285,6 +285,10 @@ serve(async (req: Request) => {
     await supabase
       .from("transactions")
       .update({
+        customer_price_kobo: priceKobo,
+        provider_cost_kobo: 0,
+        cost_source: "cached_identity_record",
+        cost_captured_at: new Date().toISOString(),
         metadata: {
           service: "bvn_verification",
           slip_tier: slipTier,
@@ -346,7 +350,7 @@ serve(async (req: Request) => {
     }
   }
 
-  // Fall back ONLY on a real provider failure â€” not on a definitive "not
+  // Fall back ONLY on a real provider failure â€?not on a definitive "not
   // found", so an invalid BVN doesn't cost a second lookup.
   if (!outcome.ok && !outcome.notFound && isNinBvnConfigured()) {
     try {
@@ -383,6 +387,12 @@ serve(async (req: Request) => {
   await supabase
     .from("transactions")
     .update({
+      ...(providerUsed === "prembly" && pricing.providerCostKobo !== null ? {
+        customer_price_kobo: priceKobo,
+        provider_cost_kobo: pricing.providerCostKobo,
+        cost_source: "prembly_admin_cost",
+        cost_captured_at: new Date().toISOString(),
+      } : {}),
       metadata: {
         service: "bvn_verification",
         slip_tier: slipTier,

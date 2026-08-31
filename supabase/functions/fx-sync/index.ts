@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient, verifyCronSecret } from "../_shared/auth.ts";
+import { fetchWithTimeout } from "../_shared/provider-fetch.ts";
 
 // Daily FX refresh (see the fx-sync-daily cron in migration 046). Pulls the
 // current USD→NGN interbank rate from a free, no-key public feed and upserts
@@ -27,7 +28,7 @@ serve(async (req: Request) => {
 
   let rate: number;
   try {
-    const res = await fetch(FX_FEED_URL, { headers: { Accept: "application/json" } });
+    const res = await fetchWithTimeout(FX_FEED_URL, { headers: { Accept: "application/json" } }, 20_000);
     const data = await res.json();
     rate = Number(data?.rates?.NGN);
     if (!Number.isFinite(rate) || rate < MIN_RATE || rate > MAX_RATE) {

@@ -4,7 +4,7 @@ import { adminClient, verifyCronSecret, withJobLock } from "../_shared/auth.ts";
 import { callVTUNaija } from "../_shared/vtunaija-client.ts";
 
 // Small server-internal lookup (VTUnaija's disco_name codes -> their own
-// provider names) â€” never queried directly by the client. vtu-purchase joins
+// provider names) â€?never queried directly by the client. vtu-purchase joins
 // against it via VTUNAIJA_ELECTRICITY_NAME_MAP (_shared/vtu-catalog.ts) to
 // resolve the app's own DISCO id to VTUnaija's current numeric code. No
 // pricing here: electricity amount is customer-entered, like airtime.
@@ -18,7 +18,7 @@ class CatalogSyncError extends Error {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "private, max-age=60" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json", "Cache-Control": "private, max-age=60" },
   });
 }
 
@@ -38,7 +38,7 @@ async function fetchCatalog() {
   const rows: { disco_id: string; name: string; available: boolean }[] = [];
   let skipped = 0;
 
-  // A single malformed row must never abort the whole sync â€” same lesson
+  // A single malformed row must never abort the whole sync â€?same lesson
   // learned live from vtunaija-data-catalog freezing silently forever.
   for (const raw of payload.electricityplanids as Record<string, unknown>[]) {
     const discoId = String(raw.electricity_plan_id ?? "");
@@ -47,7 +47,7 @@ async function fetchCatalog() {
       skipped++;
       continue;
     }
-    // No `status` field is documented on this endpoint's response â€” assume
+    // No `status` field is documented on this endpoint's response â€?assume
     // available; the purchase path fails closed regardless (INVALID_PROVIDER)
     // if a stale/wrong code ever gets used.
     rows.push({ disco_id: discoId, name, available: true });
@@ -104,7 +104,7 @@ serve(async (req: Request) => {
   }
 
   if (body.health === true) {
-    // Read-only, non-sensitive (DISCO ids/names only) â€” no cron-secret gate,
+    // Read-only, non-sensitive (DISCO ids/names only) â€?no cron-secret gate,
     // matching vtu-data-catalog/vtunaija-cabletv-catalog's health path. Also
     // bootstraps on an empty table, same as those.
     let bootstrapCode: string | null = null;

@@ -1,15 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser, adminClient, enforceRateLimit } from "../_shared/auth.ts";
+import { getAuthUser, adminClient, enforceRateLimit, isServiceEnabled } from "../_shared/auth.ts";
 import { isFlutterwaveConfigured, listFlutterwaveBanks } from "../_shared/flutterwave-client.ts";
 import { redactSecrets } from "../_shared/redact.ts";
 
-// Bank list for the Transfer bank picker. Phase 1 is Flutterwave-only â€”
-// Paystack's bank list joins once Paystack is wired in as the second rail.
+// Bank list for the Transfer bank picker. Phase 1 is Flutterwave-only â€?// Paystack's bank list joins once Paystack is wired in as the second rail.
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -20,11 +19,16 @@ serve(async (req: Request) => {
   const user = await getAuthUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
 
+  const supabase = adminClient();
+  if (!(await isServiceEnabled(supabase, "transfer"))) {
+    return json({ success: false, error: "Transfers are temporarily unavailable. Please try again later." }, 503);
+  }
+
   if (!isFlutterwaveConfigured()) {
     return json({ success: false, error: "Transfers aren't available yet." }, 503);
   }
 
-  const rate = await enforceRateLimit(adminClient(), "transfer_banks", user.id, 20, 60, user.id);
+  const rate = await enforceRateLimit(supabase, "transfer_banks", user.id, 20, 60, user.id);
   if (!rate.allowed) {
     return json({
       success: false,
@@ -34,7 +38,6 @@ serve(async (req: Request) => {
   }
 
   try {
-    const supabase = adminClient();
     const res = await listFlutterwaveBanks(supabase);
     if (res.status >= 400 || res.data?.status !== "success") {
       console.error("transfer-banks: Flutterwave bank list failed:", redactSecrets(JSON.stringify({ status: res.status, message: res.data?.message })));

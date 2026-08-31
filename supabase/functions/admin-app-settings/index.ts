@@ -10,7 +10,7 @@ import { corsHeaders, handleCors } from "../_shared/cors.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -18,7 +18,7 @@ const VALID_KEYS = ["support_whatsapp_number", "support_whatsapp_group_url"];
 
 /**
  * Normalises a WhatsApp number to the digits-only international form
- * wa.me needs â€” strips +, spaces, dashes and brackets, so the owner can
+ * wa.me needs â€?strips +, spaces, dashes and brackets, so the owner can
  * paste "+234 906 844 6111" or "234-906-844-6111" and it just works.
  * A local 0-prefixed Nigerian number (0906...) is converted to 234906...
  * since wa.me will not resolve a national-format number.
@@ -37,7 +37,7 @@ function normaliseWhatsAppNumber(raw: string): string | null {
 
 /**
  * Accepts only a real chat.whatsapp.com invite, and strips WhatsApp's
- * copy-source tracking params (?s=cl&p=a&ilr=4) â€” the invite resolves from
+ * copy-source tracking params (?s=cl&p=a&ilr=4) â€?the invite resolves from
  * the code in the path alone, and a bare URL avoids &-escaping problems
  * when it is dropped into email HTML.
  *

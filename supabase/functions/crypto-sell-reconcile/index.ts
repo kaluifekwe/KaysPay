@@ -75,6 +75,9 @@ serve(async (req: Request) => {
         const { error: settleError } = await supabase.rpc("complete_crypto_sell_offramp", {
           p_reference: key,
           p_ngn_kobo: Math.round(remote.fiatPayoutAmount * 100),
+          p_markup_kobo:remote.merchantMarkup===null?null:Math.round(remote.merchantMarkup*100),
+          p_processor_fee_kobo:remote.processorFee===null?null:Math.round(remote.processorFee*100),
+          p_vat_kobo:remote.vat===null?null:Math.round(remote.vat*100),
         });
         if (settleError) {
           console.error(`crypto-sell-reconcile: complete_crypto_sell_offramp failed for ${key}:`, settleError.message);

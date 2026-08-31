@@ -7,7 +7,7 @@ import { redactSecrets } from "../_shared/redact.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -30,6 +30,19 @@ serve(async (req: Request) => {
   }
 
   try {
+    const { data: kyc, error: kycError } = await supabase
+      .from("user_kyc")
+      .select("status")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (kycError) throw kycError;
+    if (kyc?.status !== "verified") {
+      return json({
+        success: false,
+        error: "Complete identity verification before checking a wallet funding transfer.",
+      }, 403);
+    }
+
     const { data: account, error: lookupError } = await supabase
       .from("virtual_accounts")
       .select("account_number, bank_name")

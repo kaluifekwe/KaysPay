@@ -11,7 +11,7 @@ import {
   RequestBodyError,
 } from "../_shared/auth.ts";
 import { confirmServiceRefund } from "../_shared/service-refund.ts";
-import { getServicePriceKobo } from "../_shared/service-pricing.ts";
+import { getServicePricing } from "../_shared/service-pricing.ts";
 import {
   isPremblyConfigured,
   verifyNin as verifyNinPrembly,
@@ -21,9 +21,9 @@ import {
   verifyNin as verifyNinBvn,
 } from "../_shared/ninbvn-client.ts";
 
-// Retail prices confirmed by owner 2026-07-26: Regular Slip â‚¦500, Card â‚¦700.
+// Retail prices confirmed by owner 2026-07-26: Regular Slip â‚?00, Card â‚?00.
 // SERVER-AUTHORITATIVE: the client sends the chosen slip type, but the price
-// is looked up HERE â€” a tampered client amount can never change what is
+// is looked up HERE â€?a tampered client amount can never change what is
 // charged. Kobo, since debit_for_service requires a strictly positive amount.
 const SLIP_PRICE_KOBO: Record<string, number> = { regular: 50000, card: 70000 };
 const DEFAULT_SLIP_TIER = "regular";
@@ -31,7 +31,7 @@ const DEFAULT_SLIP_TIER = "regular";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -53,7 +53,7 @@ function normalizeGender(v: unknown): string {
 }
 
 // Compares the provider's on-file record against whatever the caller
-// claims, field by field â€” used by banks/schools/agents to confirm
+// claims, field by field â€?used by banks/schools/agents to confirm
 // submitted details are genuine, per the "verification" use case.
 function buildMatchReport(
   record: any,
@@ -81,14 +81,14 @@ interface ProviderOutcome {
   errorMessage?: string;
   isTestData?: boolean;
   // The provider was reached and answered cleanly, but has no record for this
-  // number â€” a definitive miss, not an outage. Callers skip the fallback on
+  // number â€?a definitive miss, not an outage. Callers skip the fallback on
   // this so an invalid number doesn't cost a second lookup.
   notFound?: boolean;
 }
 
 // Both providers wrap the person's record at DIFFERENT depths and their live
 // nesting differs from their own docs (Prembly: data.data; CheckMyNINBVN's
-// live response nests it one level deeper at data.data.data â€” confirmed
+// live response nests it one level deeper at data.data.data â€?confirmed
 // 2026-07-05). Find the record wherever it lives by walking candidate paths
 // and returning the first object that actually carries an identity field.
 // Robust to future nesting changes on either side.
@@ -105,7 +105,7 @@ function extractRecord(data: any): any {
   return undefined;
 }
 
-// CheckMyNINBVN â€” FALLBACK.
+// CheckMyNINBVN â€?FALLBACK.
 async function tryNinBvn(nin: string): Promise<ProviderOutcome> {
   const { status, data } = await verifyNinBvn(nin);
   const record = extractRecord(data);
@@ -116,7 +116,7 @@ async function tryNinBvn(nin: string): Promise<ProviderOutcome> {
   return { ok, record, errorMessage };
 }
 
-// Prembly â€” PRIMARY (funded account, live real data, confirmed 2026-07-06).
+// Prembly â€?PRIMARY (funded account, live real data, confirmed 2026-07-06).
 async function tryPrembly(nin: string): Promise<ProviderOutcome> {
   const { status, data } = await verifyNinPrembly(nin);
   const record = extractRecord(data);
@@ -187,7 +187,7 @@ serve(async (req: Request) => {
   }
 
   // Require server-verified proof the PIN/biometric step-up just ran for
-  // THIS request â€” a valid JWT alone is not enough to move money.
+  // THIS request â€?a valid JWT alone is not enough to move money.
   const authorized = await consumeAuthToken(supabase, user.id, body.auth_token);
   if (!authorized) {
     return json({
@@ -200,21 +200,22 @@ serve(async (req: Request) => {
   const claimed = body.claimed as Record<string, string> | undefined;
 
   // Which slip the user chose up front decides the price. Validate against our
-  // own map â€” never trust a client-sent amount.
+  // own map â€?never trust a client-sent amount.
   const slipTier = Object.prototype.hasOwnProperty.call(
       SLIP_PRICE_KOBO,
       String(body?.slip_tier),
     )
     ? String(body.slip_tier)
     : DEFAULT_SLIP_TIER;
-  const priceKobo = await getServicePriceKobo(
+  const pricing = await getServicePricing(
     supabase,
     slipTier === "card" ? "nin_verify_card" : "nin_verify_regular",
     SLIP_PRICE_KOBO[slipTier],
   );
+  const priceKobo = pricing.priceKobo;
 
   // CACHE: if this user already verified this same NIN in the last 24h,
-  // serve our stored copy â€” no new charge and, crucially, no provider call.
+  // serve our stored copy â€?no new charge and, crucially, no provider call.
   // CheckMyNINBVN rate-limits repeat lookups of the same NIN (confirmed to
   // last far longer than the "1 minute" its message claims), so re-hitting
   // the provider for a repeat is both a waste of money and a guaranteed
@@ -234,7 +235,7 @@ serve(async (req: Request) => {
 
   if (cachedTx?.metadata?.record?.firstname) {
     const cachedTier = cachedTx.metadata.slip_tier || DEFAULT_SLIP_TIER;
-    // Same NIN + same slip type within 24h â†’ free re-access (re-download).
+    // Same NIN + same slip type within 24h â†?free re-access (re-download).
     if (cachedTier === slipTier) {
       return json({
         success: true,
@@ -244,7 +245,7 @@ serve(async (req: Request) => {
         cached: true,
       });
     }
-    // Different slip type (e.g. upgrading Regular â†’ Card): reuse the already
+    // Different slip type (e.g. upgrading Regular â†?Card): reuse the already
     // verified record (no provider re-call), but charge the new type's price so
     // a cheaper prior lookup can't unlock a pricier slip for free.
     const { data: upTxId, error: upErr } = await supabase.rpc(
@@ -283,6 +284,10 @@ serve(async (req: Request) => {
     await supabase
       .from("transactions")
       .update({
+        customer_price_kobo: priceKobo,
+        provider_cost_kobo: 0,
+        cost_source: "cached_identity_record",
+        cost_captured_at: new Date().toISOString(),
         metadata: {
           service: "nin_verification",
           slip_tier: slipTier,
@@ -329,13 +334,13 @@ serve(async (req: Request) => {
     return json({ success: false, error: "Could not start transaction" }, 500);
   }
 
-  // Prembly first â€” owner's funded account, confirmed working end-to-end
+  // Prembly first â€?owner's funded account, confirmed working end-to-end
   // 2026-07-06. CheckMyNINBVN as fallback.
   let outcome: ProviderOutcome = { ok: false };
   let providerUsed = "";
   let lastError: string | undefined; // shown to the user
-  let primaryError: string | undefined; // primary provider's real reason â€” always kept for diagnosis, never overwritten
-  let isCooldown = false; // CheckMyNINBVN rate-limits repeat lookups of the same NIN â€” confirmed 2026-07-05
+  let primaryError: string | undefined; // primary provider's real reason â€?always kept for diagnosis, never overwritten
+  let isCooldown = false; // CheckMyNINBVN rate-limits repeat lookups of the same NIN â€?confirmed 2026-07-05
 
   if (isPremblyConfigured()) {
     try {
@@ -357,7 +362,7 @@ serve(async (req: Request) => {
     }
   }
 
-  // Fall back ONLY on a real provider failure (outage / timeout / error) â€” not
+  // Fall back ONLY on a real provider failure (outage / timeout / error) â€?not
   // on a definitive "not found", so an invalid NIN doesn't cost a second lookup.
   if (!outcome.ok && !outcome.notFound && isNinBvnConfigured()) {
     try {
@@ -378,8 +383,7 @@ serve(async (req: Request) => {
 
   if (!outcome.ok) {
     // Logged reason keeps CheckMyNINBVN's real error (primaryError) even
-    // when it gets superseded by a friendlier user-facing message below â€”
-    // otherwise the actual cause of a failure is lost.
+    // when it gets superseded by a friendlier user-facing message below â€?    // otherwise the actual cause of a failure is lost.
     await confirmServiceRefund(
       supabase,
       txId,
@@ -402,6 +406,12 @@ serve(async (req: Request) => {
   await supabase
     .from("transactions")
     .update({
+      ...(providerUsed === "prembly" && pricing.providerCostKobo !== null ? {
+        customer_price_kobo: priceKobo,
+        provider_cost_kobo: pricing.providerCostKobo,
+        cost_source: "prembly_admin_cost",
+        cost_captured_at: new Date().toISOString(),
+      } : {}),
       metadata: {
         service: "nin_verification",
         slip_tier: slipTier,

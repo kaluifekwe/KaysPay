@@ -12,14 +12,14 @@ import { isQuidaxRampConfigured, QuidaxRampError, verifyRefundAccount } from "..
 import { redactSecrets } from "../_shared/redact.ts";
 
 // Resolves a bank account to its holder's name BEFORE the customer confirms
-// it as their refund destination â€” same "never trust a typed-in number
+// it as their refund destination â€?same "never trust a typed-in number
 // alone" discipline as transfer-resolve-account. This is a real
 // account-number-to-name enumeration surface, not just UX, hence its own
 // rate limit.
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 

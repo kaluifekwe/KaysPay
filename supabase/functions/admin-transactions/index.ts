@@ -6,7 +6,7 @@ import { corsHeaders, handleCors } from "../_shared/cors.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -39,8 +39,7 @@ serve(async (req) => {
   const page = Math.max(0, Number(url.searchParams.get("page") || 0) || 0);
   const status = url.searchParams.get("status");
   // "types" (plural) supports the admin app's service groupings (e.g. all
-  // NIN/BVN sub-types under one "Identity Verification" filter option) â€”
-  // comma-separated, each checked against the same allowlist as before.
+  // NIN/BVN sub-types under one "Identity Verification" filter option) â€?  // comma-separated, each checked against the same allowlist as before.
   const types = (url.searchParams.get("types") || "")
     .split(",")
     .map((t) => t.trim())
@@ -69,7 +68,7 @@ serve(async (req) => {
   if (error) return json({ error: "Could not load transactions" }, 500);
 
   // public.users.full_name is never actually populated (see migration 088)
-  // â€” the real name lives in auth.users' own metadata, which PostgREST
+  // â€?the real name lives in auth.users' own metadata, which PostgREST
   // can't embed directly. Batch-resolve it in one extra call rather than
   // one per row.
   const rows = data ?? [];

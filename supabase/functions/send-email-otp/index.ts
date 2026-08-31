@@ -7,18 +7,18 @@ import { otpEmail } from "../_shared/email-template.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
 function generateCode(): string {
-  // 6 secure-random digits (000000â€“999999, left-padded).
+  // 6 secure-random digits (000000â€?99999, left-padded).
   const bytes = new Uint32Array(1);
   crypto.getRandomValues(bytes);
   return String(bytes[0] % 1_000_000).padStart(6, "0");
 }
 
-// Only ever verifies the signup email itself â€” email/phone are fixed at
+// Only ever verifies the signup email itself â€?email/phone are fixed at
 // signup and never user-editable afterward (owner decision, 2026-07-06).
 serve(async (req: Request) => {
   const cors = handleCors(req);
@@ -55,7 +55,7 @@ serve(async (req: Request) => {
   const { subject, html, text } = otpEmail(code);
   const sendResult = await sendEmail(user.email, subject, html, { text });
   if (!sendResult.ok) {
-    // Surface the real Resend error in the function logs â€” otherwise a
+    // Surface the real Resend error in the function logs â€?otherwise a
     // domain-not-verified / test-mode / bad-key rejection is invisible and
     // looks like a generic outage from the client's side.
     console.error("send-email-otp: Resend send failed:", sendResult.error);

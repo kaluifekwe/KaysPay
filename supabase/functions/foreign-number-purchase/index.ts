@@ -28,7 +28,7 @@ import {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -101,7 +101,7 @@ serve(async (req: Request) => {
   }
 
   // Require server-verified proof the PIN/biometric step-up just ran for
-  // THIS request â€” a valid JWT alone is not enough to move money.
+  // THIS request â€?a valid JWT alone is not enough to move money.
   const authorized = await consumeAuthToken(supabase, user.id, body.auth_token);
   if (!authorized) {
     return json({
@@ -110,7 +110,7 @@ serve(async (req: Request) => {
     }, 401);
   }
 
-  // Re-fetch the live price ourselves â€” never trust a client-supplied price.
+  // Re-fetch the live price ourselves â€?never trust a client-supplied price.
   let priceUSD: number;
   try {
     const p = await getServicePriceUSD(service, country);
@@ -132,7 +132,7 @@ serve(async (req: Request) => {
 
   // Price-lock: never charge more than the price the user actually agreed to.
   // SMSPVA prices swing, so if the live rate rose above their quote, stop and
-  // ask them to refresh â€” no surprise overcharge. (A drop just charges less.)
+  // ask them to refresh â€?no surprise overcharge. (A drop just charges less.)
   const quotedKobo = Number(body.quoted_kobo);
   if (
     Number.isFinite(quotedKobo) && quotedKobo > 0 && amountKobo > quotedKobo
@@ -182,7 +182,7 @@ serve(async (req: Request) => {
     return json({ success: false, error: "Could not start transaction" }, 500);
   }
 
-  // The rented number itself is the paid-for good â€” complete on successful
+  // The rented number itself is the paid-for good â€?complete on successful
   // rental. If a code never arrives the user is auto-refunded later (and, since
   // SMSPVA only charges us ON code delivery, a no-code rental costs us nothing).
   try {

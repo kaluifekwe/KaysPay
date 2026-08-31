@@ -11,11 +11,11 @@ import {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
-// Only ever verifies the signup email itself â€” see send-email-otp.
+// Only ever verifies the signup email itself â€?see send-email-otp.
 serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
@@ -102,7 +102,7 @@ serve(async (req: Request) => {
     });
   }
 
-  // Code confirmed â€” never let the client apply its own "verified" state;
+  // Code confirmed â€?never let the client apply its own "verified" state;
   // this is the only place that does.
   //
   // Use an APP-OWNED key (email_otp_verified), NOT `email_verified`: Supabase

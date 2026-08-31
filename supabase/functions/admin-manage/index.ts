@@ -6,13 +6,13 @@ import { corsHeaders, handleCors } from "../_shared/cors.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
 const VALID_ROLES = ["support", "super_admin"];
 
-// super_admin only, for every action here (list included â€” who's on the
+// super_admin only, for every action here (list included â€?who's on the
 // admin team is itself sensitive).
 serve(async (req) => {
   const cors = handleCors(req);
@@ -35,8 +35,7 @@ serve(async (req) => {
       .order("created_at");
     if (error) return json({ error: "Could not load admins" }, 500);
 
-    // Emails aren't in admin_users (it only references auth.users(id)) â€”
-    // resolve them for display via the same admin API used elsewhere.
+    // Emails aren't in admin_users (it only references auth.users(id)) â€?    // resolve them for display via the same admin API used elsewhere.
     const withEmail = await Promise.all(
       (data || []).map(async (row) => {
         const { data: u } = await db.auth.admin.getUserById(row.user_id);

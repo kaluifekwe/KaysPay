@@ -13,12 +13,12 @@ import {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
 // Read-only: fetches the CURRENT live price for a service+country pair, no
-// money moved. Never hardcodes a price — SMSPVA charges its live rate, so the
+// money moved. Never hardcodes a price �?SMSPVA charges its live rate, so the
 // customer sees that same live rate (× FX × margin) before paying.
 serve(async (req: Request) => {
   const cors = handleCors(req);

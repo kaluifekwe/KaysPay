@@ -7,7 +7,7 @@ import { usdToNgnKobo, getUsdNgnRate, NormalizedEsimPlan } from "../_shared/esim
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -58,7 +58,7 @@ serve(async (req: Request) => {
 
   const supabase = adminClient();
 
-  // Named limitCheck, not `rate` â€” `rate` is already the FX rate below.
+  // Named limitCheck, not `rate` â€?`rate` is already the FX rate below.
   const limitCheck = await enforceRateLimit(supabase, "esim_browse", user.id, 20, 60, user.id);
   if (!limitCheck.allowed) {
     return json({

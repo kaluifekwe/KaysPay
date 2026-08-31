@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient, verifyCronSecret } from "../_shared/auth.ts";
+import { fetchWithTimeout } from "../_shared/provider-fetch.ts";
 
 // Delivers pending in-app notifications as device push, via the Expo Push API
 // (see the notifications-push cron in migration 051). Runs every minute:
@@ -58,11 +59,11 @@ serve(async (req: Request) => {
   for (let i = 0; i < messages.length; i += 100) {
     const batch = messages.slice(i, i + 100);
     try {
-      const res = await fetch(EXPO_PUSH_URL, {
+      const res = await fetchWithTimeout(EXPO_PUSH_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(batch),
-      });
+      }, 20_000);
       if (res.ok) sent += batch.length;
     } catch {
       // best-effort — a failed batch is dropped, not retried, to avoid spam

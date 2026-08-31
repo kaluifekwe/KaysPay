@@ -14,17 +14,17 @@ import { getOrCreateCryptoAccount } from "../_shared/crypto-account.ts";
 import { createWithdrawal, getSubAccountWallets, isQuidaxConfigured } from "../_shared/quidax-client.ts";
 
 // Withdraw USDT from the user's OWN Quidax sub-account to an external
-// wallet address. Quidax debits their sub-account balance directly â€” no
+// wallet address. Quidax debits their sub-account balance directly â€?no
 // local crypto ledger is touched, since the balance the app shows is read
 // live from Quidax and debiting here too would double-count.
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
-// Same format rules as crypto.service.ts's client-side check â€” never trust
+// Same format rules as crypto.service.ts's client-side check â€?never trust
 // the client's own validation for what's ultimately an irreversible send.
 const ADDRESS_PATTERNS: Record<string, RegExp> = {
   TRC20: /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
@@ -77,7 +77,7 @@ serve(async (req: Request) => {
     return json({ success: false, error: `Enter an amount between ${MIN_USDT} and ${MAX_USDT} USDT` }, 400);
   }
 
-  // Fail closed BEFORE any PIN-token side effect â€” a blocked withdrawal
+  // Fail closed BEFORE any PIN-token side effect â€?a blocked withdrawal
   // must never look or feel like it partially happened.
   if (!isQuidaxConfigured()) {
     return json({

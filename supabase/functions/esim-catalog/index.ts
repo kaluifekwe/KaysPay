@@ -16,7 +16,7 @@ import { getUsdNgnRate, usdToNgnKobo } from "../_shared/esim-catalog.ts";
 //   the heavy full-catalogue fetch on demand.
 
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders(), "Content-Type": "application/json" } });
 }
 
 // Each stored country carries its cheapest plan price in USD, so the list can
@@ -122,7 +122,7 @@ serve(async (req: Request) => {
     return json({ success: true, countries: withFromPrices(row.countries, rate), regions: row.regions || [] });
   }
 
-  // Cache empty â†’ one-time bootstrap.
+  // Cache empty â†?one-time bootstrap.
   if (isAiraloConfigured()) {
     const res = await withJobLock(supabase, "esim-catalog-sync", () => refresh(supabase));
     if (res && !("skipped" in (res as any))) {

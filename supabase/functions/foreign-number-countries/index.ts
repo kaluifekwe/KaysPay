@@ -7,7 +7,7 @@ import { FOREIGN_NUMBER_COUNTRIES, isPlausibleServiceCode, usdToNgnKobo, isWithi
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -47,7 +47,7 @@ serve(async (req: Request) => {
 
   const supabase = adminClient();
 
-  // FAST PATH â€” cached prices.
+  // FAST PATH â€?cached prices.
   try {
     const { data: cache } = await supabase
       .from("smspva_price_cache")
@@ -72,7 +72,7 @@ serve(async (req: Request) => {
     }
   } catch { /* fall through to live */ }
 
-  // FALLBACK â€” live fetch (also covers the first run before the cron populates).
+  // FALLBACK â€?live fetch (also covers the first run before the cron populates).
   try {
     const codes = FOREIGN_NUMBER_COUNTRIES.map((c) => c.id);
     const stock = await getServiceCountries(service, codes);

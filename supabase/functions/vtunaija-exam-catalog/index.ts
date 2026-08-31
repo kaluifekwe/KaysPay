@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { adminClient, getAuthUser, verifyCronSecret, withJobLock } from "../_shared/auth.ts";
+import { fetchWithTimeout } from "../_shared/provider-fetch.ts";
 
 const PRICING_URL = "https://vtunaija.com.ng/pricing/ourPricing.php";
 const MAX_AUTOMATIC_CHANGE_RATIO = 0.20;
@@ -27,12 +28,12 @@ class CatalogSyncError extends Error {}
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "private, max-age=60" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json", "Cache-Control": "private, max-age=60" },
   });
 }
 
 function cleanCell(value: string): string {
-  return value.replace(/<[^>]*>/g, "").replace(/&nbsp;/gi, " ").replace(/&#8358;|&amp;#8358;/gi, "â‚¦").trim();
+  return value.replace(/<[^>]*>/g, "").replace(/&nbsp;/gi, " ").replace(/&#8358;|&amp;#8358;/gi, "â‚?).trim();
 }
 
 function parseNaira(value: string): number | null {
@@ -63,17 +64,13 @@ export function parseExamPricingPage(html: string): CatalogRow[] {
 }
 
 async function fetchProviderRows(): Promise<CatalogRow[]> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
   try {
-    const response = await fetch(PRICING_URL, { signal: controller.signal, headers: { Accept: "text/html" } });
+    const response = await fetchWithTimeout(PRICING_URL, { headers: { Accept: "text/html" } }, 20_000);
     if (!response.ok) throw new CatalogSyncError("PROVIDER_FETCH_FAILED");
     return parseExamPricingPage(await response.text());
   } catch (error) {
     if (error instanceof CatalogSyncError) throw error;
     throw new CatalogSyncError("PROVIDER_FETCH_FAILED");
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -163,7 +160,7 @@ serve(async (req) => {
     } catch { /* retain empty safe response */ }
   }
 
-  // Admin-settable markup (see migration 115) â€” same lookup vtu-purchase
+  // Admin-settable markup (see migration 115) â€?same lookup vtu-purchase
   // uses at charge time, so the quote and the actual charge always agree.
   const { data: overrides } = await db.from("vtu_exam_price_overrides").select("exam_id, price_kobo");
   const priceByExam = new Map((overrides ?? []).map((row) => [row.exam_id, Number(row.price_kobo)]));

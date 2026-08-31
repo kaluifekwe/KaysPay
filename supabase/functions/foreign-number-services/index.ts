@@ -11,12 +11,12 @@ import {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
 // Returns the curated service list, each with its cheapest available retail
-// price ("from ₦X") computed from the price cache — so the service picker can
+// price ("from ₦X") computed from the price cache �?so the service picker can
 // show a starting price before the user drills in. Read-only, no money.
 serve(async (req: Request) => {
   const cors = handleCors(req);
@@ -42,7 +42,7 @@ serve(async (req: Request) => {
   try {
     const { data: cache } = await supabase.from("smspva_price_cache").select("data").eq("id", 1).maybeSingle();
     cd = cache?.data as Record<string, Record<string, { p: number; c: number }>> | undefined;
-  } catch { /* no cache yet — fromKobo will be null */ }
+  } catch { /* no cache yet �?fromKobo will be null */ }
 
   // Cache holds only in-stock, under-cap combos, so the "from" price reflects
   // the cheapest country that's actually available for the service right now.

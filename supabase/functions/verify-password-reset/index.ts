@@ -11,13 +11,13 @@ import { isResendConfigured, sendEmail } from "../_shared/resend-client.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
 // Unauthenticated (called with the anon key): verifies the reset code the
 // user received by email, and ONLY on success sets the new password via the
-// admin API. The code is the sole gate â€” a valid session is neither present
+// admin API. The code is the sole gate â€?a valid session is neither present
 // nor required. Matches the app signup password floor.
 serve(async (req: Request) => {
   const cors = handleCors(req);
@@ -77,7 +77,7 @@ serve(async (req: Request) => {
       error: "Could not verify code. Please try again.",
     }, 500);
   }
-  // Unknown email: respond exactly like a wrong/expired code â€” no enumeration.
+  // Unknown email: respond exactly like a wrong/expired code â€?no enumeration.
   if (!userId) {
     return json({ success: false, error: "Request a new code and try again." });
   }
@@ -125,7 +125,7 @@ serve(async (req: Request) => {
     });
   }
 
-  // Code confirmed â€” set the new password. This is the only place a reset can
+  // Code confirmed â€?set the new password. This is the only place a reset can
   // change the credential; the code row was marked used inside the verify RPC.
   const { error: updateError } = await supabase.auth.admin.updateUserById(
     userId,

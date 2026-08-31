@@ -6,7 +6,7 @@ import { corsHeaders, handleCors } from "../_shared/cors.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -14,7 +14,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const VALID_ROLES = ["support", "super_admin"];
 
 // super_admin only. Uses Supabase's own hosted invite flow (magic link +
-// set-password) rather than a custom email template â€” no new sending
+// set-password) rather than a custom email template â€?no new sending
 // infrastructure needed.
 serve(async (req) => {
   const cors = handleCors(req);
@@ -56,8 +56,7 @@ serve(async (req) => {
   if (inviteError || !invited?.user) {
     // Most likely cause: this email already has a KaysPay account, so
     // inviteUserByEmail (which only creates brand-new accounts) refuses.
-    // Fall back to granting that existing account admin access directly â€”
-    // they already have a password, no invite email needed.
+    // Fall back to granting that existing account admin access directly â€?    // they already have a password, no invite email needed.
     const { data: existingId, error: lookupError } = await db.rpc(
       "admin_lookup_user_id_by_email",
       { p_email: email },

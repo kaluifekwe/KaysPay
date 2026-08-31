@@ -4,10 +4,10 @@ import { adminClient } from "../_shared/auth.ts";
 import { verifyRampWebhookSignature } from "../_shared/quidax-ramp-client.ts";
 import { settleCryptoBuySuccess } from "../_shared/crypto-buy-settle.ts";
 
-// Settles Buy â€” the only flow that runs on Quidax's RAMP product rather than
+// Settles Buy â€?the only flow that runs on Quidax's RAMP product rather than
 // its exchange API. Kept separate from crypto-quidax-webhook because the two
 // products are genuinely different integrations: their own dashboards, their
-// own webhook URL fields, and â€” the part that actually bites â€” completely
+// own webhook URL fields, and â€?the part that actually bites â€?completely
 // different signature schemes (`x-ramp-signature`, a plain hex HMAC keyed on
 // the Ramp secret, vs the exchange's `quidax-signature` t=/s= pair keyed on
 // QUIDAX_WEBHOOK_SECRET). These handlers previously sat in the exchange
@@ -17,7 +17,7 @@ import { settleCryptoBuySuccess } from "../_shared/crypto-buy-settle.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -26,7 +26,7 @@ serve(async (req: Request) => {
   if (cors) return cors;
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  // Signature covers the body as sent â€” read it as text before any parsing.
+  // Signature covers the body as sent â€?read it as text before any parsing.
   const rawBody = await req.text();
   const verified = await verifyRampWebhookSignature(rawBody, req.headers.get("x-ramp-signature"));
   if (!verified) {
@@ -50,7 +50,7 @@ serve(async (req: Request) => {
   // and the balance is read live from Quidax, so this only moves the order
   // out of "pending". For any other coin this is the halfway point: it kicks
   // off leg 2, swapping that USDT for the target coin inside the same
-  // sub-account â€” leg 2's own webhook (swap_transaction.complete/.failed,
+  // sub-account â€?leg 2's own webhook (swap_transaction.complete/.failed,
   // handled in crypto-quidax-webhook) is what actually finishes the order.
   if (event === "buy_transaction.successful") {
     const merchantReference = String(data?.merchant_reference || "");
@@ -83,7 +83,7 @@ serve(async (req: Request) => {
   // The customer's transfer landed but Quidax hasn't delivered the crypto
   // yet. Records when this happened so completed_at minus this timestamp
   // gives Quidax's own payout time, isolated from however long the customer
-  // took to actually send the transfer â€” otherwise unmeasurable.
+  // took to actually send the transfer â€?otherwise unmeasurable.
   if (event === "buy_transaction.processing") {
     const merchantReference = String(data?.merchant_reference || "");
     if (merchantReference) {
@@ -96,9 +96,9 @@ serve(async (req: Request) => {
   }
 
   // Quidax auto-refunds a purchase whose paying bank account name doesn't
-  // match the customer (common here â€” people pay from a spouse's or business
+  // match the customer (common here â€?people pay from a spouse's or business
   // account). Flags the order so the app prompts the customer for a bank
-  // account to receive it back â€” see crypto-buy-refund-resolve/-submit.
+  // account to receive it back â€?see crypto-buy-refund-resolve/-submit.
   // Still alerts, at a lower severity than before: this is now a handled,
   // expected path rather than a dead end, but still worth surfacing so a
   // customer who never opens the app again isn't silently stuck.
@@ -122,7 +122,7 @@ serve(async (req: Request) => {
   }
 
   // Quidax has sent the refund to the bank details we submitted. Nothing to
-  // reverse on our side â€” Buy never debited the KaysPay wallet â€” so this
+  // reverse on our side â€?Buy never debited the KaysPay wallet â€?so this
   // only needs to move the order out of "pending".
   if (event === "buy_transaction.refund.completed") {
     const merchantReference = String(data?.merchant_reference || "");
@@ -135,7 +135,7 @@ serve(async (req: Request) => {
     return json({ received: true });
   }
 
-  // Sell (off-ramp, migration 139) settled â€” Quidax paid the customer's
+  // Sell (off-ramp, migration 139) settled â€?Quidax paid the customer's
   // bank account directly from their own liquidity. Nothing to credit on
   // our side; the KaysPay wallet was never touched by this sale.
   if (event === "sell_transaction.successful") {
@@ -145,9 +145,13 @@ serve(async (req: Request) => {
       console.error("crypto-ramp-webhook: unexpected sell_transaction.successful", JSON.stringify(payload).slice(0, 300));
       return json({ received: true });
     }
+    const optionalKobo=(...values:unknown[]):number|null=>{for(const value of values){const amount=Number(value);if(Number.isFinite(amount)&&amount>=0)return Math.round(amount*100);}return null;};
     const { error } = await supabase.rpc("complete_crypto_sell_offramp", {
       p_reference: merchantReference,
       p_ngn_kobo: Math.round(paidNgn * 100),
+      p_markup_kobo:optionalKobo(data?.merchant_markup,data?.fees?.merchant_markup,data?.fiat_payout?.merchant_markup),
+      p_processor_fee_kobo:optionalKobo(data?.processor_fee,data?.fees?.processor_fee,data?.fiat_payout?.processor_fee),
+      p_vat_kobo:optionalKobo(data?.vat,data?.fees?.vat,data?.fiat_payout?.vat),
     });
     if (error) console.error("crypto-ramp-webhook: complete_crypto_sell_offramp failed:", error.message);
     return json({ received: true });
@@ -165,6 +169,6 @@ serve(async (req: Request) => {
     return json({ received: true });
   }
 
-  // Any other event type â€” acknowledge so Quidax doesn't keep retrying.
+  // Any other event type â€?acknowledge so Quidax doesn't keep retrying.
   return json({ received: true });
 });

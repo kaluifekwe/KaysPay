@@ -10,13 +10,13 @@ import { notifyCryptoBuyCompleted } from "../_shared/crypto-buy-settle.ts";
 // credit the user's Naira wallet), and withdrawals. Deposit on-hold/failed/
 // rejected variants are logged rather than acted on, since Quidax's own
 // compliance layer can hold a deposit and there is nothing to reconcile
-// until that resolves. Buy does NOT settle here â€” it runs on Quidax's Ramp
+// until that resolves. Buy does NOT settle here â€?it runs on Quidax's Ramp
 // product, which signs its webhooks differently and has its own dashboard
 // URL, so it lives in crypto-ramp-webhook.
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -25,7 +25,7 @@ serve(async (req: Request) => {
   if (cors) return cors;
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  // Signature is computed over the RAW body â€” must read as text before any
+  // Signature is computed over the RAW body â€?must read as text before any
   // JSON parsing, or the signature will never match.
   const rawBody = await req.text();
   const signatureHeader = req.headers.get("quidax-signature");
@@ -183,7 +183,7 @@ serve(async (req: Request) => {
       const { data: buyTxId } = await supabase.rpc("fail_crypto_buy_swap", { p_swap_id: swapId, p_reason: "swap_failed" });
       if (buyTxId) {
         // Same "settled as USDT instead of the requested coin" case as the
-        // confirm_failed path in crypto-buy-settle.ts â€” leg 1's USDT already
+        // confirm_failed path in crypto-buy-settle.ts â€?leg 1's USDT already
         // landed, so this still deserves the completion notification.
         const { data: buyTx } = await supabase
           .from("transactions")
@@ -231,6 +231,6 @@ serve(async (req: Request) => {
   // webhooks are signed with x-ramp-signature and delivered to their own
   // dashboard URL, so they are handled in crypto-ramp-webhook, not here.
 
-  // Any other event type â€” acknowledge so Quidax doesn't keep retrying.
+  // Any other event type â€?acknowledge so Quidax doesn't keep retrying.
   return json({ received: true });
 });

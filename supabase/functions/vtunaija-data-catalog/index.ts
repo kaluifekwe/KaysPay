@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { adminClient, getAuthUser, verifyCronSecret, withJobLock } from "../_shared/auth.ts";
 import { callVTUNaija } from "../_shared/vtunaija-client.ts";
-import { computeCatalogMarkup, type MarkupBracket, type PricingEngineConfig } from "../_shared/data-markup-engine.ts";
+import { DATA_PRICING_ENGINE_VERSION, computeCatalogMarkup, type MarkupBracket, type PricingEngineConfig } from "../_shared/data-markup-engine.ts";
 
 const NETWORKS = ["mtn", "glo", "9mobile", "airtel"] as const;
 
@@ -28,13 +28,12 @@ class CatalogSyncError extends Error {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "private, max-age=60" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json", "Cache-Control": "private, max-age=60" },
   });
 }
 
 // Reads vtu_pricing_config's 'data' row (see migration 074) so the resale
-// tier can be flipped from the Supabase Table Editor â€” no code deploy â€”
-// once the owner is ready to move off the launch cost-price promo. Defaults
+// tier can be flipped from the Supabase Table Editor â€?no code deploy â€?// once the owner is ready to move off the launch cost-price promo. Defaults
 // to 'premium' (cost) if the row is ever missing, matching launch behavior.
 async function getDataPricingTier(supabase: ReturnType<typeof adminClient>): Promise<"premium" | "basic"> {
   const { data } = await supabase
@@ -68,14 +67,14 @@ async function fetchCatalog(tier: "premium" | "basic") {
 
   for (const raw of payload.dataplans as Record<string, unknown>[]) {
     const network = NETWORK_NAME_MAP[String(raw.the_network_name).toUpperCase()];
-    if (!network) continue; // an unrelated/unsupported network name â€” not an error
+    if (!network) continue; // an unrelated/unsupported network name â€?not an error
 
     const dataPlanId = String(raw.data_plan_id ?? "");
     // price_for_premiumuser is what this account is actually billed
     // (confirmed via VTUnaija's own dashboard price list, 2026-08-03);
     // price_for_basicuser is their suggested retail price (always >= premium
-    // â€” the spread is our resale margin). Which one customers pay is a
-    // runtime switch, not a code choice â€” see getDataPricingTier() above.
+    // â€?the spread is our resale margin). Which one customers pay is a
+    // runtime switch, not a code choice â€?see getDataPricingTier() above.
     const priceNaira = Number(raw[priceField]);
     const size = String(raw.size ?? "").trim();
     const datatype = String(raw.the_datatype_name ?? "").trim();
@@ -83,7 +82,7 @@ async function fetchCatalog(tier: "premium" | "basic") {
     const durationDays = String(raw.duration ?? "").trim();
 
     // A single malformed plan (odd price, blank name, paused entry) must
-    // never abort the WHOLE sync â€” skip just that one row and keep going.
+    // never abort the WHOLE sync â€?skip just that one row and keep going.
     // Confirmed live 2026-08-03: this used to throw on the first bad row,
     // silently freezing the entire catalog at its last-good snapshot forever
     // (the cron kept "running" every 5 min but every attempt failed here).
@@ -109,7 +108,7 @@ async function fetchCatalog(tier: "premium" | "basic") {
   return rows;
 }
 
-// Loaded fresh every sync (not cached) â€” brackets/config are edited rarely
+// Loaded fresh every sync (not cached) â€?brackets/config are edited rarely
 // via the admin panel, and a stale in-memory copy surviving between cold
 // starts would mean a rule change doesn't actually take effect until the
 // next deploy. Missing/unreadable config fails safe to "engine off", which
@@ -120,7 +119,7 @@ async function loadMarkupEngineInputs(
 ): Promise<{ brackets: MarkupBracket[]; config: PricingEngineConfig }> {
   const [{ data: brackets }, { data: config }] = await Promise.all([
     supabase.from("data_markup_brackets")
-      .select("min_price_kobo, max_price_kobo, markup_type, markup_value"),
+      .select("min_price_kobo, max_price_kobo, markup_type, markup_value, min_markup_kobo, min_net_margin_kobo"),
     supabase.from("data_pricing_engine_config")
       .select("enabled, value_density_enabled, value_density_max_adjust_percent, value_density_price_window_percent, min_markup_floor_kobo, discount_percent_of_markup, cashback_percent_of_markup")
       .eq("id", true).maybeSingle(),
@@ -136,15 +135,15 @@ async function loadMarkupEngineInputs(
 }
 
 // Plans that vanish from the provider's live feed only get their
-// availability flag flipped (see the "disappeared" handling below) â€” their
+// availability flag flipped (see the "disappeared" handling below) â€?their
 // computed price is never touched again, so anything that predates the
 // pricing engine, or was already gone the first time it ran, stays
-// permanently blank ("â€”" in the admin panel) even though the Pricing page
+// permanently blank ("â€? in the admin panel) even though the Pricing page
 // explicitly promises pricing works independently of availability. This
 // backfills those on every sync so an admin can always see what a plan
 // would cost, whether or not it's currently sellable. Computed
 // independently of the live batch (no value-density comparison against
-// plans that aren't actually for sale) â€” good enough for admin visibility,
+// plans that aren't actually for sale) â€?good enough for admin visibility,
 // and never applied to a customer-facing charge either way.
 async function backfillMissingComputedPrices(
   supabase: ReturnType<typeof adminClient>,
@@ -153,8 +152,8 @@ async function backfillMissingComputedPrices(
 ) {
   const { data: stale } = await supabase
     .from("vtunaija_data_catalog")
-    .select("id, network, name, reseller_kobo")
-    .is("computed_price_kobo", null)
+    .select("id, network, name, validity, family_key, reseller_kobo")
+    .neq("pricing_engine_version", DATA_PRICING_ENGINE_VERSION)
     .limit(200);
   if (!stale || stale.length === 0) return;
 
@@ -162,13 +161,19 @@ async function backfillMissingComputedPrices(
   const now = new Date().toISOString();
   for (const row of stale) {
     const values = computed.get(row.id);
-    if (!values) continue; // no matching bracket for this price â€” leave it blank rather than guess
+    if (!values) continue; // no matching bracket for this price â€?leave it blank rather than guess
     await supabase.from("vtunaija_data_catalog").update({
       computed_markup_kobo: values.computed_markup_kobo,
       computed_list_price_kobo: values.computed_list_price_kobo,
       computed_discount_kobo: values.computed_discount_kobo,
       computed_cashback_kobo: values.computed_cashback_kobo,
       computed_price_kobo: values.computed_price_kobo,
+      normalized_data_mb: values.normalized_data_mb,
+      validity_days: values.validity_days,
+      validity_adjustment_kobo: values.validity_adjustment_kobo,
+      requires_pricing_review: values.requires_pricing_review,
+      pricing_review_reason: values.pricing_review_reason,
+      pricing_engine_version: values.pricing_engine_version,
       updated_at: now,
     }).eq("id", row.id);
   }
@@ -195,6 +200,12 @@ async function refreshCatalog(supabase: ReturnType<typeof adminClient>) {
     computed_discount_kobo: computed.get(row.id)?.computed_discount_kobo ?? null,
     computed_cashback_kobo: computed.get(row.id)?.computed_cashback_kobo ?? null,
     computed_price_kobo: computed.get(row.id)?.computed_price_kobo ?? null,
+    normalized_data_mb: computed.get(row.id)?.normalized_data_mb ?? null,
+    validity_days: computed.get(row.id)?.validity_days ?? null,
+    validity_adjustment_kobo: computed.get(row.id)?.validity_adjustment_kobo ?? 0,
+    requires_pricing_review: computed.get(row.id)?.requires_pricing_review ?? true,
+    pricing_review_reason: computed.get(row.id)?.pricing_review_reason ?? "Pricing could not be computed",
+    pricing_engine_version: computed.get(row.id)?.pricing_engine_version ?? 0,
     provider_seen_at: now,
     updated_at: now,
   }));
@@ -235,7 +246,7 @@ serve(async (req: Request) => {
       return json({ success: true, ...result });
     } catch (e) {
       // The specific failure is already logged inside fetchCatalog/refreshCatalog
-      // (safe codes only, no secrets) â€” this just confirms the sync as a whole
+      // (safe codes only, no secrets) â€?this just confirms the sync as a whole
       // failed this round, so it's visible even without cross-referencing.
       console.error("vtunaija-data-catalog: refresh failed:", e instanceof Error ? e.message : e);
       return json({ success: false, error: "Catalogue refresh failed; last valid prices retained." }, 502);
@@ -274,12 +285,13 @@ serve(async (req: Request) => {
   const network = String(body.network ?? "").toLowerCase();
   if (!NETWORKS.includes(network as typeof NETWORKS[number])) return json({ error: "Invalid network" }, 400);
 
-  const SELECT_FIELDS = "id, network, name, validity, family_key, family_name, reseller_kobo, computed_price_kobo, computed_list_price_kobo, computed_cashback_kobo, provider_seen_at";
+  const SELECT_FIELDS = "id, network, name, validity, family_key, family_name, reseller_kobo, computed_price_kobo, computed_list_price_kobo, computed_cashback_kobo, pricing_engine_version, provider_seen_at";
   let { data, error } = await supabase
     .from("vtunaija_data_catalog")
     .select(SELECT_FIELDS)
     .eq("network", network)
     .eq("available", true)
+    .eq("pricing_engine_version", DATA_PRICING_ENGINE_VERSION)
     .order("reseller_kobo", { ascending: true });
   if (error) return json({ error: "Catalogue temporarily unavailable" }, 503);
 
@@ -292,6 +304,7 @@ serve(async (req: Request) => {
         .select(SELECT_FIELDS)
         .eq("network", network)
         .eq("available", true)
+        .eq("pricing_engine_version", DATA_PRICING_ENGINE_VERSION)
         .order("reseller_kobo", { ascending: true });
       data = refreshed.data;
     } catch {
@@ -313,7 +326,7 @@ serve(async (req: Request) => {
     (control.scope_type === "plan" && control.scope_value === row.id)
   ));
 
-  // Admin-settable per-plan price (see migration 112) â€” overrides the
+  // Admin-settable per-plan price (see migration 112) â€?overrides the
   // automatically computed price when set. Read AFTER the availability
   // filter so this only queries prices for plans actually being returned.
   const { data: overrides, error: overridesError } = await supabase
@@ -327,7 +340,7 @@ serve(async (req: Request) => {
   // Resolution order: manual admin override, else the automatic markup
   // engine's computed price (migration 122), else raw provider cost as a
   // last-resort fallback (e.g. before the very first sync populates
-  // computed_price_kobo) â€” never below cost either way.
+  // computed_price_kobo) â€?never below cost either way.
   return json({
     success: true,
     plans: visible.map((row) => {
@@ -340,11 +353,11 @@ serve(async (req: Request) => {
         family_key: row.family_key,
         family_name: row.family_name,
         amount: (priceByPlan.get(row.id) ?? row.computed_price_kobo ?? Number(row.reseller_kobo)) / 100,
-        // "Was" price for a strikethrough display (migration 123) â€” only for
+        // "Was" price for a strikethrough display (migration 123) â€?only for
         // an auto-computed price, never a manual override (which has no
         // discount concept, it's just a flat final price the admin chose).
         list_amount: !hasOverride && row.computed_list_price_kobo ? row.computed_list_price_kobo / 100 : null,
-        // Whether this plan earns cashback â€” deliberately no amount here
+        // Whether this plan earns cashback â€?deliberately no amount here
         // (migration 124/Phase 3 design): the exact figure is only shown
         // once it's actually been credited, never promised up front.
         has_cashback: !hasOverride && !!row.computed_cashback_kobo && row.computed_cashback_kobo > 0,

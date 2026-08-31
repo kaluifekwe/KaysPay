@@ -6,7 +6,7 @@ import { createPaystackDedicatedAccount, getOrCreatePaystackCustomer, isPaystack
 import { redactSecrets } from "../_shared/redact.ts";
 
 // Flutterwave's top-level error.message is a generic "Request is not valid"
-// â€” the actually useful reason is in error.validation_errors. Surface both
+// â€?the actually useful reason is in error.validation_errors. Surface both
 // so callers (and our own logs) see what actually failed.
 function flwErrorMessage(data: any, fallback: string): string {
   const details = data?.error?.validation_errors
@@ -18,7 +18,7 @@ function flwErrorMessage(data: any, fallback: string): string {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -55,13 +55,12 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
   try {
     body = await req.json();
   } catch {
-    // no body is fine â€” bvn_or_nin is only required on first creation
+    // no body is fine; identity data is always loaded from the server record
   }
-  const bvnOrNin = typeof body.bvn_or_nin === "string" ? body.bvn_or_nin.trim() : "";
   const provider = body.provider === "paystack" ? "paystack" : body.provider === "flutterwave" ? "flutterwave" : null;
   if (!provider) return json({ success: false, error: "Please choose a valid provider" }, 400);
 
-  // Config gate is per-provider â€” a Paystack outage or missing secret must
+  // Config gate is per-provider â€?a Paystack outage or missing secret must
   // never block Flutterwave (the existing, working path), and vice versa.
   if (provider === "flutterwave" && !isFlutterwaveConfigured()) {
     return json({ error: "Bank transfer funding not configured" }, 500);
@@ -72,8 +71,24 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
 
   const supabase = adminClient();
 
+  // Never trust an identifier supplied by the app. Funding eligibility and
+  // the BVN/NIN sent to a provider must come from the verified server record.
+  const { data: kyc, error: kycError } = await supabase
+    .from("user_kyc")
+    .select("status, nin, bvn")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (kycError) throw kycError;
+  if (kyc?.status !== "verified") {
+    return json({ success: false, error: "Complete identity verification before funding your wallet." }, 403);
+  }
+  const verifiedIdentifier = String(kyc.nin || kyc.bvn || "").trim();
+  if (!/^\d{11}$/.test(verifiedIdentifier)) {
+    return json({ success: false, error: "Your verified identity record is incomplete. Please contact support." }, 409);
+  }
+
   // 1. Already provisioned FOR THIS PROVIDER? Return it (idempotent). A user
-  // may hold one account per provider â€” requesting Paystack after already
+  // may hold one account per provider â€?requesting Paystack after already
   // having a Flutterwave account provisions a fresh Paystack row, not the
   // existing flutterwave one.
   const { data: existing } = await supabase
@@ -87,17 +102,13 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
     return json({ success: true, account: existing });
   }
 
-  if (provider === "flutterwave" && !/^\d{11}$/.test(bvnOrNin)) {
-    return json({ success: false, error: "A valid 11-digit BVN or NIN is required" }, 400);
-  }
-
-  // A stable, alphanumeric-only reference derived from the user id â€” safe
+  // A stable, alphanumeric-only reference derived from the user id â€?safe
   // for both providers, and doubles as an idempotency key.
   const refBase = `kp${user.id.replace(/-/g, "")}`;
 
   // Derive a clean display name for both providers. Flutterwave requires
   // name.first/name.last to each be 2-50 chars of only letters/spaces/
-  // commas/periods/apostrophes/hyphens â€” sanitize and fall back
+  // commas/periods/apostrophes/hyphens â€?sanitize and fall back
   // defensively, since user_metadata.full_name can be missing,
   // whitespace-only, or contain characters it rejects (e.g. digits).
   const meta = (user.user_metadata || {}) as Record<string, string>;
@@ -122,7 +133,7 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
 
   const custRes = await createCustomer(supabase, { firstName, lastName, email: user.email }, refBase);
   if (custRes.status >= 400 || custRes.data?.status !== "success") {
-    // Log only a safe summary â€” never the raw response body, which can echo
+    // Log only a safe summary â€?never the raw response body, which can echo
     // back submitted PII (see the bvnOrNin case below) on validation failures.
     console.error("Flutterwave create-customer failed:", redactSecrets(JSON.stringify({ status: custRes.status, message: custRes.data?.message })));
     return json(
@@ -136,21 +147,21 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
   const vaRes = await createStaticVirtualAccount(supabase, {
     customerId,
     reference: refBase,
-    // Combines brand + real KYC'd name â€” the bank's own name-enquiry may
+    // Combines brand + real KYC'd name â€?the bank's own name-enquiry may
     // still only surface the verified customer name regardless of this
     // (untested), but this is the best-effort branding option that doesn't
     // risk breaking the fraud-prevention purpose of name-enquiry. Avoiding
     // "/" since narration likely has the same restricted character set as
     // name.first/name.last (letters/spaces/commas/periods/apostrophes/hyphens).
     narration: `KaysPay - ${firstName} ${lastName}`,
-    bvnOrNin,
+    bvnOrNin: verifiedIdentifier,
   }, `${refBase}va`);
   if (vaRes.status >= 400 || vaRes.data?.status !== "success") {
-    // Log only which fields failed, never the validation message text â€” this
+    // Log only which fields failed, never the validation message text â€?this
     // request includes bvnOrNin, and KYC validation errors can echo the
     // submitted value back in the message.
     const failedFields = vaRes.data?.error?.validation_errors?.map((v: any) => v.field_name);
-    // Deliberately DO NOT log vaRes.data.message â€” this request carries BVN/NIN
+    // Deliberately DO NOT log vaRes.data.message â€?this request carries BVN/NIN
     // and KYC validation messages can echo the submitted value back. Fields only.
     console.error("Flutterwave create-virtual-account failed:", JSON.stringify({ status: vaRes.status, failedFields }));
     return json(
@@ -168,7 +179,7 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
 
   // 4. Persist the mapping (service role). customer_code/dva_id are reused
   // generically for Flutterwave's customer id ("cus_...") and account id
-  // ("van_...") â€” see migration 023.
+  // ("van_...") â€?see migration 023.
   const { error: mappingError } = await supabase.from("virtual_accounts").upsert({
     user_id: user.id,
     provider,

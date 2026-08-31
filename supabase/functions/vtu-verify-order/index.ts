@@ -11,12 +11,12 @@ import {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
 // On-demand settlement of a SINGLE pending VTUAfrica order, so the result
-// screen can flip to Successful/Failed the moment VTUAfrica confirms â€” instead
+// screen can flip to Successful/Failed the moment VTUAfrica confirms â€?instead
 // of waiting for the periodic vtuafrica-reconcile sweep. Same settle rules as
 // that sweep (complete only on explicit success, refund only on explicit
 // failure, otherwise leave pending), just scoped to one order the CALLER owns
@@ -51,7 +51,7 @@ serve(async (req: Request) => {
   }
 
   // Load the order and confirm it belongs to the caller. Never trust a
-  // transaction id alone â€” a user may only settle their OWN order.
+  // transaction id alone â€?a user may only settle their OWN order.
   const { data: tx } = await supabase
     .from("transactions")
     .select("id, user_id, status, type, metadata")
@@ -60,7 +60,7 @@ serve(async (req: Request) => {
 
   if (!tx || tx.user_id !== user.id) return json({ error: "Not found" }, 404);
 
-  // Already terminal â€” report it straight back (client stops polling).
+  // Already terminal â€?report it straight back (client stops polling).
   if (tx.status === "completed") return json({ status: "completed" });
   if (tx.status === "failed" || tx.status === "refunded") return json({ status: "failed" });
   if (tx.status !== "pending") return json({ status: tx.status });

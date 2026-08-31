@@ -8,12 +8,12 @@ import { redactSecrets } from "../_shared/redact.ts";
 // Bank list for the Sell (off-ramp) destination picker. Deliberately its
 // own function rather than reusing crypto-banks: that one lists the
 // Exchange API's banks, a different Quidax product with a possibly
-// different code scheme â€” never confirmed they match, so kept separate to
+// different code scheme â€?never confirmed they match, so kept separate to
 // avoid a code from one resolving to the wrong bank on the other.
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 

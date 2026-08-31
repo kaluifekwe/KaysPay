@@ -7,7 +7,7 @@ import { getSms, isSmspvaConfigured } from "../_shared/smspva-client.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -28,7 +28,7 @@ serve(async (req: Request) => {
 
   // Deliberately 60/min, double the other lookups. ForeignNumbersScreen
   // polls this every 4s (POLL_INTERVAL_MS) while the user waits for their
-  // SMS code â€” 15/min sustained before the user touches anything. A 30/min
+  // SMS code â€?15/min sustained before the user touches anything. A 30/min
   // ceiling would sit only 2x above normal use and could cut off a genuine
   // wait if the screen were reopened or refreshed; 60 keeps 4x headroom
   // while still stopping a scripted loop cold.
@@ -53,7 +53,7 @@ serve(async (req: Request) => {
 
   const supabase = adminClient();
 
-  // Verify this activation belongs to the caller before querying it â€” never
+  // Verify this activation belongs to the caller before querying it â€?never
   // trust a client-supplied id alone. Pull the metadata too (SMSPVA's get_sms
   // needs the service + country, not just the id).
   const { data: tx } = await supabase
@@ -83,7 +83,7 @@ serve(async (req: Request) => {
     }
 
     // No code yet. If the number is past its ~15-min life, it will never
-    // arrive â€” auto-refund now (idempotent RPC; SMSPVA charged us nothing).
+    // arrive â€?auto-refund now (idempotent RPC; SMSPVA charged us nothing).
     const ageMs = Date.now() - new Date(tx.created_at as string).getTime();
     if (ageMs > LIFESPAN_MS) {
       await confirmServiceRefund(supabase, tx.id, "expired_no_code", "automatic", true);

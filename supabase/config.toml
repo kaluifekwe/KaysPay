@@ -73,6 +73,9 @@ verify_jwt = true
 [functions.crypto-sell]
 verify_jwt = true
 
+[functions.crypto-sell-quote]
+verify_jwt = true
+
 [functions.transfer-banks]
 verify_jwt = true
 
@@ -110,6 +113,9 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.crypto-buy-reconcile]
+verify_jwt = true
+
+[functions.crypto-buy-status-refresh]
 verify_jwt = true
 
 [functions.crypto-sell-reconcile]
@@ -162,6 +168,12 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.device-sessions]
+verify_jwt = true
+
+# Onboarding analytics accepts pre-signup events. Expo still supplies the
+# project's public anon JWT, while the function treats only a verified user
+# session as identity and never trusts a user id from the request body.
+[functions.analytics-ingest]
 verify_jwt = true
 
 [functions.financial-integrity-monitor]
@@ -233,6 +245,39 @@ verify_jwt = true
 [functions.admin-dashboard-stats]
 verify_jwt = true
 
+[functions.admin-onboarding-report]
+verify_jwt = true
+
+[functions.admin-campaigns]
+verify_jwt = true
+
+[functions.admin-campaign-dispatch]
+verify_jwt = true
+
+[functions.marketing-unsubscribe]
+verify_jwt = false
+
+[functions.resend-webhook]
+verify_jwt = false
+
+[functions.campaign-dispatch-worker]
+verify_jwt = false
+
+[functions.provider-health-monitor]
+verify_jwt = false
+
+[functions.admin-operations-report]
+verify_jwt = true
+
+[functions.admin-ai-assistant]
+verify_jwt = true
+
+[functions.admin-incidents]
+verify_jwt = true
+
+[functions.admin-business-intelligence]
+verify_jwt = true
+
 [functions.admin-transactions]
 verify_jwt = true
 
@@ -261,4 +306,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.funding-reconcile]
+verify_jwt = false
+
+[functions.financial-forecast-monitor]
 verify_jwt = false

@@ -15,12 +15,12 @@ import {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
 // Free-tier record-shape normalizing. NIN responses use lowercase
-// firstname/middlename/surname; BVN responses vary by provider â€” Prembly's
+// firstname/middlename/surname; BVN responses vary by provider â€?Prembly's
 // BVN endpoint returns camelCase (firstName/middleName/lastName),
 // CheckMyNINBVN's uses lowercase but "lastname" instead of "surname" (see
 // bvn-verify's own extractBvnRecord, which normalizes the same spellings
@@ -72,10 +72,10 @@ async function tryNinBvnNin(nin: string): Promise<ProviderOutcome> {
   return { ok, record, errorMessage: ok ? undefined : (data?.message || data?.data?.message || `http_${status}`) };
 }
 
-// BVN variants â€” same free, no-wallet-debit model as the NIN checks above.
+// BVN variants â€?same free, no-wallet-debit model as the NIN checks above.
 // Deliberately uses Prembly's lighter bvn_validation endpoint, NOT
 // verifyBvnFull (the richer, costlier lookup reserved for the paid slip
-// product in bvn-verify) â€” this only ever needs a name to confirm identity.
+// product in bvn-verify) â€?this only ever needs a name to confirm identity.
 async function tryPremblyBvn(bvn: string): Promise<ProviderOutcome> {
   const { status, data } = await verifyBvnPrembly(bvn);
   const record = extractRecord(data);
@@ -90,7 +90,7 @@ async function tryNinBvnBvn(bvn: string): Promise<ProviderOutcome> {
   return { ok, record, errorMessage: ok ? undefined : (data?.message || `http_${status}`) };
 }
 
-// Free, self-serve KYC â€” deliberately NOT money-related: no wallet debit, no
+// Free, self-serve KYC â€?deliberately NOT money-related: no wallet debit, no
 // PIN step-up (being logged in is enough, same trust level as changing a
 // PIN). Since it's free to the user but still costs the owner per provider
 // call, it's capped per-user to stop it being used to hammer a paid API.
@@ -112,7 +112,7 @@ serve(async (req: Request) => {
     return json({ success: false, error: "Invalid request body" }, 400);
   }
 
-  // Accepts either identifier â€” whichever the user has on hand. Exactly one
+  // Accepts either identifier â€?whichever the user has on hand. Exactly one
   // must be present; a client sending both is treated as NIN (shouldn't
   // happen, KycScreen only ever sends one).
   const nin = String(body?.nin || "").trim();
@@ -199,12 +199,24 @@ serve(async (req: Request) => {
     updated_at: new Date().toISOString(),
   });
 
-  // Auto-sync the profile name to the verified record â€” no confirmation
+  // Auto-sync the profile name to the verified record â€?no confirmation
   // step, per the owner's spec.
   if (verifiedName) {
     await supabase.auth.admin.updateUserById(user.id, {
       user_metadata: { ...user.user_metadata, full_name: verifiedName },
     });
+  }
+
+  // Any real bank transfers received before verification were recorded as
+  // non-spendable compliance holds. Release them through the same atomic,
+  // idempotent wallet-credit path immediately after KYC succeeds.
+  const { error: releaseError } = await supabase.rpc("release_verified_funding_holds", {
+    p_user_id: user.id,
+  });
+  if (releaseError) {
+    // Verification itself remains valid; reconciliation/support can safely
+    // retry the idempotent release without risking a double credit.
+    console.error("Could not release verified funding holds:", releaseError.code || "UNKNOWN");
   }
 
   return json({ success: true, verified_name: verifiedName || undefined });

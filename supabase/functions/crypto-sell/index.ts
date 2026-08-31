@@ -11,7 +11,7 @@ import {
   RequestBodyError,
 } from "../_shared/auth.ts";
 import { deriveVerifiedQuidaxIdentity, getOrCreateCryptoAccount } from "../_shared/crypto-account.ts";
-import { createWithdrawal, getSubAccountWallets, isQuidaxConfigured } from "../_shared/quidax-client.ts";
+import { createWithdrawal, getCryptoWithdrawalFee, getSubAccountWallets, isQuidaxConfigured } from "../_shared/quidax-client.ts";
 import {
   attachOffRampBankAccount,
   confirmOffRamp,
@@ -23,21 +23,21 @@ import {
 import { redactSecrets } from "../_shared/redact.ts";
 
 // Sell: pays the customer's bank account DIRECTLY via Quidax's Ramp
-// off-ramp, using Quidax's own liquidity â€” never touches the KaysPay
+// off-ramp, using Quidax's own liquidity â€?never touches the KaysPay
 // wallet. Replaces the previous internal-swap-then-credit-wallet mechanism
-// (migration 119, now unused) â€” owner decision 2026-08-20, driven by not
+// (migration 119, now unused) â€?owner decision 2026-08-20, driven by not
 // having float capital to keep Flutterwave/Paystack payout balances funded
 // for a wallet-based Transfer-out step. See migration 139.
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
 const MIN_USDT = 1;
 const MAX_USDT = 2000;
-// Same network used throughout Buy/Withdraw for USDT â€” see EXTERNAL_NETWORK_MAP.
+// Same network used throughout Buy/Withdraw for USDT â€?see EXTERNAL_NETWORK_MAP.
 const USDT_NETWORK = "trc20";
 
 serve(async (req: Request) => {
@@ -99,7 +99,7 @@ serve(async (req: Request) => {
   const idempotencyKey = String(body.idempotency_key || `crypto_sell_${user.id}_${Date.now()}`);
 
   // Idempotency short-circuit BEFORE the PIN/biometric token is spent and
-  // BEFORE any Quidax call â€” same discipline as transfer-send. Found by the
+  // BEFORE any Quidax call â€?same discipline as transfer-send. Found by the
   // 2026-08-20 Strix pentest (vuln-0001/0004): without this, a replayed
   // request (retry, double-tap, a fresh step-up token on the same logical
   // sale) sailed straight through to a SECOND real Quidax withdrawal, since
@@ -135,7 +135,7 @@ serve(async (req: Request) => {
 
   try {
     const account = await getOrCreateCryptoAccount(supabase, user);
-    // Server-trusted identity for the off-ramp's name-match check â€” never
+    // Server-trusted identity for the off-ramp's name-match check â€?never
     // the mutable profile name (see deriveVerifiedQuidaxIdentity's own
     // comment for why: Strix pentest 2026-08-20, vuln-0002/0003).
     const identity = await deriveVerifiedQuidaxIdentity(supabase, user);
@@ -143,13 +143,33 @@ serve(async (req: Request) => {
       return json({ success: false, error: "Complete identity verification before selling crypto to a bank account." }, 403);
     }
 
-    // Balance is checked against Quidax, never a local number â€” a stale
+    // Balance is checked against Quidax, never a local number â€?a stale
     // local copy could authorize a sale the user can't actually cover.
     const wallets = await getSubAccountWallets(account.quidaxUserId);
     const usdt = wallets.find((w) => w.currency.toLowerCase() === "usdt");
     const available = Number(usdt?.balance ?? 0);
     if (!Number.isFinite(available) || available < cryptoAmount) {
       return json({ success: false, error: "Insufficient USDT balance." });
+    }
+
+    // Quidax deducts the network fee on top of `amount` (e.g. amount 1 +
+    // fee 1 = total 2 in their documented withdrawal response). The old
+    // check compared only `amount`, so a full-balance sale passed locally
+    // and then bounced when createWithdrawal reached Quidax.
+    const withdrawalFee = await getCryptoWithdrawalFee({
+      currency: asset,
+      amount: cryptoAmount,
+      network: USDT_NETWORK,
+    });
+    const totalRequired = cryptoAmount + withdrawalFee.fee;
+    if (available + 1e-8 < totalRequired) {
+      return json({
+        success: false,
+        error: `You need ${totalRequired.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")} USDT: ${cryptoAmount} USDT to sell plus ${withdrawalFee.fee} USDT network fee.`,
+        network_fee: withdrawalFee.fee,
+        total_required: totalRequired,
+        available,
+      }, 400);
     }
 
     const initiated = await initiateOffRamp({
@@ -176,7 +196,7 @@ serve(async (req: Request) => {
       return json({ success: false, error: "Could not prepare this sale. Please try again." }, 500);
     }
 
-    // Recorded BEFORE the crypto actually leaves the sub-account â€” the
+    // Recorded BEFORE the crypto actually leaves the sub-account â€?the
     // withdrawal below is the irreversible step, same discipline as the
     // old flow recording before confirmSwapQuotation.
     const { data: txId, error: recordError } = await supabase.rpc("record_crypto_sell_offramp_pending", {
@@ -204,7 +224,7 @@ serve(async (req: Request) => {
         reference: merchantReference,
       });
     } catch (withdrawError) {
-      // The crypto may or may not have actually moved at this point â€” no
+      // The crypto may or may not have actually moved at this point â€?no
       // wallet debit exists to roll back either way, so this is flagged for
       // manual follow-up rather than silently failed (see migration 139).
       await supabase.rpc("fail_crypto_sell_offramp", { p_reference: merchantReference, p_reason: "withdrawal_failed" });

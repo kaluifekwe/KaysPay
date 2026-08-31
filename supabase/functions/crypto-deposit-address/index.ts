@@ -5,14 +5,14 @@ import { getOrCreateCryptoAccount } from "../_shared/crypto-account.ts";
 import { createDepositAddress, isQuidaxConfigured } from "../_shared/quidax-client.ts";
 
 // Generates (or returns the existing) deposit address on the user's OWN
-// Quidax sub-account for a given network â€” this is how a user brings crypto
+// Quidax sub-account for a given network â€?this is how a user brings crypto
 // they already hold elsewhere (Binance, Bybit, etc.) into KaysPay. Quidax
 // credits the deposit straight into their sub-account; nothing here ever
 // touches a KaysPay-held balance.
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 

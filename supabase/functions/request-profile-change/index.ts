@@ -15,7 +15,7 @@ import { profileChangeCodeEmail } from "../_shared/email-template.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -36,7 +36,7 @@ function normalizePhone(raw: string): string {
 }
 
 // Step 1 of the phone/email change flow (see migration 077). Requires the
-// PIN/biometric step-up token on every call â€” a valid JWT alone is not
+// PIN/biometric step-up token on every call â€?a valid JWT alone is not
 // enough to touch these fields, same discipline as every money-moving
 // function. Changing an EXISTING phone or email additionally requires an
 // OTP emailed to the account's current address before request-profile-change's
@@ -98,7 +98,7 @@ serve(async (req: Request) => {
 
   // Adding a phone number when none is currently on file: nothing to
   // protect against hijacking, so apply immediately without an OTP round
-  // trip. This is the ONLY case that skips OTP â€” changing an already-set
+  // trip. This is the ONLY case that skips OTP â€?changing an already-set
   // phone, or an email (which always exists), always requires one below.
   if (field === "phone") {
     const meta = (user.user_metadata || {}) as Record<string, unknown>;

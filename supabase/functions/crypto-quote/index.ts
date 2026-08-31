@@ -5,7 +5,7 @@ import { getUsdNgnRate } from "../_shared/esim-catalog.ts";
 import { getMarketTicker, isQuidaxConfigured } from "../_shared/quidax-client.ts";
 
 // Read-only live USDT/NGN price for the Crypto screen, sourced from Quidax's
-// own order book â€” the market users actually trade against. It previously
+// own order book â€?the market users actually trade against. It previously
 // reused the interbank USD/NGN feed built for eSIM pricing, which is a
 // once-daily bank rate sitting well below the real USDT market rate in
 // Nigeria, so the screen understated what a sale was worth and crypto-buy
@@ -17,7 +17,7 @@ import { getMarketTicker, isQuidaxConfigured } from "../_shared/quidax-client.ts
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -30,9 +30,9 @@ serve(async (req: Request) => {
 
   // Read-only, but every call reaches the exchange. The Crypto screen fires
   // this once per focus plus once per pull-to-refresh, so a burst of ~6 is
-  // normal and 30/min leaves a human ample headroom â€” while stopping a
+  // normal and 30/min leaves a human ample headroom â€?while stopping a
   // scripted loop from burning the provider quota for every other user.
-  // Named limitCheck, not `rate` â€” the FX fallback below already binds
+  // Named limitCheck, not `rate` â€?the FX fallback below already binds
   // `rate` in this same scope.
   const limitCheck = await enforceRateLimit(adminClient(), "crypto_quote", user.id, 30, 60, user.id);
   if (!limitCheck.allowed) {
@@ -49,7 +49,7 @@ serve(async (req: Request) => {
       return json({
         success: true,
         rate: ticker.last,
-        // Buying costs the ask, selling earns the bid â€” exposed separately
+        // Buying costs the ask, selling earns the bid â€?exposed separately
         // so each side of the screen can show the price it would really get
         // rather than a single mid-market number that flatters both.
         buy_rate: ticker.ask,
@@ -57,7 +57,7 @@ serve(async (req: Request) => {
         source: "quidax",
       });
     } catch (e) {
-      // Falls through to the FX feed below â€” a price hiccup must never
+      // Falls through to the FX feed below â€?a price hiccup must never
       // leave the screen with no rate at all.
       console.error("crypto-quote: Quidax ticker failed:", e instanceof Error ? e.message : e);
     }

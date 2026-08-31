@@ -3,7 +3,7 @@ import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { adminClient, enforceRateLimit, getAuthUser, isServiceEnabled } from "../_shared/auth.ts";
 
 // Same defaults as each identity function's own hardcoded fallback (see
-// _shared/service-pricing.ts) â€” kept in sync manually since these live in
+// _shared/service-pricing.ts) â€?kept in sync manually since these live in
 // separate runtimes; a mismatch here only affects what price the app
 // *displays* before charging, never what it's actually charged (each
 // identity function re-derives its own authoritative price server-side).
@@ -19,22 +19,22 @@ const DEFAULTS_KOBO: Record<string, number> = {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
-// Read-only, any logged-in user (not an admin-only endpoint) â€” lets the app
+// Read-only, any logged-in user (not an admin-only endpoint) â€?lets the app
 // show the current NIN/BVN price before charging instead of a hardcoded
 // constant that goes stale the moment an admin changes something via
 // admin-pricing-controls. Also surfaces the nin_modification kill switch
 // (migration 113) so the app can hide the whole Modification tab the moment
-// it's disabled, rather than only rejecting the submit â€” nin-modify and
+// it's disabled, rather than only rejecting the submit â€?nin-modify and
 // nin-validate still enforce this server-side regardless of what the app
 // shows, so this is a UX read, not the actual security boundary.
 serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
-  // Keep the resolved user â€” the rate limiter needs an account to key on.
+  // Keep the resolved user â€?the rate limiter needs an account to key on.
   const user = await getAuthUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
 

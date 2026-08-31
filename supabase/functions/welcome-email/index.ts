@@ -7,13 +7,13 @@ import { welcomeEmail } from "../_shared/email-template.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
-// Sent "from the founder" â€” a friendly From name on the verified sending
+// Sent "from the founder" â€?a friendly From name on the verified sending
 // domain, with replies routed to a real inbox (support@ can't receive mail
-// yet, so replies go to the owner's Gmail for now â€” owner-approved 2026-07-23).
+// yet, so replies go to the owner's Gmail for now â€?owner-approved 2026-07-23).
 const WELCOME_FROM = "Kalu Ifekwe <no-reply@kayspay.com.ng>";
 const WELCOME_REPLY_TO = "kaluifekwe6@gmail.com";
 
@@ -22,7 +22,7 @@ function firstNameOf(fullName: string | null): string {
   return fullName.trim().split(/\s+/)[0] || "";
 }
 
-// Cron-only (every 5 min, see migration 052). Gated by x-cron-secret â€” the
+// Cron-only (every 5 min, see migration 052). Gated by x-cron-secret â€?the
 // anon key alone isn't real protection since it's bundled in the app.
 serve(async (req: Request) => {
   const cors = handleCors(req);
@@ -38,7 +38,7 @@ serve(async (req: Request) => {
 
   // Owner-editable WhatsApp support group (app_settings, migration 132).
   // Read once per run, not per email. A missing or invalid value simply
-  // omits the invite block rather than failing the send â€” the welcome email
+  // omits the invite block rather than failing the send â€?the welcome email
   // matters more than the invite.
   const { data: groupSetting } = await supabase
     .from("app_settings")

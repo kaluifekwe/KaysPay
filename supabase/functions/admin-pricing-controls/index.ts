@@ -12,7 +12,7 @@ const CABLETV_PROVIDERS = ["gotv", "dstv", "startimes"];
 const EXAM_IDS = ["waec", "neco", "nabteb", "jamb", "waec-registration", "nbais"];
 
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders(), "Content-Type": "application/json" } });
 }
 
 serve(async (req) => {
@@ -41,7 +41,7 @@ serve(async (req) => {
       { data: pricingEngineConfig, error: pricingEngineConfigError },
     ] = await Promise.all([
       db.from("vtunaija_data_catalog")
-        .select("id, network, family_key, family_name, name, validity, available, reseller_kobo, computed_markup_kobo, computed_list_price_kobo, computed_discount_kobo, computed_cashback_kobo, computed_price_kobo")
+        .select("id, network, family_key, family_name, name, validity, available, reseller_kobo, computed_markup_kobo, computed_list_price_kobo, computed_discount_kobo, computed_cashback_kobo, computed_price_kobo, normalized_data_mb, validity_days, validity_adjustment_kobo, requires_pricing_review, pricing_review_reason, pricing_engine_version")
         .order("network").order("family_name").order("name"),
       db.from("vtu_plan_price_overrides")
         .select("provider, network, plan_id, price_kobo, updated_at")
@@ -61,7 +61,7 @@ serve(async (req) => {
         .order("exam_code"),
       db.from("vtu_exam_price_overrides").select("exam_id, price_kobo, updated_at"),
       db.from("data_markup_brackets")
-        .select("id, min_price_kobo, max_price_kobo, markup_type, markup_value, updated_at")
+        .select("id, min_price_kobo, max_price_kobo, markup_type, markup_value, min_markup_kobo, min_net_margin_kobo, updated_at")
         .order("min_price_kobo"),
       db.from("data_pricing_engine_config")
         .select("enabled, value_density_enabled, value_density_max_adjust_percent, value_density_price_window_percent, min_markup_floor_kobo, discount_percent_of_markup, cashback_percent_of_markup, updated_at")
@@ -223,12 +223,16 @@ serve(async (req) => {
     const maxPriceKobo = Math.round(Number(body.max_price_kobo));
     const markupType = String(body.markup_type || "");
     const markupValue = Math.round(Number(body.markup_value));
+    const minMarkupKobo = Math.round(Number(body.min_markup_kobo));
+    const minNetMarginKobo = Math.round(Number(body.min_net_margin_kobo));
     if (
       (bracketId !== null && !Number.isFinite(bracketId)) ||
       !Number.isFinite(minPriceKobo) || minPriceKobo < 0 ||
       !Number.isFinite(maxPriceKobo) || maxPriceKobo <= minPriceKobo ||
       !["flat", "percent"].includes(markupType) ||
-      !Number.isFinite(markupValue) || markupValue <= 0
+      !Number.isFinite(markupValue) || markupValue <= 0 ||
+      !Number.isFinite(minMarkupKobo) || minMarkupKobo < 0 ||
+      !Number.isFinite(minNetMarginKobo) || minNetMarginKobo < 0 || minNetMarginKobo > minMarkupKobo
     ) {
       return json({ error: "Enter a valid bracket" }, 400);
     }
@@ -237,6 +241,7 @@ serve(async (req) => {
       p_admin_user_id: admin.userId, p_bracket_id: bracketId,
       p_min_price_kobo: minPriceKobo, p_max_price_kobo: maxPriceKobo,
       p_markup_type: markupType, p_markup_value: markupValue,
+      p_min_markup_kobo: minMarkupKobo, p_min_net_margin_kobo: minNetMarginKobo,
     });
     if (error) {
       const message = error.message?.includes("data_markup_brackets_no_overlap")
@@ -249,11 +254,11 @@ serve(async (req) => {
 
   if (target === "data_pricing_engine_config") {
     const enabled = body.enabled !== false;
-    const valueDensityEnabled = body.value_density_enabled !== false;
+    const valueDensityEnabled = false;
     const maxAdjustPercent = Number(body.value_density_max_adjust_percent);
     const priceWindowPercent = Number(body.value_density_price_window_percent);
     const minMarkupFloorKobo = Math.round(Number(body.min_markup_floor_kobo));
-    const discountPercentOfMarkup = Number(body.discount_percent_of_markup);
+    const discountPercentOfMarkup = 0;
     const cashbackPercentOfMarkup = Number(body.cashback_percent_of_markup);
     if (
       !Number.isFinite(maxAdjustPercent) || maxAdjustPercent < 0 || maxAdjustPercent > 100 ||

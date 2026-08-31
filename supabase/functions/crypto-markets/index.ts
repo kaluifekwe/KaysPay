@@ -4,7 +4,7 @@ import { adminClient, enforceRateLimit, getAuthUser } from "../_shared/auth.ts";
 import { getAllMarketTickers, isQuidaxConfigured } from "../_shared/quidax-client.ts";
 import { SUPPORTED_SWAP_ASSETS } from "../_shared/crypto-assets.ts";
 
-// Read-only live prices for the Buy coin picker â€” one call to Quidax's
+// Read-only live prices for the Buy coin picker â€?one call to Quidax's
 // "list market tickers" endpoint covers every market, so this picks out the
 // curated coin list's own <code>ngn pair instead of a per-coin round trip.
 // Never used to charge anyone: crypto-buy re-derives its own price
@@ -12,7 +12,7 @@ import { SUPPORTED_SWAP_ASSETS } from "../_shared/crypto-assets.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -23,7 +23,7 @@ serve(async (req: Request) => {
   const user = await getAuthUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
 
-  // Every call fans out to the exchange's full ticker list â€” the most
+  // Every call fans out to the exchange's full ticker list â€?the most
   // expensive of the read endpoints, so it gets the same 30/min ceiling.
   const rate = await enforceRateLimit(adminClient(), "crypto_markets", user.id, 30, 60, user.id);
   if (!rate.allowed) {
@@ -49,7 +49,7 @@ serve(async (req: Request) => {
       // Prefer a direct <coin>ngn market where Quidax lists one (most
       // majors). Several coins here (confirmed against Quidax's own
       // "Supported cryptocurrencies" table) only quote against usdt, not
-      // ngn â€” SOL, DOGE, ADA â€” so those fall back to a cross rate via the
+      // ngn â€?SOL, DOGE, ADA â€?so those fall back to a cross rate via the
       // live USDT/NGN price instead of being silently dropped.
       const direct = tickers[`${coin.quidaxCode}ngn`];
       if (direct) {
@@ -61,7 +61,7 @@ serve(async (req: Request) => {
           price_ngn: direct.last,
           change_24h_pct: changePct != null && Number.isFinite(changePct) ? Math.round(changePct * 100) / 100 : null,
           // Real reference points from today's order book, in the same NGN
-          // scale as price_ngn â€” not a tick history (Quidax's ticker doesn't
+          // scale as price_ngn â€?not a tick history (Quidax's ticker doesn't
           // offer one), just enough to shape an honest sparkline rather than
           // a flat line or fabricated data.
           open_ngn: direct.open,
@@ -74,8 +74,8 @@ serve(async (req: Request) => {
       if (!viaUsdt || !usdtNgn) return null;
       const priceNgn = coin.quidaxCode === "usdt" ? usdtNgn.last : viaUsdt.last * usdtNgn.last;
       // The coin's own USDT-quoted change% is a close enough proxy for its
-      // NGN change â€” USDT/NGN itself moves far less over 24h than most
-      // altcoins do â€” rather than fabricating a number with no real source.
+      // NGN change â€?USDT/NGN itself moves far less over 24h than most
+      // altcoins do â€?rather than fabricating a number with no real source.
       const changePct = viaUsdt.open ? ((viaUsdt.last - viaUsdt.open) / viaUsdt.open) * 100 : null;
       const toNgn = coin.quidaxCode === "usdt" ? 1 : usdtNgn.last;
       return {
@@ -93,7 +93,7 @@ serve(async (req: Request) => {
     return json({
       success: true,
       coins,
-      // Kept separate â€” the Buy amount is entered in USDT, so the app needs
+      // Kept separate â€?the Buy amount is entered in USDT, so the app needs
       // this to convert the customer's budget into Naira regardless of
       // which coin they picked.
       usdt_ngn_rate: usdtNgn?.last ?? null,

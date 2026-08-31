@@ -4,7 +4,7 @@ import { adminClient, enforceRateLimit, getAuthUser } from "../_shared/auth.ts";
 import { isQuidaxConfigured, listBanks } from "../_shared/quidax-client.ts";
 import { redactSecrets } from "../_shared/redact.ts";
 
-// Quidax's own NG bank list (exchange API) â€” used by the crypto Buy refund
+// Quidax's own NG bank list (exchange API) â€?used by the crypto Buy refund
 // bank picker. Deliberately its own function rather than reusing
 // transfer-banks: that one lists Flutterwave's banks, a different provider
 // with a different code scheme, and a refund submitted with a mismatched
@@ -12,7 +12,7 @@ import { redactSecrets } from "../_shared/redact.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 

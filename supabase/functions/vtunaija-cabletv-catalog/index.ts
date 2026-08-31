@@ -5,8 +5,7 @@ import { callVTUNaija } from "../_shared/vtunaija-client.ts";
 
 const PROVIDERS = ["gotv", "dstv", "startimes"] as const;
 
-// VTUnaija's catalog uses uppercase names; SHOWMAX is deliberately excluded â€”
-// not a supported TVServiceProvider in this app.
+// VTUnaija's catalog uses uppercase names; SHOWMAX is deliberately excluded â€?// not a supported TVServiceProvider in this app.
 const PROVIDER_NAME_MAP: Record<string, typeof PROVIDERS[number]> = {
   GOTV: "gotv",
   DSTV: "dstv",
@@ -22,7 +21,7 @@ class CatalogSyncError extends Error {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "private, max-age=60" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json", "Cache-Control": "private, max-age=60" },
   });
 }
 
@@ -47,10 +46,10 @@ async function fetchCatalog() {
 
   // A single malformed plan must never abort the WHOLE sync (the exact bug
   // that froze vtunaija-data-catalog's sync silently forever, confirmed live
-  // 2026-08-03) â€” skip just that one row and keep going.
+  // 2026-08-03) â€?skip just that one row and keep going.
   for (const raw of payload.cabletvplans as Record<string, unknown>[]) {
     const provider = PROVIDER_NAME_MAP[String(raw.the_cabletv_name).toUpperCase()];
-    if (!provider) continue; // SHOWMAX or anything unsupported â€” not an error
+    if (!provider) continue; // SHOWMAX or anything unsupported â€?not an error
 
     const planId = String(raw.cabletv_plan_id ?? "");
     const priceNaira = Number(raw.price_for_premiumuser);
@@ -181,7 +180,7 @@ serve(async (req: Request) => {
     }
   }
 
-  // Admin-settable per-bouquet price (see migration 114) â€” same lookup
+  // Admin-settable per-bouquet price (see migration 114) â€?same lookup
   // vtu-purchase uses at charge time, so the quote and the actual charge
   // always agree.
   const { data: overrides } = await supabase

@@ -36,7 +36,7 @@ function recordsFromFlutterwave(response: any): any[] {
 async function reconcileProvider(db: ReturnType<typeof adminClient>, provider: FundingProvider) {
   const state = await loadWindow(db, provider);
   let page = Math.max(1, Number(state.next_page || 1));
-  let pages = 0, seen = 0, credited = 0, duplicate = 0, unmatched = 0;
+  let pages = 0, seen = 0, credited = 0, duplicate = 0, held = 0, unmatched = 0;
   let finished = false;
   try {
     while (pages < MAX_PAGES_PER_RUN && !finished) {
@@ -63,6 +63,7 @@ async function reconcileProvider(db: ReturnType<typeof adminClient>, provider: F
         const result = await processFundingCandidate(db, candidate);
         if (result.outcome === "credited") credited++;
         else if (result.outcome === "duplicate") duplicate++;
+        else if (result.outcome === "held") held++;
         else if (result.outcome === "unmatched") unmatched++;
       }
       pages++; page++; finished = !hasMore;
@@ -77,11 +78,11 @@ async function reconcileProvider(db: ReturnType<typeof adminClient>, provider: F
     if (finished) {
       await db.from("funding_reconciliation_state").update({ last_success_at: state.window_to, window_from: null, window_to: null, next_page: 1, last_run_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() }).eq("provider", provider);
     }
-    return { provider, pages, seen, credited, duplicate, unmatched, finished };
+    return { provider, pages, seen, credited, duplicate, held, unmatched, finished };
   } catch (error) {
     await db.from("funding_reconciliation_state").update({ last_run_at: new Date().toISOString(), last_error: String((error as Error)?.message || "RECONCILIATION_FAILED").slice(0, 200), updated_at: new Date().toISOString() }).eq("provider", provider);
     console.error(`${provider} funding reconciliation failed:`, redactSecrets(error));
-    return { provider, pages, seen, credited, duplicate, unmatched, finished: false, error: true };
+    return { provider, pages, seen, credited, duplicate, held, unmatched, finished: false, error: true };
   }
 }
 
@@ -89,9 +90,33 @@ serve(async (req: Request) => {
   if (!verifyCronSecret(req)) return json({ error: "Unauthorized" }, 401);
   const db = adminClient();
   const result = await withJobLock(db, "funding-reconcile", async () => {
-    const paystack = await reconcileProvider(db, "paystack");
-    const flutterwave = await reconcileProvider(db, "flutterwave");
-    return { checked: true, providers: [paystack, flutterwave] };
+    // Do not poll provider transaction lists on a quiet system. Webhooks
+    // create funding_events first; reconciliation is now a targeted recovery
+    // path for records that could not be credited normally, not continuous
+    // provider surveillance. Scope the sweep per provider so an unresolved
+    // Paystack event never causes an unnecessary Flutterwave call (or vice
+    // versa).
+    const unresolvedStatuses = ["received", "unmatched", "error"];
+    const [paystackCheck, flutterwaveCheck] = await Promise.all([
+      db.from("funding_events").select("id", { count: "exact", head: true })
+        .eq("provider", "paystack").in("status", unresolvedStatuses),
+      db.from("funding_events").select("id", { count: "exact", head: true })
+        .eq("provider", "flutterwave").in("status", unresolvedStatuses),
+    ]);
+    if (paystackCheck.error) throw paystackCheck.error;
+    if (flutterwaveCheck.error) throw flutterwaveCheck.error;
+
+    const providers = new Set<FundingProvider>();
+    if ((paystackCheck.count ?? 0) > 0) providers.add("paystack");
+    if ((flutterwaveCheck.count ?? 0) > 0) providers.add("flutterwave");
+    if (providers.size === 0) {
+      return { checked: false, skipped: true, reason: "no_unresolved_funding", providers: [] };
+    }
+
+    const results = [];
+    if (providers.has("paystack")) results.push(await reconcileProvider(db, "paystack"));
+    if (providers.has("flutterwave")) results.push(await reconcileProvider(db, "flutterwave"));
+    return { checked: true, skipped: false, providers: results };
   });
   return json(result);
 });

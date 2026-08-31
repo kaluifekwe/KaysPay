@@ -22,25 +22,24 @@ import {
 import { redactSecrets } from "../_shared/redact.ts";
 
 // Transfer: sends real NGN from the customer's KaysPay wallet to an
-// external bank account. The FIRST outbound-money feature in this app â€”
-// follows vtu-purchase's exact discipline (debit before calling the
+// external bank account. The FIRST outbound-money feature in this app â€?// follows vtu-purchase's exact discipline (debit before calling the
 // provider, fully awaited, never backgrounded; idempotency short-circuit
 // BEFORE the PIN token is spent; ambiguous outcomes stay pending for the
 // webhook/reconcile sweep to settle, never auto-refunded).
 //
 // Flutterwave's /direct-transfers only ever returns "accepted", never
-// "settled" â€” real settlement always arrives later via the
+// "settled" â€?real settlement always arrives later via the
 // transfer.disburse webhook (see flutterwave-transfer-webhook), so a
 // successful call here still leaves the transaction pending. There is no
 // synchronous-success path for this feature, unlike VTU.
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
-// MUST stay strictly alphanumeric â€” this value is sent to Flutterwave as
+// MUST stay strictly alphanumeric â€?this value is sent to Flutterwave as
 // the transfer `reference`, and Flutterwave rejects anything containing
 // underscores/dashes with "reference: must be an alphanumeric string".
 // (crypto.randomUUID().slice(0, 8) is the leading hex block, before the
@@ -50,7 +49,7 @@ function newRequestId() {
 }
 
 // Flutterwave's top-level error.message is often a generic "Request is not
-// valid" â€” the actually useful reason is in error.validation_errors. Same
+// valid" â€?the actually useful reason is in error.validation_errors. Same
 // helper already used in create-virtual-account/index.ts.
 function flwErrorMessage(data: any, fallback: string): string {
   const details = data?.error?.validation_errors
@@ -59,8 +58,7 @@ function flwErrorMessage(data: any, fallback: string): string {
   return details || data?.error?.message || data?.message || fallback;
 }
 
-// Flutterwave and Paystack use different, incompatible bank code schemes â€”
-// this maps a bank by NAME instead of trusting the Flutterwave code carries
+// Flutterwave and Paystack use different, incompatible bank code schemes â€?// this maps a bank by NAME instead of trusting the Flutterwave code carries
 // over. Strips common suffixes ("plc", "bank", "nigeria", "limited") that
 // vary between the two providers' listings for the same institution.
 function normalizeBankName(name: string): string {
@@ -77,7 +75,7 @@ async function findPaystackBankCode(bankName: string): Promise<string | null> {
   if (!target) return null;
   const exact = banks.find((b) => normalizeBankName(b.name) === target);
   if (exact) return exact.code;
-  // Fallback to a substring match (e.g. "PalmPay" vs "PalmPay MFB") â€” still
+  // Fallback to a substring match (e.g. "PalmPay" vs "PalmPay MFB") â€?still
   // backed by the account-name comparison after resolve, so an imprecise
   // match here can't result in money going to the wrong place.
   const partial = banks.find((b) => normalizeBankName(b.name).includes(target) || target.includes(normalizeBankName(b.name)));
@@ -150,13 +148,12 @@ serve(async (req: Request) => {
   // trusting it verbatim: Flutterwave rejects a reference containing
   // underscores/dashes outright, and older app builds (pre-OTA) still mint
   // keys in the old `transfer_<ts>_<rand>` shape. Stripping is safe for
-  // idempotency â€” it's a deterministic mapping, so a genuine retry of the
+  // idempotency â€?it's a deterministic mapping, so a genuine retry of the
   // same request still collapses onto the same key.
   const rawRequestId = String(body.idempotency_key || "").replace(/[^a-zA-Z0-9]/g, "");
   const requestId = rawRequestId || newRequestId();
 
-  // Idempotency short-circuit BEFORE the PIN/biometric token is spent â€”
-  // same discipline as vtu-purchase: a retry of an already-resolved (or
+  // Idempotency short-circuit BEFORE the PIN/biometric token is spent â€?  // same discipline as vtu-purchase: a retry of an already-resolved (or
   // still in-flight) request costs nothing.
   const { data: existingTx } = await supabase
     .from("transactions")
@@ -179,7 +176,7 @@ serve(async (req: Request) => {
     });
   }
 
-  // Never trust a client-supplied recipient name â€” re-resolve server-side
+  // Never trust a client-supplied recipient name â€?re-resolve server-side
   // right before spending anything, so what we send to and what the
   // customer confirmed can't have silently drifted apart.
   let recipientName: string;
@@ -228,7 +225,7 @@ serve(async (req: Request) => {
     if (code.includes("WALLET_NOT_FOUND")) {
       return json({ success: false, error: "We couldn't find your wallet. Please contact support." });
     }
-    // Genuinely unexpected â€” surface the redacted reason instead of a blind
+    // Genuinely unexpected â€?surface the redacted reason instead of a blind
     // "try again" so this class of bug (a real SQL/config issue, not a
     // business-rule rejection) doesn't have to be re-diagnosed from logs
     // alone, same fix already applied to crypto-buy.
@@ -245,10 +242,10 @@ serve(async (req: Request) => {
     }, requestId);
 
     if (transferRes.status < 400 && transferRes.data?.status === "success" && transferRes.data?.data?.id) {
-      // Accepted, not yet settled â€” transfer.disburse (matched on this same
+      // Accepted, not yet settled â€?transfer.disburse (matched on this same
       // idempotency_key, which we sent as Flutterwave's own `reference`)
       // is what actually completes it. The transfer's own `id` is stored
-      // for transfer-reconcile, which has to look this up by id â€” GET
+      // for transfer-reconcile, which has to look this up by id â€?GET
       // /transfers has no filter-by-reference (confirmed against
       // Flutterwave's own v4 docs).
       const { data: currentTxMeta } = await supabase.from("transactions").select("metadata").eq("id", txId).maybeSingle();
@@ -269,7 +266,7 @@ serve(async (req: Request) => {
     // already verified (via resolveFlutterwaveAccount, before any money
     // moved), so this is almost always something on Flutterwave's own side
     // (balance, a dashboard setting, a transient issue) rather than a bad
-    // recipient â€” worth trying the same transfer through Paystack before
+    // recipient â€?worth trying the same transfer through Paystack before
     // giving up and refunding.
     const flwRejectReason = flwErrorMessage(transferRes.data, "provider_rejected");
     console.error("transfer-send: Flutterwave rejected the transfer:", redactSecrets(JSON.stringify({ status: transferRes.status, message: flwRejectReason })));
@@ -296,7 +293,7 @@ serve(async (req: Request) => {
               });
               const sendStatus = String(sendRes.data?.data?.status || "");
               if (sendRes.status < 400 && sendRes.data?.status === true && (sendStatus === "success" || sendStatus === "pending")) {
-                // Accepted, not yet settled â€” paystack-webhook's
+                // Accepted, not yet settled â€?paystack-webhook's
                 // transfer.success/failed (matched on this same reference)
                 // is what actually completes it, same pattern as Flutterwave.
                 const { data: currentTx } = await supabase.from("transactions").select("metadata").eq("id", txId).maybeSingle();
@@ -317,7 +314,7 @@ serve(async (req: Request) => {
               console.error("transfer-send: Paystack recipient creation failed during fallback:", redactSecrets(JSON.stringify({ status: recipientRes.status, message: paystackErrorMessage(recipientRes.data, "recipient_failed") })));
             }
           } else {
-            console.error("transfer-send: Paystack fallback aborted â€” account name mismatch or resolve failed", redactSecrets(JSON.stringify({ resolvedName, expected: recipientName })));
+            console.error("transfer-send: Paystack fallback aborted â€?account name mismatch or resolve failed", redactSecrets(JSON.stringify({ resolvedName, expected: recipientName })));
           }
         }
       } catch (fallbackError) {
@@ -325,12 +322,12 @@ serve(async (req: Request) => {
       }
     }
 
-    // Both providers failed (or Paystack wasn't usable for this bank) â€” no
+    // Both providers failed (or Paystack wasn't usable for this bank) â€?no
     // money left KaysPay either way, safe to refund.
     await confirmServiceRefund(supabase, txId, flwRejectReason, "automatic");
     return json({ success: false, error: `The bank rejected this transfer: ${redactSecrets(flwRejectReason)}. You were not charged.` });
   } catch (e) {
-    // Network/timeout/parse error â€” genuinely ambiguous, the request may
+    // Network/timeout/parse error â€?genuinely ambiguous, the request may
     // have reached Flutterwave and been actioned with only the response
     // lost. Hold pending; the webhook or a future reconcile sweep settles it.
     console.error("transfer-send: provider call failed, leaving pending:", redactSecrets(e));

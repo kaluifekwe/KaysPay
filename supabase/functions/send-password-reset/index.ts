@@ -12,7 +12,7 @@ import { passwordResetEmail } from "../_shared/email-template.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -23,7 +23,7 @@ function generateCode(): string {
 }
 
 // Generic reply used for EVERY outcome (unknown email, rate-limited, sent).
-// Never reveal whether an account exists for the address â€” that would turn
+// Never reveal whether an account exists for the address â€?that would turn
 // this endpoint into an email-enumeration oracle.
 const GENERIC = {
   success: true,
@@ -33,7 +33,7 @@ const GENERIC = {
 
 // Unauthenticated: a user who forgot their password has no session. Called
 // with the app's anon key (satisfies verify_jwt). Identity is the email in
-// the body, verified only later by the reset code â€” never trusted here.
+// the body, verified only later by the reset code â€?never trusted here.
 serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
@@ -79,7 +79,7 @@ serve(async (req: Request) => {
   );
   // On a genuine server error, fail closed but generically.
   if (lookupError) return json(GENERIC);
-  // No account for this email â€” return the same generic success, send nothing.
+  // No account for this email â€?return the same generic success, send nothing.
   if (!userId) return json(GENERIC);
 
   const code = generateCode();

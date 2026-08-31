@@ -12,7 +12,7 @@ import { redactSecrets } from "../_shared/redact.ts";
 // Read-only pre-payment check: confirms a meter number resolves to a real
 // customer BEFORE any money moves, so a typo'd meter is caught before
 // payment rather than after (see ElectricityPayScreen.tsx). Never debits,
-// never touches transactions/wallet â€” a plain lookup against VTUnaija's own
+// never touches transactions/wallet â€?a plain lookup against VTUnaija's own
 // /billpayment/verify/ endpoint, gated behind the same DISCO resolution
 // vtu-purchase's electricity case uses (resolveVtunaijaDiscoId), so a meter
 // verified here always resolves to the identical disco_name code at
@@ -20,7 +20,7 @@ import { redactSecrets } from "../_shared/redact.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -33,7 +33,7 @@ serve(async (req: Request) => {
 
   const supabase = adminClient();
   // Every call reaches VTUnaija's live paid endpoint, and this route had no
-  // cap at all â€” a signed-in user (or a scripted client) could call it in an
+  // cap at all â€?a signed-in user (or a scripted client) could call it in an
   // unbounded loop. verify-tv-smartcard guards the identical pattern at 10
   // per 5 minutes; ElectricityPayScreen verifies on the same 900ms debounce
   // TV already uses at this limit, so normal typing stays well under it.
@@ -97,7 +97,7 @@ serve(async (req: Request) => {
     if (saveError) console.error("Could not save verified electricity account:", saveError.code);
     return json({ success: true, customer_name: customerName, customer_address: customerAddress });
   } catch (e) {
-    // Network-level failure (timeout, DNS, etc.) â€” ambiguous, not proof the
+    // Network-level failure (timeout, DNS, etc.) â€?ambiguous, not proof the
     // meter is wrong. Same "double-check before proceeding" message as an
     // explicit non-match, since either way we can't confirm the meter here.
     console.error("verify-electricity-meter failed:", redactSecrets(e));

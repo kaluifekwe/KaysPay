@@ -14,13 +14,13 @@ import { profileChangedNoticeEmail } from "../_shared/email-template.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
 // Step 2: verifies the code emailed by request-profile-change and, only on
 // success, applies the pending change and alerts the (old) email that it
-// happened. The code is the sole remaining gate here â€” the PIN step-up
+// happened. The code is the sole remaining gate here â€?the PIN step-up
 // already happened in step 1.
 serve(async (req: Request) => {
   const cors = handleCors(req);
@@ -79,7 +79,7 @@ serve(async (req: Request) => {
   const oldEmail = user.email;
 
   if (field === "email") {
-    // email_confirm: true is required here â€” without it, Supabase Admin API
+    // email_confirm: true is required here â€?without it, Supabase Admin API
     // only STAGES the new address (auth.users.email_change) and waits for
     // its OWN separate confirmation link, which this app never sends (we
     // use our own OTP instead). Omitting this flag would silently leave

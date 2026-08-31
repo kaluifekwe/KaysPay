@@ -1,17 +1,16 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { adminClient, enforceRateLimit, getAuthUser, isDeviceSessionAllowed, readJsonBody, RequestBodyError } from "../_shared/auth.ts";
+import { adminClient, enforceRateLimit, getAuthUser, isDeviceSessionAllowed, isServiceEnabled, readJsonBody, RequestBodyError } from "../_shared/auth.ts";
 import { isFlutterwaveConfigured, resolveFlutterwaveAccount } from "../_shared/flutterwave-client.ts";
 import { redactSecrets } from "../_shared/redact.ts";
 
 // Resolves a bank account number to its registered holder name BEFORE a
 // transfer, so the customer can confirm they're sending to the right person
-// instead of trusting a typed-in digit string. Rate-limited on its own â€”
-// this is a real account-number-to-name enumeration surface, not just UX.
+// instead of trusting a typed-in digit string. Rate-limited on its own â€?// this is a real account-number-to-name enumeration surface, not just UX.
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -35,6 +34,10 @@ serve(async (req: Request) => {
   }
 
   const supabase = adminClient();
+
+  if (!(await isServiceEnabled(supabase, "transfer"))) {
+    return json({ success: false, error: "Transfers are temporarily unavailable. Please try again later." }, 503);
+  }
 
   if (!(await isDeviceSessionAllowed(req, supabase, user.id))) {
     return json({ error: "This device session has been revoked. Please log in again." }, 401);
