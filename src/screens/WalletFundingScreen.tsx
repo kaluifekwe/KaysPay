@@ -20,11 +20,19 @@ import { virtualAccountService, VirtualAccount, VirtualAccountProvider } from '.
 import { kycService } from '../services/kyc.service';
 import ProviderFundingBlock from '../components/ProviderFundingBlock';
 import { supabase } from '../lib/supabase';
+import { storageHelpers, StorageKeys } from '../lib/mmkv';
 import { useCachedData } from '../hooks/useCachedData';
 import { Ionicons } from '@expo/vector-icons';
 import { analytics } from '../services/analytics.service';
+import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 
 const QUICK_AMOUNTS = [500, 1000, 2000, 5000, 10000, 20000];
+
+// How recently someone must have opened the Crypto screen for this screen to
+// assume they came here meaning to fund up for a crypto purchase. Long enough
+// to cover reading the Buy screen and navigating back via Home, short enough
+// that a later, unrelated top-up doesn't inherit the nudge.
+const CRYPTO_INTENT_WINDOW_MS = 10 * 60 * 1000;
 
 // Bank-transfer funding runs on Flutterwave Fixed Virtual Accounts, offered
 // alongside Paystack. Re-enabled 2026-07-26 after fixing the auth blocker
@@ -38,6 +46,7 @@ const BANK_TRANSFER_FUNDING_ENABLED = true;
 const PAYSTACK_FUNDING_ENABLED = true;
 
 const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+  useSensitiveScreenProtection();
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
@@ -68,6 +77,17 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   // Re-checked on every focus so returning from KYC unlocks this immediately.
   const [kycVerified, setKycVerified] = useState<boolean | null>(null);
   const [verifiedNin, setVerifiedNin] = useState<string | undefined>();
+  // Crypto is paid by direct bank transfer, never from this wallet — but
+  // people still come here first expecting to fund up for it. Only nudge
+  // someone who was actually just on the Crypto screen, so the majority
+  // topping up for airtime/data never see a crypto message at all.
+  const [fromCrypto, setFromCrypto] = useState(false);
+  useEffect(() => {
+    void storageHelpers.getNumber(StorageKeys.CRYPTO_SCREEN_LAST_VISIT).then((lastVisit) => {
+      if (!lastVisit) return;
+      setFromCrypto(Date.now() - lastVisit < CRYPTO_INTENT_WINDOW_MS);
+    });
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -270,6 +290,25 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               )}
             </TouchableOpacity>
 
+            <Text style={styles.walletPurposeHint}>
+              For airtime, data, bills and transfers. Crypto is paid by direct bank transfer.
+            </Text>
+
+            {fromCrypto && (
+              <View style={styles.cryptoNudge}>
+                <Ionicons name="information-circle-outline" size={18} color={theme.gold} style={styles.cryptoNudgeIcon} />
+                <View style={styles.cryptoNudgeCopy}>
+                  <Text style={styles.cryptoNudgeText}>
+                    Just here for crypto? You don't need to fund your wallet — crypto is paid by direct
+                    bank transfer.
+                  </Text>
+                  <TouchableOpacity onPress={() => navigation.navigate('Crypto')} activeOpacity={0.7}>
+                    <Text style={styles.cryptoNudgeLink}>Back to Crypto →</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
             {BANK_TRANSFER_FUNDING_ENABLED && (
               <>
                 <Text style={styles.sectionTitle}>Fund by Bank Transfer</Text>
@@ -426,6 +465,34 @@ function createStyles(theme: AppTheme) {
     ...Typography.SECTION_HEADING,
     color: theme.ink,
     marginBottom: Spacing.M,
+  },
+  walletPurposeHint: {
+    ...Typography.CAPTION,
+    color: theme.inkMuted,
+    marginTop: Spacing.S,
+    marginBottom: Spacing.L,
+    lineHeight: 17,
+  },
+  cryptoNudge: {
+    flexDirection: 'row',
+    gap: Spacing.S,
+    backgroundColor: `${theme.gold}1A`,
+    borderRadius: Spacing.CARD_RADIUS,
+    padding: Spacing.M,
+    marginBottom: Spacing.L,
+  },
+  cryptoNudgeIcon: { marginTop: 1 },
+  cryptoNudgeCopy: { flex: 1 },
+  cryptoNudgeText: {
+    ...Typography.CAPTION,
+    color: theme.ink,
+    lineHeight: 18,
+  },
+  cryptoNudgeLink: {
+    ...Typography.CAPTION,
+    color: theme.gold,
+    fontWeight: '700',
+    marginTop: Spacing.S,
   },
   cbnNotice: {
     ...Typography.CAPTION,

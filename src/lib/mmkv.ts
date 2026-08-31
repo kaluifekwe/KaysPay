@@ -38,6 +38,10 @@ export const StorageKeys = {
   // Display-only: every actual Buy/Sell/Withdraw re-checks the live balance
   // server-side regardless of what this cache holds.
   CRYPTO_SCREEN_CACHE: 'crypto_screen_cache',
+  // When the Crypto screen was last opened. Used only to decide whether to
+  // show Fund Wallet's "you don't need to fund for crypto" nudge, so people
+  // topping up for airtime/data never see a crypto message.
+  CRYPTO_SCREEN_LAST_VISIT: 'crypto_screen_last_visit',
 };
 
 // Helper functions using SecureStore (max 2KB per item)
