@@ -25,7 +25,7 @@ import { redactSecrets } from "../_shared/redact.ts";
 
 // Buy (Phase 3): a REAL purchase. Quidax issues a single-use bank account,
 // the customer transfers Naira to it from their own bank, and Quidax
-// delivers USDT into the customer's own sub-account — the same balance Sell
+// delivers USDT into the customer's own sub-account �?the same balance Sell
 // and Withdraw spend from. KaysPay never holds the Naira and never fronts
 // liquidity, which is why this does not debit the in-app wallet.
 //
@@ -34,7 +34,7 @@ import { redactSecrets } from "../_shared/redact.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
@@ -43,7 +43,7 @@ function json(body: unknown, status = 200) {
 const DELIVERY_NETWORK = "trc20";
 
 // Same format rules as crypto.service.ts's client-side check and
-// crypto-withdraw's server-side check — never trust the client's own
+// crypto-withdraw's server-side check �?never trust the client's own
 // validation for what's ultimately an irreversible on-chain send. A wrong
 // address here is WORSE than a wrong withdrawal address: there is no
 // KaysPay-side balance to recover it from, since Quidax delivers straight
@@ -116,8 +116,8 @@ serve(async (req: Request) => {
   // Optional: send the purchased USDT straight to an external wallet instead
   // of the customer's own KaysPay crypto account. Validated the same way a
   // withdrawal address is, and rejected outright rather than silently
-  // falling back to the KaysPay account — a customer who typed an address
-  // must never have it quietly ignored. Only offered for USDT — every other
+  // falling back to the KaysPay account �?a customer who typed an address
+  // must never have it quietly ignored. Only offered for USDT �?every other
   // supported coin needs a second leg (a swap, settled after this request
   // returns) before the coin exists in the customer's account at all, so
   // there's nothing to send externally yet. v1 keeps that as a manual
@@ -143,7 +143,7 @@ serve(async (req: Request) => {
     external = { network: externalNetworkKey, quidaxNetwork, address: externalAddress };
   }
 
-  // Live market price — also converts a USD-denominated request from the
+  // Live market price �?also converts a USD-denominated request from the
   // existing screen into the Naira amount Quidax actually charges in.
   let askRate: number;
   try {
@@ -179,7 +179,7 @@ serve(async (req: Request) => {
     || `kspbuy_${user.id.replace(/-/g, "").slice(0, 12)}_${Date.now()}`;
 
   // For a swap-target coin, this leg always delivers USDT (Ramp only ever
-  // moves NGN<->USDT) — the coin itself doesn't exist yet, it's produced by
+  // moves NGN<->USDT) �?the coin itself doesn't exist yet, it's produced by
   // the swap leg once this USDT lands (see crypto-quidax-webhook). The
   // number shown here is therefore a live estimate, re-priced for real at
   // swap time, same "estimate now, settle for real later" shape as the NGN
@@ -199,8 +199,8 @@ serve(async (req: Request) => {
   // say which of the two actually refused us.
   let step = "deposit_address";
   try {
-    // Delivery target: an external wallet the customer supplied, or — by
-    // default, and always for a swap-target coin — their own KaysPay crypto
+    // Delivery target: an external wallet the customer supplied, or �?by
+    // default, and always for a swap-target coin �?their own KaysPay crypto
     // account, so the purchase lands in the same balance Sell and Withdraw
     // already read.
     const deliveryNetwork = external?.quidaxNetwork ?? DELIVERY_NETWORK;
@@ -265,7 +265,7 @@ serve(async (req: Request) => {
       success: true,
       transaction_id: txId,
       asset,
-      // For a swap-target coin this is a live estimate only — the real
+      // For a swap-target coin this is a live estimate only �?the real
       // swap (and its own re-quote) runs after this USDT settles.
       estimated_crypto: swapAsset ? estimatedSwapCoin : initiated.toAmount,
       pending_swap: !!swapAsset,
@@ -287,7 +287,7 @@ serve(async (req: Request) => {
     });
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
-    // Which API refused us, and with what status — the message alone reads
+    // Which API refused us, and with what status �?the message alone reads
     // almost identically across Quidax's two products.
     const api = e instanceof QuidaxRampError ? "ramp" : e instanceof QuidaxError ? "exchange" : "other";
     const status = (e as { status?: number })?.status ?? "none";
@@ -297,7 +297,7 @@ serve(async (req: Request) => {
     );
     // Quidax's own error message (already just a short human-readable reason
     // from their API response body, never raw request/response internals) is
-    // safe and far more useful to show than a blanket "try again" — it's the
+    // safe and far more useful to show than a blanket "try again" �?it's the
     // difference between the customer knowing to fix their KYC tier vs. just
     // retrying the same failing request forever. Anything else (network
     // failure, timeout, a bug on our side) still falls back to the generic

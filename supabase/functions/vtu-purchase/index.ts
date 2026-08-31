@@ -29,6 +29,8 @@ import {
 } from "../_shared/vtu-catalog.ts";
 import {
   callVTUNaija,
+  classifyVTUNaijaFailure,
+  customerMessageForVTUNaijaFailure,
   isVtuNaijaConfigured,
   normalizeCableTVSmartcardVerification,
   normalizeElectricityMeterVerification,
@@ -42,39 +44,28 @@ import {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 
 function newRequestId() {
-  // VTU.ng caps request_id at 50 chars 鈥?this is well within that, and
+  // VTU.ng caps request_id at 50 chars �?this is well within that, and
   // doubles as our own idempotency key (one id, one meaning, everywhere).
   return `ksp_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
 }
 
 // Translates VTUnaija's own failure message into a specific, actionable
-// reason when we recognize the pattern 鈥?an allowlist with a safe generic
+// reason when we recognize the pattern �?an allowlist with a safe generic
 // fallback, NOT a pass-through of raw provider text. Some VTUnaija messages
 // aren't fit for display (e.g. the bare "failed, failed, failed. Something
 // went wrong" seen on a live purchase) and must never reach the user as-is.
-function friendlyVtunaijaFailureMessage(raw: string): string {
-  const lower = raw.toLowerCase();
-  if (lower.includes("owing") && lower.includes("airtime")) {
-    return "This plan can't be delivered if you owe airtime on this network. Clear any airtime debt first, or choose a different plan.";
-  }
-  if (lower.includes("does not exist") || lower.includes("refresh your plan")) {
-    return "This plan is temporarily unavailable. Please refresh and choose a different plan.";
-  }
-  return "Purchase failed. You were not charged.";
-}
-
 type Provider = "vtunaija";
 
 const CATALOG_STALE_MS = 30 * 60 * 1000;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const CRON_SECRET = Deno.env.get("CRON_SECRET");
 
-// A stale catalog (provider_seen_at older than 30 min 鈥?normally caused by
+// A stale catalog (provider_seen_at older than 30 min �?normally caused by
 // the 5-min sync cron missing a beat, e.g. job-lock contention or one
 // transient provider fetch failure) used to fail the purchase outright with
 // a plain "Failed" screen and no transaction created, even though the user
@@ -110,17 +101,17 @@ async function refreshVtunaijaCatalogInline(
  *
  * Provider routing (as of the VTUnaija migration, 2026-08-03):
  *   - airtime -> VTUnaija (/topup/). Moved off VTU.ng.
- *   - data -> VTUnaija (/data/, NOT /internetbundles/ 鈥?that endpoint needed
+ *   - data -> VTUnaija (/data/, NOT /internetbundles/ �?that endpoint needed
  *     an unconfirmed `account_Id` field; /data/ needs no such field and
  *     returns the identical success wording, confirmed the right one to use).
  *     Moved off VTU.ng. Catalog prices come from vtunaija_data_catalog.
  *   - electricity -> VTUnaija (/billpayment/). DISCO id resolved via
  *     vtunaija_electricity_catalog (a live-synced name lookup, not a
- *     hardcoded numeric code 鈥?see VTUNAIJA_ELECTRICITY_NAME_MAP). Moved off
+ *     hardcoded numeric code �?see VTUNAIJA_ELECTRICITY_NAME_MAP). Moved off
  *     VTUAfrica. The one-time prepaid meter token is persisted into
  *     transaction metadata on success, same as the VTUAfrica branch used to.
  *   - tv -> VTUnaija (/cablesub/). Bouquet catalog is now fully dynamic
- *     (vtunaija_cabletv_catalog), replacing the old static TV_BOUQUETS map 鈥? *     the client (TVScreen.tsx) fetches bouquets live, same pattern as data.
+ *     (vtunaija_cabletv_catalog), replacing the old static TV_BOUQUETS map �? *     the client (TVScreen.tsx) fetches bouquets live, same pattern as data.
  *     Moved off VTUAfrica.
  *   - exam_pin -> VTUnaija (/exam/), mirroring its six documented Exam IDs:
  *     WAEC, NECO, NABTEB, JAMB, WAEC Registration and NBAIS. Quantity is
@@ -128,7 +119,7 @@ async function refreshVtunaijaCatalogInline(
  *     confirmed. Both the returned PIN and serial are persisted.
  *
  * VTU.ng's and VTUAfrica's client/reconcile/catalog code stays deployed but
- * unreferenced for airtime/data/electricity/TV 鈥?fast rollback if ever
+ * unreferenced for airtime/data/electricity/TV �?fast rollback if ever
  * needed, see supabase/ROLLBACK_VTUNAIJA.md.
  */
 class PriceChangedError extends Error {
@@ -139,7 +130,7 @@ class PriceChangedError extends Error {
 
 // Trims/caps an opaque display-only string before it's persisted into
 // transaction metadata (e.g. the meter's verified customer name/address).
-// Never used for any money decision 鈥?purely for receipts/History 鈥?but
+// Never used for any money decision �?purely for receipts/History �?but
 // still capped and type-checked since it ultimately rides into HTML (the
 // PDF receipt template) and a client-controlled field must never be trusted
 // as-is.
@@ -157,10 +148,13 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
   provider: Provider;
   endpoint: string;
   providerPayload: Record<string, unknown>;
+  verificationProviderId?: string;
   availability?: { network: string; familyKey: string; planId: string };
   /** Cashback to credit once the purchase completes (data only, migration
-   * 124) — only set for an auto-priced plan, never a manual override. */
+   * 124) �?only set for an auto-priced plan, never a manual override. */
   cashbackKobo?: number;
+  /** Server-authoritative provider/catalog cost captured for profit reporting. */
+  providerCostKobo?: number;
 }> {
   const service = String(body?.service || "");
 
@@ -187,7 +181,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
           network: VTUNAIJA_NETWORK_IDS[network],
           mobile_number: phone,
           // Every documented example sends "true" regardless of the actual
-          // recipient 鈥?treated as a required constant, not computed per
+          // recipient �?treated as a required constant, not computed per
           // request. Confirm the real semantics with VTUnaija support before
           // relying on this at scale (tracked in the VTUnaija migration plan).
           Ported_number: "true",
@@ -208,7 +202,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
       const bundleQuery = () =>
         supabase
           .from("vtunaija_data_catalog")
-          .select("id, network, data_plan_id, family_key, reseller_kobo, computed_price_kobo, computed_cashback_kobo, available, provider_seen_at")
+          .select("id, network, data_plan_id, family_key, reseller_kobo, computed_price_kobo, computed_cashback_kobo, pricing_engine_version, available, provider_seen_at")
           .eq("id", bundleId)
           .eq("network", network)
           .eq("available", true)
@@ -216,14 +210,19 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
 
       let { data: bundle } = await bundleQuery();
       if (!bundle) throw "INVALID_BUNDLE";
-      if (new Date(bundle.provider_seen_at).getTime() < Date.now() - CATALOG_STALE_MS) {
+      if (new Date(bundle.provider_seen_at).getTime() < Date.now() - CATALOG_STALE_MS ||
+          Number(bundle.pricing_engine_version) !== 2 || bundle.computed_price_kobo === null) {
         const refreshed = await refreshVtunaijaCatalogInline("vtunaija-data-catalog");
         if (refreshed) ({ data: bundle } = await bundleQuery());
-        if (!bundle || new Date(bundle.provider_seen_at).getTime() < Date.now() - CATALOG_STALE_MS) {
+        if (!bundle || new Date(bundle.provider_seen_at).getTime() < Date.now() - CATALOG_STALE_MS ||
+            Number(bundle.pricing_engine_version) !== 2 || bundle.computed_price_kobo === null) {
           throw "CATALOG_STALE";
         }
       }
-      // Admin-settable per-plan price (see migration 112) — same lookup
+      if (Number(bundle.pricing_engine_version) !== 2 || bundle.computed_price_kobo === null) {
+        throw "CATALOG_STALE";
+      }
+      // Admin-settable per-plan price (see migration 112) �?same lookup
       // vtunaija-data-catalog uses to quote this plan to the client, so the
       // two always agree and the quoted_amount_kobo check below still works.
       // Resolution order (migration 122): manual override, else the
@@ -235,7 +234,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
         .eq("network", network)
         .eq("plan_id", bundle.id)
         .maybeSingle();
-      const amount = Number(priceOverride?.price_kobo ?? bundle.computed_price_kobo ?? bundle.reseller_kobo);
+      const amount = Number(priceOverride?.price_kobo ?? bundle.computed_price_kobo);
       const quotedAmount = Number(body.quoted_amount_kobo);
       if (Number.isFinite(quotedAmount) && quotedAmount > 0 && quotedAmount !== amount) {
         throw new PriceChangedError(amount);
@@ -260,16 +259,17 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
           network: VTUNAIJA_NETWORK_IDS[network],
           mobile_number: phone,
           plan: bundle.data_plan_id,
-          // Same unconfirmed-but-documented-default as airtime 鈥?see the
+          // Same unconfirmed-but-documented-default as airtime �?see the
           // Ported_number comment in the airtime case above.
           Ported_number: "true",
         },
-        // Only for an auto-priced plan (no manual override) — an override
+        // Only for an auto-priced plan (no manual override) �?an override
         // replaces the engine's price entirely, so its cashback concept
         // doesn't apply either.
         cashbackKobo: !priceOverride && bundle.computed_cashback_kobo
           ? Number(bundle.computed_cashback_kobo)
           : undefined,
+        providerCostKobo: Number(bundle.reseller_kobo),
       };
     }
 
@@ -285,14 +285,14 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
       }
 
       // Resolve the app's own DISCO id to VTUnaija's current numeric
-      // disco_name code via the live-synced lookup 鈥?same helper
+      // disco_name code via the live-synced lookup �?same helper
       // verify-electricity-meter uses, so a meter verified for a DISCO
       // always resolves to the identical code at purchase time.
       const discoId = await resolveVtunaijaDiscoId(supabase, biller);
       if (!discoId) throw "INVALID_PROVIDER";
 
       // Flat convenience fee (see migration 114) added to what the wallet is
-      // debited, on top of whatever amount the customer chose to top up —
+      // debited, on top of whatever amount the customer chose to top up �?
       // the DISCO only ever gets credited the customer's entered amount
       // (providerPayload.amount below), never the fee. Read fresh, never
       // trusted from the client, so a stale client-side quote can't be used
@@ -304,7 +304,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
         .maybeSingle();
       const feeKobo = Number(feeRow?.fee_kobo) || 0;
       const totalAmount = amount + feeKobo;
-      // Same price-drift guard as data/cable/exam — if the fee changed
+      // Same price-drift guard as data/cable/exam �?if the fee changed
       // between the customer confirming and this request landing, fail
       // closed and make them re-confirm the new total rather than silently
       // charging more than what they saw on screen.
@@ -327,6 +327,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
           MeterType: type,
           amount: amount / KOBO,
         },
+        providerCostKobo: amount,
       };
     }
 
@@ -353,7 +354,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
         }
       }
 
-      // Admin-settable per-bouquet price (see migration 114) — same lookup
+      // Admin-settable per-bouquet price (see migration 114) �?same lookup
       // vtunaija-cabletv-catalog uses to quote this bouquet to the client.
       const { data: cabletvOverride } = await supabase
         .from("vtu_cabletv_price_overrides")
@@ -380,6 +381,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
           smart_card_number: smartcard,
           cableplan: bouquet.cabletv_plan_id,
         },
+        providerCostKobo: Number(bouquet.reseller_kobo),
       };
     }
 
@@ -407,7 +409,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
           }
         }
         if (liveExam.available !== true || liveExam.requires_review === true) throw "EXAM_UNAVAILABLE";
-        // Admin-settable markup (see migration 115) — customer_kobo itself is
+        // Admin-settable markup (see migration 115) �?customer_kobo itself is
         // re-synced from the provider every 15 min with no markup applied, so
         // the override lives in its own table the sync never touches.
         const { data: examOverride } = await supabase
@@ -430,12 +432,13 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
           provider: "vtunaija",
           endpoint: "/exam/",
           providerPayload: {
-            // Sent as strings — VTUnaija's own docs show both quoted
+            // Sent as strings �?VTUnaija's own docs show both quoted
             // ("exam_name": "2", "quantity": "1") even though exam_name is
             // numeric and quantity is a number internally here.
             exam_name: String(vtunaijaExamCode),
             quantity: String(quantity),
           },
+          providerCostKobo: Number(liveExam.customer_kobo) * quantity,
         };
       }
 
@@ -450,7 +453,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
 }
 
 // Turn the internal validation codes thrown by resolvePurchase into clear,
-// user-facing sentences 鈥?the client shows this text directly, so it must
+// user-facing sentences �?the client shows this text directly, so it must
 // never be a raw code like "INVALID_PHONE".
 const VALIDATION_MESSAGES: Record<string, string> = {
   INVALID_NETWORK: "Please choose a valid network.",
@@ -481,7 +484,7 @@ serve(async (req: Request) => {
   const cors = handleCors(req);
   if (cors) return cors;
 
-  // 1. Authenticate from the JWT 鈥?never trust a client-sent user id.
+  // 1. Authenticate from the JWT �?never trust a client-sent user id.
   const user = await getAuthUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
 
@@ -526,7 +529,7 @@ serve(async (req: Request) => {
   }
 
   // 2. Require server-verified proof the PIN/biometric step-up just ran for
-  // THIS request 鈥?a valid JWT alone is not enough to move money.
+  // THIS request �?a valid JWT alone is not enough to move money.
   let plan;
   try {
     plan = await resolvePurchase(body, supabase);
@@ -536,7 +539,7 @@ serve(async (req: Request) => {
         success: false,
         code: "PRICE_CHANGED",
         current_amount: code.currentAmountKobo / KOBO,
-        error: `The price changed to 鈧?{(code.currentAmountKobo / KOBO).toLocaleString("en-NG")}. Please confirm again.`,
+        error: `The price changed to ₦${(code.currentAmountKobo / KOBO).toLocaleString("en-NG")}. Please confirm again.`,
       });
     }
     const validationCode = String(code);
@@ -545,13 +548,13 @@ serve(async (req: Request) => {
 
   const requestId = String(body.idempotency_key || newRequestId());
 
-  // Idempotency short-circuit 鈥?settle from an already-actioned request
+  // Idempotency short-circuit �?settle from an already-actioned request
   // BEFORE ever touching the PIN/biometric token. Previously the token was
   // consumed unconditionally on every call, and the idempotency check only
   // lived inside debit_for_service, called much later. That meant an
   // ordinary network retry (same idempotency key, e.g. one item in a bulk
   // send whose response got dropped) still burned a use of the shared
-  // multi-use token even though nothing new was ever going to be charged 鈥?  // enough retries in one batch could exhaust the token mid-send and force
+  // multi-use token even though nothing new was ever going to be charged �?  // enough retries in one batch could exhaust the token mid-send and force
   // a fresh PIN entry for no real reason. Checking here first means a
   // retry of an already-resolved (or already in-flight) request costs
   // nothing: no token spent, no provider call repeated.
@@ -580,7 +583,7 @@ serve(async (req: Request) => {
         error: "This purchase already failed and was refunded. Please start a new purchase.",
       });
     }
-    // Still 'pending' 鈥?genuinely ambiguous/in-flight from an earlier
+    // Still 'pending' �?genuinely ambiguous/in-flight from an earlier
     // attempt. Never resubmit the provider call for it; the reconcile
     // sweep is what settles this, same as everywhere else in this file.
     return json({
@@ -755,7 +758,7 @@ serve(async (req: Request) => {
   }
 
   // 4. Atomically debit + create the pending transaction. use_cashback is
-  // only ever a boolean toggle from the client — debit_for_service computes
+  // only ever a boolean toggle from the client �?debit_for_service computes
   // the actual amount applied from the real stored balance server-side
   // (migration 125), never trusting a client-supplied kobo figure.
   const { data: txId, error: debitError } = await supabase.rpc(
@@ -771,6 +774,7 @@ serve(async (req: Request) => {
         request: plan.providerPayload,
         provider: plan.provider,
         provider_reference: requestId.replace(/[^a-zA-Z0-9]/g, ""),
+        ...(plan.providerCostKobo !== undefined ? { provider_cost_kobo: plan.providerCostKobo, cost_source: "provider_catalog" } : {}),
       },
       p_idempotency_key: requestId,
       p_use_cashback: body.use_cashback === true,
@@ -790,9 +794,9 @@ serve(async (req: Request) => {
     return json({ success: false, error: "Could not start transaction" }, 500);
   }
 
-  // 4c. VTUnaija 鈥?airtime, data, electricity, TV, and (WAEC/NECO/NABTEB)
+  // 4c. VTUnaija �?airtime, data, electricity, TV, and (WAEC/NECO/NABTEB)
   // exam pins all route here now (JAMB and WAEC Verification/GCE stay on
-  // VTUAfrica 鈥?see the Provider-routing doc comment above). Same
+  // VTUAfrica �?see the Provider-routing doc comment above). Same
   // inline-await, never-background pattern as VTUAfrica above: the
   // EdgeRuntime.waitUntil incident (worker EarlyDropped right after
   // responding, killing an in-flight provider call and leaving a user
@@ -814,7 +818,7 @@ serve(async (req: Request) => {
         );
         if (completeError) throw completeError;
 
-        // Cashback (migration 124, stage 1 — crediting only, no redemption
+        // Cashback (migration 124, stage 1 �?crediting only, no redemption
         // yet). Best-effort and never allowed to fail the purchase itself:
         // the purchase already succeeded, cashback is a bonus on top, not a
         // condition of it. cashbackEarnedKobo is only set when credit_cashback
@@ -834,13 +838,13 @@ serve(async (req: Request) => {
         }
 
         // Electricity's success response carries a one-time prepaid meter
-        // token 鈥?never returned again after this response, so persist it
+        // token �?never returned again after this response, so persist it
         // into the transaction's own metadata (same reasoning/shape as the
         // VTUAfrica electricity branch above) so receipts/History still work.
         const electricityToken: string | undefined = result?.token ?? result?.electricitytoken;
 
         // Exam pin success carries a one-time PIN + serial. VTUnaija's docs
-        // only show a single pin/serial pair for quantity=1 鈥?the
+        // only show a single pin/serial pair for quantity=1 �?the
         // multi-quantity delimiter format is UNCONFIRMED (VTUAfrica used
         // "<=>"), so this splits defensively on known delimiters and falls
         // back to the single raw string rather than ever guessing/losing a
@@ -862,7 +866,7 @@ serve(async (req: Request) => {
 
         // Confirmed via a real quantity=1 NABTEB purchase (2026-08-12):
         // VTUnaija's live response packed BOTH the pin and serial into the
-        // `pin` field alone (comma-separated), leaving `serial` empty — the
+        // `pin` field alone (comma-separated), leaving `serial` empty �?the
         // split above then yields more values than were actually ordered.
         // Anything beyond the ordered quantity is the missing serial, not
         // an extra pin, so it never gets shown/labeled as one.
@@ -875,10 +879,10 @@ serve(async (req: Request) => {
         }
 
         // Electricity: carry the meter's verified customer name/address
-        // (checked client-side before payment 鈥?see
+        // (checked client-side before payment �?see
         // verify-electricity-meter) into the transaction's own metadata,
         // same as the token, so History can rebuild the full receipt later
-        // without re-verifying. Purely opaque display strings 鈥?never used
+        // without re-verifying. Purely opaque display strings �?never used
         // for any money decision.
         const customerName = body.service === "electricity"
           ? safeDisplayString(verifiedElectricityCustomerName)
@@ -950,7 +954,7 @@ serve(async (req: Request) => {
             .eq("status", "pending");
         }
         // No documented pending state for VTUnaija airtime, but an
-        // unrecognized/malformed response is NOT proof of failure 鈥?hold
+        // unrecognized/malformed response is NOT proof of failure �?hold
         // pending (its default state), never refund, never resubmit the
         // purchase call. vtunaija-reconcile settles it via queryTransaction.
         return json({
@@ -961,11 +965,11 @@ serve(async (req: Request) => {
         });
       }
 
-      // outcome === "failed": VTUnaija itself reports failure 鈥?no order was
+      // outcome === "failed": VTUnaija itself reports failure �?no order was
       // created, safe to refund.
       await confirmServiceRefund(supabase, txId, normalized.message || "provider_rejected", "automatic");
-      const lowerFailure = normalized.message.toLowerCase();
-      const deterministicPlanFailure = lowerFailure.includes("does not exist") || lowerFailure.includes("refresh your plan");
+      const failureCategory = classifyVTUNaijaFailure(normalized.message || "");
+      const deterministicPlanFailure = failureCategory === "plan_unavailable";
       if (
         body.service === "data" && plan.availability &&
         deterministicPlanFailure
@@ -998,23 +1002,25 @@ serve(async (req: Request) => {
             provider: "vtunaija",
             network: plan.availability.network,
             family_key: plan.availability.familyKey,
+            failure_category: failureCategory,
           },
         });
       }
       return json({
         success: false,
-        error: friendlyVtunaijaFailureMessage(normalized.message || ""),
+        code: failureCategory.toUpperCase(),
+        error: customerMessageForVTUNaijaFailure(normalized.message || ""),
       });
     } catch (e) {
       if (e instanceof VTUNaijaError) {
-        // Config error 鈥?request never reached VTUnaija, refund is safe.
+        // Config error �?request never reached VTUnaija, refund is safe.
         await confirmServiceRefund(supabase, txId, `vtunaija_config: ${e.message}`, "automatic");
         return json({
           success: false,
           error: "The provider is temporarily unavailable. You were not charged.",
         });
       }
-      // Network/timeout/parse error 鈥?genuinely ambiguous (the request may
+      // Network/timeout/parse error �?genuinely ambiguous (the request may
       // have reached VTUnaija and been actioned, with only the response
       // lost). Hold pending; vtunaija-reconcile is the backstop.
       return json({
