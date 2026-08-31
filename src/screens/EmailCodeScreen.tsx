@@ -251,6 +251,10 @@ export default function EmailCodeScreen(props: any) {
                 </Text>
               </View>
 
+              <Text style={styles.pasteHint}>
+                Copy the code from your email, then tap any box and paste — it fills all six.
+              </Text>
+
               <View style={styles.otpContainer}>
                 {code.map((digit, index) => (
                   <TextInput
@@ -261,7 +265,7 @@ export default function EmailCodeScreen(props: any) {
                     onChangeText={(text) => handleCodeChange(text, index)}
                     onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, index)}
                     keyboardType="number-pad"
-                    maxLength={1}
+                    maxLength={6}
                     autoFocus={index === 0}
                     selectTextOnFocus
                   />
@@ -360,6 +364,12 @@ function createStyles(theme: AppTheme) {
   spamHintBold: {
     color: theme.brand,
     fontWeight: '700',
+  },
+  pasteHint: {
+    fontSize: 12,
+    color: theme.inkMuted,
+    marginBottom: 16,
+    lineHeight: 17,
   },
   otpContainer: {
     flexDirection: 'row',

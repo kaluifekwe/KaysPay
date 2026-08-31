@@ -44,7 +44,26 @@ export default function OTPVerifyScreen({ navigation, route }: OTPVerifyScreenPr
   }, []);
 
   const handleOtpChange = (text: string, index: number) => {
-    const digit = text.replace(/[^0-9]/g, '').slice(-1);
+    const digits = text.replace(/[^0-9]/g, '');
+
+    // Pasting (or an OS autofill suggestion) drops the whole code into
+    // whichever box was focused — spread it across all six instead of
+    // truncating to just the last digit, so users can copy the code from
+    // their messages app instead of retyping it one digit at a time.
+    if (digits.length > 1) {
+      const newOtp = [...otp];
+      let i = index;
+      for (const d of digits) {
+        if (i > 5) break;
+        newOtp[i] = d;
+        i++;
+      }
+      setOtp(newOtp);
+      inputRefs.current[Math.min(i, 5)]?.focus();
+      return;
+    }
+
+    const digit = digits.slice(-1);
     const newOtp = [...otp];
     newOtp[index] = digit;
     setOtp(newOtp);
@@ -154,6 +173,10 @@ export default function OTPVerifyScreen({ navigation, route }: OTPVerifyScreenPr
             We sent a 6-digit code to {maskedPhone}
           </Text>
 
+          <Text style={styles.pasteHint}>
+            Copy the code from your text message, then tap any box and paste — it fills all six.
+          </Text>
+
           <View style={styles.otpContainer}>
             {otp.map((digit, index) => (
               <TextInput
@@ -167,7 +190,7 @@ export default function OTPVerifyScreen({ navigation, route }: OTPVerifyScreenPr
                 onChangeText={(text) => handleOtpChange(text, index)}
                 onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, index)}
                 keyboardType="number-pad"
-                maxLength={1}
+                maxLength={6}
                 autoFocus={index === 0}
                 selectTextOnFocus
               />
@@ -235,8 +258,14 @@ function createStyles(theme: AppTheme) {
   subtitle: {
     fontSize: 14,
     color: theme.inkMuted,
-    marginBottom: 40,
+    marginBottom: 14,
     lineHeight: 20,
+  },
+  pasteHint: {
+    fontSize: 12,
+    color: theme.inkMuted,
+    marginBottom: 26,
+    lineHeight: 17,
   },
   otpContainer: {
     flexDirection: 'row',
