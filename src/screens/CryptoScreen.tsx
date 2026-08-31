@@ -140,14 +140,37 @@ const TAB_LABELS: Record<Tab, string> = {
   withdraw: 'Withdraw',
 };
 
-function formatUsdt(n: number): string {
-  return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDT`;
+// How many decimals to show for a given coin. A stablecoin sits near 1
+// naira-equivalent per unit, so 2dp is all that carries meaning — showing
+// 15.24283 USDT reads as an unfinished number, not precision. Volatile
+// coins are worth far more per unit, so they scale with size instead: a
+// BTC amount is usually well under 0.01 and 2dp would round it to nothing.
+function cryptoDecimals(n: number, code: string): number {
+  if (code.toUpperCase() === 'USDT') return 2;
+  const magnitude = Math.abs(n);
+  if (magnitude >= 1) return 4;
+  if (magnitude >= 0.01) return 6;
+  return 8;
 }
 
-// Non-stablecoin amounts need more precision (a BTC amount is usually
-// < 0.01) than USDT's 2-6dp is built for.
+/**
+ * Formats a crypto amount for display. Always rounds DOWN, never up —
+ * this is a balance the customer may retype into Sell, and rounding 15.247
+ * up to "15.25" would show more than they hold and fail on submit.
+ */
+function formatCrypto(n: number, code: string): string {
+  const dp = cryptoDecimals(n, code);
+  const factor = 10 ** dp;
+  const floored = Math.floor((Number.isFinite(n) ? n : 0) * factor) / factor;
+  return `${floored.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })} ${code}`;
+}
+
+function formatUsdt(n: number): string {
+  return formatCrypto(n, 'USDT');
+}
+
 function formatCoin(n: number, code: string): string {
-  return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 8 })} ${code}`;
+  return formatCrypto(n, code);
 }
 
 // Not every bank in the list has a logo (the free public source only covers
@@ -705,7 +728,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     const maximum = Math.floor(result.quote.maxSell * 1_000_000) / 1_000_000;
     if (maximum < result.quote.minSell) {
       setSellQuote(result.quote);
-      setSellQuoteError(`Your balance cannot cover the minimum ${result.quote.minSell} USDT sale plus the ${result.quote.networkFee} USDT network fee.`);
+      setSellQuoteError(`Your balance cannot cover the minimum ${formatUsdt(result.quote.minSell)} sale plus the ${formatUsdt(result.quote.networkFee)} network fee.`);
       return;
     }
     setSellUsdt(String(maximum));
@@ -1653,7 +1676,9 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   onFocus={() => scrollSectionIntoView(sellSectionYRef)}
                 />
                 <View style={styles.sellBalanceRow}>
-                  <Text style={styles.hintText}>Available: {quidaxUsdtBalance?.toFixed(6) ?? '—'} USDT</Text>
+                  <Text style={styles.hintText}>
+                    Available: {quidaxUsdtBalance != null ? formatUsdt(quidaxUsdtBalance) : '—'}
+                  </Text>
                   <TouchableOpacity onPress={handleSellMax} disabled={sellQuoteLoading || quidaxUsdtBalance == null}>
                     <Text style={styles.sellMaxText}>Sell Max</Text>
                   </TouchableOpacity>
@@ -1664,14 +1689,14 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 {sellQuoteLoading && <Text style={styles.hintText}>Checking live network fee…</Text>}
                 {sellQuote && (
                   <View style={styles.sellQuoteCard}>
-                    <Text style={styles.sellQuoteText}>Amount to sell: {sellQuote.amount} USDT</Text>
-                    <Text style={styles.sellQuoteText}>TRC20 network fee: {sellQuote.networkFee} USDT</Text>
-                    <Text style={styles.sellQuoteTotal}>Total required: {sellQuote.totalRequired} USDT</Text>
+                    <Text style={styles.sellQuoteText}>Amount to sell: {formatUsdt(sellQuote.amount)}</Text>
+                    <Text style={styles.sellQuoteText}>TRC20 network fee: {formatUsdt(sellQuote.networkFee)}</Text>
+                    <Text style={styles.sellQuoteTotal}>Total required: {formatUsdt(sellQuote.totalRequired)}</Text>
                   </View>
                 )}
                 {sellQuote && !sellQuote.sufficient && (
                   <Text style={styles.errorText}>
-                    You need {sellQuote.totalRequired} USDT, but only {sellQuote.available} USDT is available.
+                    You need {formatUsdt(sellQuote.totalRequired)}, but only {formatUsdt(sellQuote.available)} is available.
                   </Text>
                 )}
                 {sellQuoteError && <Text style={styles.errorText}>{sellQuoteError}</Text>}
