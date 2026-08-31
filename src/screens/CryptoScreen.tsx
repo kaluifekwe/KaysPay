@@ -383,6 +383,11 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // reset back to null mid-poll, so a slow/duplicate status read can't make
   // a step that already lit up flicker back off.
   const [buyFiatReceivedAt, setBuyFiatReceivedAt] = useState<string | null>(null);
+  // Which coin this in-flight purchase is for. selectedBuyAsset is cleared
+  // the moment the customer commits, so it's captured here to keep the
+  // waiting/confirmation copy specific to what they actually bought.
+  const [buyPollAsset, setBuyPollAsset] = useState<BuyAsset | null>(null);
+  const [buyPollPendingSwap, setBuyPollPendingSwap] = useState(false);
   const [buyPollStartedAt, setBuyPollStartedAt] = useState<number | null>(null);
   const [buyElapsedSeconds, setBuyElapsedSeconds] = useState(0);
   useEffect(() => {
@@ -872,11 +877,31 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       if (!result || cancelled) return false;
       if (result.fiatReceivedAt) setBuyFiatReceivedAt(result.fiatReceivedAt);
       if (result.status === 'completed') {
-        setActionMessage("Your crypto has landed — it's in your KaysPay Wallet now.");
+        const coin = buyPollAsset ?? 'crypto';
+        setActionMessage(`Your ${coin} has landed — it's in your crypto wallet now.`);
         setActionState('success');
         setBuyPollTxId(null);
         loadAll();
         return true;
+      }
+      // Payment confirmed by the provider, delivery still running. This is a
+      // real milestone worth closing the loop on: the customer's money is
+      // accounted for, so they shouldn't be held on a spinner for the
+      // remaining couple of minutes. Deliberately says "Payment confirmed"
+      // rather than a bare "Successful" — the coin genuinely hasn't arrived
+      // yet and the delivery leg can still fail, so claiming outright
+      // success here would be telling them something untrue about their
+      // money. Polling continues underneath, so if it does land while
+      // they're still watching, the message above replaces this one.
+      if (result.fiatReceivedAt) {
+        const coin = buyPollAsset ?? 'crypto';
+        setActionMessage(
+          buyPollPendingSwap
+            ? `Your ${coin} is on the way. It arrives as USDT first, then converts to ${coin} — usually within a few minutes. You can close this screen.`
+            : `Your ${coin} is on the way. It usually lands in your crypto wallet within 2–3 minutes. You can close this screen.`,
+        );
+        setActionState('success');
+        return false; // keep polling so a real completion still updates this
       }
       if (result.needsRefundBankDetails) {
         setActionState('idle');
@@ -929,7 +954,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
         // Still pending after a generous wait — stop polling rather than
         // spin forever. Nothing is lost: the reconcile sweep and the push
         // notification trigger both still settle this independently.
-        setActionMessage("This is taking longer than usual. We'll notify you the moment it's ready — no need to wait here.");
+        setActionMessage("This is taking longer than usual. It's still being worked on — check Transaction History for the result, no need to wait here.");
         setActionState('success');
         setBuyPollTxId(null);
         return;
@@ -942,7 +967,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       cancelled = true;
       void supabase.removeChannel(channel);
     };
-  }, [buyPollTxId, loadAll]);
+  }, [buyPollTxId, buyPollAsset, buyPollPendingSwap, loadAll]);
 
   const handleCopyBuyAccount = useCallback(async () => {
     if (!pendingBuyPayment) return;
@@ -1089,6 +1114,8 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 setActionMessage("We're watching for your transfer — this updates automatically.");
                 setActionState('processing');
                 setBuyFiatReceivedAt(null);
+                setBuyPollAsset(asset);
+                setBuyPollPendingSwap(pendingSwap);
                 setBuyPollStartedAt(Date.now());
                 setBuyPollTxId(txId);
               }
@@ -1116,6 +1143,9 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
         headerTitle="Crypto"
         amount={actionAmountNgn ?? undefined}
         message={actionState === 'failed' ? actionError : actionMessage ?? undefined}
+        // While delivery is still running the money is confirmed but the coin
+        // hasn't arrived, so this must not read as a plain "Successful".
+        successLabel={buyPollTxId && buyFiatReceivedAt ? 'Payment confirmed' : undefined}
         processingHint={buyPollTxId ? 'Checking for your transfer…' : undefined}
         onDone={() => {
           setActionMessage(null);
@@ -1123,6 +1153,8 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
           setBuyPollTxId(null);
           setBuyFiatReceivedAt(null);
           setBuyPollStartedAt(null);
+          setBuyPollAsset(null);
+          setBuyPollPendingSwap(false);
         }}
       >
         {actionState === 'processing' && buyPollTxId ? (
