@@ -13,7 +13,7 @@ import { isResendConfigured, sendEmail } from "../_shared/resend-client.ts";
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(), "Content-Type": "application/json" },
   });
 }
 serve(async (req) => {

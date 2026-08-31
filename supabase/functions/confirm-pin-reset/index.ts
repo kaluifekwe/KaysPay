@@ -5,7 +5,7 @@ import { isResendConfigured, sendEmail } from "../_shared/resend-client.ts";
 import { pinResetNoticeEmail } from "../_shared/email-template.ts";
 
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders(), "Content-Type": "application/json" } });
 }
 
 serve(async (req: Request) => {
