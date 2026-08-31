@@ -74,10 +74,12 @@ interface RegistrationScreenProps {
 }
 
 export default function RegistrationScreen({ navigation }: RegistrationScreenProps) {
-  useSensitiveScreenProtection();
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const [step, setStep] = useState<1 | 2>(1);
+  // Only Step 2 shows a password/PIN -- Step 1 (name/email/phone) has
+  // nothing sensitive, so it stays screenshottable.
+  useSensitiveScreenProtection(step === 2);
 
   // Step 1
   const [fullName, setFullName] = useState('');
