@@ -714,7 +714,14 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     && quidaxUsdtBalance != null && numericWdAmount <= quidaxUsdtBalance && wdAddressValid && wdVerified;
 
   const handleBuy = useCallback(async () => {
-    if (!canBuy || !selectedBuyAsset) return;
+    if (!canBuy || !selectedBuyAsset || buyLoading) return;
+    // Disabled BEFORE the PIN/biometric step, not after it. authorize()
+    // awaits real user interaction, so leaving the button live until it
+    // resolves let a second tap start an entirely separate purchase —
+    // observed live as two orders 190ms apart, each with its own Quidax
+    // bank account the customer could pay into. Same ordering the VTU
+    // screens use.
+    setBuyLoading(true);
     const subtitle = buyToExternal
       ? `To ${buyDestNetwork} wallet ${buyDestAddress.trim()}`
       : 'To your KaysPay Wallet';
@@ -729,8 +736,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       // actually afford.
       skipBalanceCheck: true,
     });
-    if (!authResult) return;
-    setBuyLoading(true);
+    if (!authResult) {
+      setBuyLoading(false);
+      return;
+    }
     const result = await cryptoService.buy(
       selectedBuyAsset,
       numericBuyNgn,
@@ -758,7 +767,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       setActionError(result.error || 'Purchase failed. Please try again.');
       setActionState('failed');
     }
-  }, [canBuy, selectedBuyAsset, numericBuyNgn, buyToExternal, buyDestNetwork, buyDestAddress, authorize, loadAll]);
+  }, [canBuy, selectedBuyAsset, buyLoading, numericBuyNgn, buyToExternal, buyDestNetwork, buyDestAddress, authorize, loadAll]);
 
   const handleSell = useCallback(async () => {
     if (!canSell || !sellBank) return;

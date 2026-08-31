@@ -178,6 +178,66 @@ serve(async (req: Request) => {
   const merchantReference = String(body.idempotency_key || "").trim()
     || `kspbuy_${user.id.replace(/-/g, "").slice(0, 12)}_${Date.now()}`;
 
+  // The idempotency key above only protects an automatic retry of the SAME
+  // call — the client mints a fresh key per invocation, so a second tap (or
+  // a second session) arrives as a genuinely new request and used to open a
+  // second Ramp order, each with its own one-time bank account the customer
+  // could pay into. Seen live: two identical orders 190ms apart. Quidax's
+  // account expects an EXACT amount, so paying once only ever fulfils one
+  // order anyway; the other just sits pending forever. Handing back the
+  // order already in flight is what the comment above always intended.
+  const DUPLICATE_WINDOW_MS = 2 * 60 * 1000;
+  const { data: inFlight } = await supabase
+    .from("transactions")
+    .select("id, metadata")
+    .eq("user_id", user.id)
+    .eq("type", "crypto_buy")
+    .eq("status", "pending")
+    .eq("amount_ngn", Math.round(ngnAmount * 100))
+    .eq("metadata->>asset", asset)
+    .gte("created_at", new Date(Date.now() - DUPLICATE_WINDOW_MS).toISOString())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const inFlightReference = String(inFlight?.metadata?.quidax_merchant_reference || "");
+  if (inFlight && inFlightReference) {
+    try {
+      // Reads the EXISTING Quidax order — never creates one. Bank details
+      // aren't fully persisted locally, so they're re-fetched to return the
+      // same account the customer was already shown.
+      const existingBank = await confirmOnRamp(inFlightReference);
+      const md = (inFlight.metadata ?? {}) as Record<string, unknown>;
+      return json({
+        success: true,
+        duplicate: true,
+        transaction_id: inFlight.id,
+        asset,
+        estimated_crypto: Number(md.estimated_crypto_micro ?? 0) / 1_000_000 || undefined,
+        pending_swap: !!swapAsset,
+        rate: askRate,
+        destination_type: md.destination_type ?? (external ? "external_wallet" : "kayspay_account"),
+        destination_address: md.destination_address,
+        destination_network: external?.network ?? "TRC20",
+        payment: {
+          account_name: existingBank.accountName,
+          account_number: existingBank.accountNumber,
+          bank_name: existingBank.bankName,
+          amount_to_pay: existingBank.amountExpected,
+          amount: existingBank.amount,
+          processor_fee: existingBank.processorFee,
+          vat: existingBank.vat,
+          merchant_markup: existingBank.merchantMarkup,
+        },
+      });
+    } catch (e) {
+      // Couldn't read the in-flight order back. Fall through and open a new
+      // one rather than block a real purchase — the duplicate risk returns
+      // only in this rare error case, which is the safer trade for money.
+      console.error("crypto-buy: could not reuse in-flight order:", e instanceof Error ? e.message : e);
+    }
+  }
+
   // For a swap-target coin, this leg always delivers USDT (Ramp only ever
   // moves NGN<->USDT) �?the coin itself doesn't exist yet, it's produced by
   // the swap leg once this USDT lands (see crypto-quidax-webhook). The
