@@ -184,7 +184,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
 
   const validatePhone = (value: string) => {
     if (!value.trim()) {
-      setPhoneError('Phone number is required');
+      setPhoneError('');
       setPhoneValid(false);
       setDetectedNetwork(null);
       return;
