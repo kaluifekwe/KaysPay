@@ -17,7 +17,7 @@ export interface FundingCandidate {
 }
 
 export interface FundingCreditResult {
-  outcome: "credited" | "duplicate" | "unmatched" | "rejected";
+  outcome: "credited" | "duplicate" | "held" | "unmatched" | "rejected";
   userId?: string;
 }
 
@@ -179,6 +179,52 @@ export async function processFundingCandidate(
       processed_at: new Date().toISOString(),
     });
     return { outcome: "unmatched" };
+  }
+
+  // KYC is enforced here, at the shared server-side money boundary. This
+  // protects old app builds and modified clients as well as the latest UI.
+  // A real provider transfer is never discarded: it is durably held without
+  // increasing the spendable wallet balance, then released after verification.
+  const { data: kyc, error: kycError } = await db
+    .from("user_kyc")
+    .select("status")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (kycError) {
+    await updateEvent(db, candidate, { status: "error", error_code: "KYC_LOOKUP_FAILED" });
+    throw kycError;
+  }
+  if (kyc?.status !== "verified") {
+    const { data: holdData, error: holdError } = await db.rpc("hold_wallet_funding", {
+      p_user_id: userId,
+      p_reference: candidate.reference,
+      p_amount: candidate.amountKobo,
+      p_source: candidate.provider,
+      p_event_source: candidate.source,
+    });
+    if (holdError) {
+      await updateEvent(db, candidate, { status: "error", error_code: "COMPLIANCE_HOLD_FAILED" });
+      throw holdError;
+    }
+    // KYC may have completed after the lookup above. The database function
+    // resolves that race atomically and can route the money to normal credit.
+    if (holdData?.held !== true) {
+      const routedOutcome = holdData?.credited === true ? "credited" : "duplicate";
+      await updateEvent(db, candidate, {
+        user_id: userId,
+        status: routedOutcome,
+        error_code: null,
+        processed_at: new Date().toISOString(),
+      });
+      return { outcome: routedOutcome, userId };
+    }
+    await updateEvent(db, candidate, {
+      user_id: userId,
+      status: "held",
+      error_code: "KYC_REQUIRED",
+      processed_at: new Date().toISOString(),
+    });
+    return { outcome: "held", userId };
   }
 
   const { data, error } = await db.rpc("credit_wallet_funding", {

@@ -24,6 +24,34 @@ export async function getAuthUser(req: Request) {
   return data.user;
 }
 
+/**
+ * Resolve both the authenticated user and the assurance level of the current
+ * session. Admin authorization uses this variant so MFA is verified by
+ * Supabase Auth rather than trusting a client-provided claim or UI state.
+ */
+export async function getAuthUserWithAal(req: Request) {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) return null;
+  const accessToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!accessToken) return null;
+
+  const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: userData, error: userError } = await client.auth.getUser();
+  if (userError || !userData?.user) return null;
+
+  const { data: aalData, error: aalError } = await client.auth.mfa
+    .getAuthenticatorAssuranceLevel(accessToken);
+  if (aalError || !aalData) {
+    return { user: userData.user, currentLevel: null };
+  }
+
+  return { user: userData.user, currentLevel: aalData.currentLevel };
+}
+
 /** Service-role client for privileged DB writes / RPC calls. */
 export function adminClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {

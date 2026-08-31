@@ -1,4 +1,4 @@
-import { adminClient, enforceRateLimit, getAuthUser } from "./auth.ts";
+import { adminClient, enforceRateLimit, getAuthUserWithAal } from "./auth.ts";
 
 export type AdminRole = "support" | "super_admin";
 
@@ -51,8 +51,9 @@ export async function requireAdmin(
   minRole: AdminRole = "support",
 ): Promise<{ userId: string; email: string | null; role: AdminRole }> {
   const db = adminClient();
-  const user = await getAuthUser(req);
-  if (!user) throw new AdminAuthError(401, "Unauthorized");
+  const auth = await getAuthUserWithAal(req);
+  if (!auth) throw new AdminAuthError(401, "Unauthorized");
+  const { user } = auth;
 
   const { data, error } = await db
     .from("admin_users")
@@ -73,6 +74,21 @@ export async function requireAdmin(
       metadata: { required_role: minRole, actual_role: role },
     });
     throw new AdminAuthError(403, "Not authorized");
+  }
+
+  // A password, magic-link, or social-login session is AAL1. Every admin
+  // operation requires a separately verified MFA factor and therefore AAL2.
+  // This server-side check is the security boundary; the admin UI gate only
+  // guides the user through enrollment and challenge.
+  if (auth.currentLevel !== "aal2") {
+    await db.from("security_events").insert({
+      user_id: user.id,
+      event_type: "admin_mfa_required",
+      severity: "warning",
+      source: "admin-auth",
+      metadata: { required_aal: "aal2", current_aal: auth.currentLevel },
+    });
+    throw new AdminAuthError(403, "Multi-factor authentication required");
   }
 
   // Applied only AFTER the role check passes, so a rejected caller can never

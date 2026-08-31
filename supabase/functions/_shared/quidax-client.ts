@@ -128,6 +128,37 @@ export async function getSubAccountWallets(quidaxUserId: string): Promise<Quidax
   }));
 }
 
+export interface QuidaxWithdrawalFee {
+  fee: number;
+  type: string;
+}
+
+/**
+ * Quidax's live fee calculation for a concrete withdrawal amount/network.
+ * Fees are provider-controlled and can change, so financial validation must
+ * call this endpoint rather than hardcode today's TRC20 value in KaysPay.
+ */
+export async function getCryptoWithdrawalFee(params: {
+  currency: string;
+  amount: number;
+  network: string;
+}): Promise<QuidaxWithdrawalFee> {
+  const query = new URLSearchParams({
+    currency: params.currency.toLowerCase(),
+    amount: String(params.amount),
+    network: params.network.toLowerCase(),
+  });
+  const { status, data } = await callQuidax(`/users/me/fee_rule?${query.toString()}`, "GET");
+  if (status >= 400 || data?.status !== "success") {
+    throw new QuidaxError(data?.message || "Could not calculate the network fee", status);
+  }
+  const fee = Number(data?.data?.fee);
+  if (!Number.isFinite(fee) || fee < 0) {
+    throw new QuidaxError("Could not calculate the network fee");
+  }
+  return { fee, type: String(data?.data?.type || "flat") };
+}
+
 export interface QuidaxDepositAddress {
   id: string;
   currency: string;

@@ -4,6 +4,8 @@
 // envelope, and NO async/pending state is documented anywhere for either —
 // every example given is a clean success or fail. That's DIFFERENT from both
 // VTU.ng and VTUAfrica, which both have genuine async "processing" orders.
+import { fetchWithTimeout } from "./provider-fetch.ts";
+
 const VTUNAIJA_API_KEY = Deno.env.get("VTUNAIJA_API_KEY");
 const VTUNAIJA_BASE_URL = "https://vtunaija.com.ng/api";
 
@@ -26,6 +28,53 @@ export interface NormalizedVTUNaijaResult {
 }
 
 export type VTUNaijaOutcome = "success" | "failed" | "unknown";
+
+export type VTUNaijaFailureCategory =
+  | "gateway_unavailable"
+  | "plan_unavailable"
+  | "subscriber_ineligible"
+  | "airtime_debt"
+  | "invalid_recipient"
+  | "provider_unavailable"
+  | "purchase_rejected";
+
+/** Translate unstable provider text into privacy-safe business outcomes. */
+export function classifyVTUNaijaFailure(raw: string): VTUNaijaFailureCategory {
+  const message = raw.trim().toLowerCase();
+  if (message.includes("no active gateway") || message.includes("gateway unavailable")) return "gateway_unavailable";
+  if (message.includes("does not exist") || message.includes("refresh your plan") || message.includes("plan unavailable")) return "plan_unavailable";
+  if (
+    message.includes("not eligible") || message.includes("not allowed for") ||
+    message.includes("sim selective") || message.includes("subscriber ineligible")
+  ) return "subscriber_ineligible";
+  if (message.includes("owing") && message.includes("airtime")) return "airtime_debt";
+  if (message.includes("invalid") && (message.includes("number") || message.includes("phone") || message.includes("mobile"))) return "invalid_recipient";
+  if (
+    message.includes("service unavailable") || message.includes("temporarily unavailable") ||
+    message.includes("provider balance") || message.includes("insufficient wallet")
+  ) return "provider_unavailable";
+  return "purchase_rejected";
+}
+
+/** Return only approved customer copy; raw provider text stays server-side. */
+export function customerMessageForVTUNaijaFailure(raw: string): string {
+  switch (classifyVTUNaijaFailure(raw)) {
+    case "gateway_unavailable":
+      return "This plan is temporarily unavailable from the network. Your money has been refunded. Please choose another plan or try again later.";
+    case "plan_unavailable":
+      return "This plan is temporarily unavailable. Your money has been refunded. Please refresh and choose a different plan.";
+    case "subscriber_ineligible":
+      return "This plan is not available for this phone number. Your money has been refunded. Please choose another plan.";
+    case "airtime_debt":
+      return "This plan cannot be delivered while this number owes airtime. Your money has been refunded. Clear the airtime debt or choose a different plan.";
+    case "invalid_recipient":
+      return "The network could not accept this phone number. Your money has been refunded. Please check the number and try again.";
+    case "provider_unavailable":
+      return "The network provider is temporarily unavailable. Your money has been refunded. Please try again later.";
+    default:
+      return "The purchase could not be completed. Your money has been refunded. Please try another plan or try again later.";
+  }
+}
 
 export interface NormalizedVTUNaijaQueryResult {
   outcome: VTUNaijaOutcome;
@@ -56,27 +105,22 @@ export async function callVTUNaija(
 ): Promise<any> {
   if (!VTUNAIJA_API_KEY) throw new VTUNaijaError("VTUnaija API key not configured");
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
-    res = await fetch(`${VTUNAIJA_BASE_URL}${endpoint}`, {
+    res = await fetchWithTimeout(`${VTUNAIJA_BASE_URL}${endpoint}`, {
       method,
       headers: {
         Authorization: `Token ${VTUNAIJA_API_KEY}`,
         "Content-Type": "application/json",
       },
       ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
-      signal: controller.signal,
-    });
+    }, timeoutMs);
   } catch (e) {
     // Network-level failure (DNS, connection reset, timeout via abort) — the
     // token never rides in the URL here (unlike VTUAfrica), so no redaction
     // is needed, but re-throw as a plain Error so callers treat this as
     // ambiguous (may have reached VTUnaija) rather than a config fault.
     throw new Error(String((e as Error)?.message ?? e));
-  } finally {
-    clearTimeout(timeout);
   }
 
   const text = await res.text();

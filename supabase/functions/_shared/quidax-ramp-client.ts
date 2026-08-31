@@ -473,6 +473,9 @@ export interface OffRampStatus {
   status: string;
   fiatPayoutAmount: number | null;
   fiatPayoutStatus: string | null;
+  merchantMarkup: number | null;
+  processorFee: number | null;
+  vat: number | null;
 }
 
 /**
@@ -491,9 +494,13 @@ export async function requeryOffRamp(reference: string): Promise<OffRampStatus> 
   );
   const payload = unwrap(status, data, "Could not fetch this sale");
   const payout = (payload as any).fiat_payout;
+  const optionalMoney=(...values:unknown[]):number|null=>{for(const value of values){const amount=Number(value);if(Number.isFinite(amount)&&amount>=0)return amount;}return null;};
   return {
     status: String(payload.status ?? ""),
     fiatPayoutAmount: payout?.amount != null ? Number(payout.amount) : null,
     fiatPayoutStatus: payout?.status != null ? String(payout.status) : null,
+    merchantMarkup:optionalMoney(payload.merchant_markup,payload.fees?.merchant_markup,payout?.merchant_markup),
+    processorFee:optionalMoney(payload.processor_fee,payload.fees?.processor_fee,payout?.processor_fee),
+    vat:optionalMoney(payload.vat,payload.fees?.vat,payout?.vat),
   };
 }

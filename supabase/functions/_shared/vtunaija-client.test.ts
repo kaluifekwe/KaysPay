@@ -1,8 +1,29 @@
 import {
+  classifyVTUNaijaFailure,
+  customerMessageForVTUNaijaFailure,
   normalizeVTUNaijaQueryResult,
   normalizeVTUNaijaResult,
   vtunaijaOutcome,
 } from "./vtunaija-client.ts";
+
+Deno.test("classifies gateway outages as provider failures with safe customer copy", () => {
+  assertEquals(classifyVTUNaijaFailure("No active gateway found"), "gateway_unavailable", "gateway category");
+  assertEquals(
+    customerMessageForVTUNaijaFailure("No active gateway found"),
+    "This plan is temporarily unavailable from the network. Your money has been refunded. Please choose another plan or try again later.",
+    "gateway customer message",
+  );
+});
+
+Deno.test("classifies SIM-selective subscriber rejection without exposing raw text", () => {
+  const raw = "Subscriber is not eligible for this SIM selective plan";
+  assertEquals(classifyVTUNaijaFailure(raw), "subscriber_ineligible", "eligibility category");
+  assertEquals(
+    customerMessageForVTUNaijaFailure(raw),
+    "This plan is not available for this phone number. Your money has been refunded. Please choose another plan.",
+    "eligibility customer message",
+  );
+});
 
 function assertEquals(actual: unknown, expected: unknown, label: string): void {
   if (actual !== expected) {

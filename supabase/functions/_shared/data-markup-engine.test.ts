@@ -1,11 +1,13 @@
 import { assertEquals } from "https://deno.land/std@0.168.0/testing/asserts.ts";
-import { computeCatalogMarkup, parseDataSizeToMb } from "./data-markup-engine.ts";
+import {
+  computeCatalogMarkup, parseDataSizeToMb, parseValidityDays, validityAdjustmentKobo,
+} from "./data-markup-engine.ts";
 
 const BRACKETS = [
-  { min_price_kobo: 0, max_price_kobo: 15000, markup_type: "flat" as const, markup_value: 1200 },
-  { min_price_kobo: 15000, max_price_kobo: 40000, markup_type: "flat" as const, markup_value: 2000 },
-  { min_price_kobo: 40000, max_price_kobo: 100000, markup_type: "flat" as const, markup_value: 3500 },
-  { min_price_kobo: 100000, max_price_kobo: 300000, markup_type: "percent" as const, markup_value: 350 },
+  { min_price_kobo: 0, max_price_kobo: 50000, markup_type: "percent" as const, markup_value: 800, min_markup_kobo: 3000, min_net_margin_kobo: 2500 },
+  { min_price_kobo: 50000, max_price_kobo: 150000, markup_type: "percent" as const, markup_value: 600, min_markup_kobo: 5000, min_net_margin_kobo: 4500 },
+  { min_price_kobo: 150000, max_price_kobo: 300000, markup_type: "percent" as const, markup_value: 500, min_markup_kobo: 10000, min_net_margin_kobo: 9000 },
+  { min_price_kobo: 300000, max_price_kobo: 750000, markup_type: "percent" as const, markup_value: 500, min_markup_kobo: 15000, min_net_margin_kobo: 13500 },
 ];
 
 const CONFIG = {
@@ -14,7 +16,7 @@ const CONFIG = {
   value_density_max_adjust_percent: 30,
   value_density_price_window_percent: 10,
   min_markup_floor_kobo: 100,
-  discount_percent_of_markup: 30,
+  discount_percent_of_markup: 0,
   cashback_percent_of_markup: 10,
 };
 
@@ -25,23 +27,50 @@ Deno.test("parseDataSizeToMb reads GB and MB tokens", () => {
   assertEquals(parseDataSizeToMb("Do Not Buy MTN AwoofData"), null);
 });
 
-Deno.test("applies the matching bracket's flat markup with no siblings nearby", () => {
+Deno.test("normalizes validity and applies only capped premiums", () => {
+  assertEquals(parseValidityDays("7 Days"), 7);
+  assertEquals(parseValidityDays("2 weeks"), 14);
+  assertEquals(parseValidityDays("1 Month"), 30);
+  assertEquals(validityAdjustmentKobo(7), 0);
+  assertEquals(validityAdjustmentKobo(14), 500);
+  assertEquals(validityAdjustmentKobo(30), 1000);
+  assertEquals(validityAdjustmentKobo(90), 2000);
+});
+
+Deno.test("same 1GB plan gets a small capped premium for longer validity", () => {
+  const rows = [
+    { id: "weekly", network: "mtn", name: "1GB", validity: "7 Days", family_key: "gifting", reseller_kobo: 50000 },
+    { id: "monthly", network: "mtn", name: "1GB", validity: "30 Days", family_key: "gifting", reseller_kobo: 50000 },
+  ];
+  const result = computeCatalogMarkup(rows, BRACKETS, CONFIG);
+  assertEquals(result.get("monthly")!.computed_price_kobo - result.get("weekly")!.computed_price_kobo, 1000);
+  assertEquals(result.get("weekly")!.validity_adjustment_kobo, 0);
+  assertEquals(result.get("monthly")!.validity_adjustment_kobo, 1000);
+  assertEquals(result.get("monthly")!.pricing_engine_version, 2);
+});
+
+Deno.test("flags a strictly dominated plan inside the same network and family", () => {
+  const rows = [
+    { id: "worse", network: "mtn", name: "1GB", validity: "7 Days", family_key: "gifting", reseller_kobo: 60000 },
+    { id: "better", network: "mtn", name: "2GB", validity: "30 Days", family_key: "gifting", reseller_kobo: 50000 },
+  ];
+  const result = computeCatalogMarkup(rows, BRACKETS, CONFIG);
+  assertEquals(result.get("worse")!.requires_pricing_review, true);
+  assertEquals(result.get("better")!.requires_pricing_review, false);
+});
+
+Deno.test("applies the matching bracket's gross floor", () => {
   const rows = [{ id: "a", network: "mtn", name: "1GB (AwoofData)", reseller_kobo: 21500 }];
   const result = computeCatalogMarkup(rows, BRACKETS, { ...CONFIG, value_density_enabled: false });
   const plan = result.get("a")!;
-  assertEquals(plan.computed_markup_kobo, 2000);
-  assertEquals(plan.computed_list_price_kobo, 23500);
-  // 30% of 2000 markup = 600 discount, charged price = list - discount
-  assertEquals(plan.computed_discount_kobo, 600);
-  assertEquals(plan.computed_price_kobo, 22900);
-  // 10% of 2000 markup = 200 cashback (computed, not credited anywhere yet)
-  assertEquals(plan.computed_cashback_kobo, 200);
+  assertEquals(plan.computed_markup_kobo, 3000);
+  assertEquals(plan.computed_list_price_kobo, 24500);
+  assertEquals(plan.computed_discount_kobo, 0);
+  assertEquals(plan.computed_price_kobo, 24500);
+  assertEquals(plan.computed_cashback_kobo, 300);
 });
 
-Deno.test("never quotes or charges a fractional-naira price, even when the discount leaves an odd kobo remainder", () => {
-  // The real bug: MTN 2GB (AwoofData) at N420 (42000 kobo), N35 markup, 30%
-  // discount of markup = N10.50 (1050 kobo) — an odd remainder that used to
-  // surface as "N444.5" on the customer-facing price before this fix.
+Deno.test("never quotes or charges a fractional-naira price", () => {
   const rows = [{ id: "a", network: "mtn", name: "2GB (AwoofData)", reseller_kobo: 42000 }];
   const result = computeCatalogMarkup(rows, BRACKETS, { ...CONFIG, value_density_enabled: false });
   const plan = result.get("a")!;
@@ -51,34 +80,30 @@ Deno.test("never quotes or charges a fractional-naira price, even when the disco
   assertEquals(plan.computed_cashback_kobo % 100, 0);
   // Rounds UP to the next whole naira, never down — keeps the charged price
   // from ever dipping below list price minus the true discount.
-  assertEquals(plan.computed_list_price_kobo, 45500);
-  assertEquals(plan.computed_price_kobo, 44500);
-  assertEquals(plan.computed_discount_kobo, 1000);
+  assertEquals(plan.computed_list_price_kobo, 45400);
+  assertEquals(plan.computed_price_kobo, 45400);
+  assertEquals(plan.computed_discount_kobo, 0);
   // "was" minus "now" always exactly equals the discount shown, since
   // discount is derived from the two already-rounded numbers.
   assertEquals(plan.computed_list_price_kobo - plan.computed_price_kobo, plan.computed_discount_kobo);
 });
 
-Deno.test("a 100 percent discount charges exactly provider cost, never below it", () => {
+Deno.test("rejects a configuration that leaves no room for the net floor", () => {
   const rows = [{ id: "a", network: "mtn", name: "1GB (AwoofData)", reseller_kobo: 21500 }];
   const result = computeCatalogMarkup(rows, BRACKETS, {
     ...CONFIG, value_density_enabled: false, discount_percent_of_markup: 100,
   });
-  const plan = result.get("a")!;
-  assertEquals(plan.computed_discount_kobo, plan.computed_markup_kobo);
-  assertEquals(plan.computed_price_kobo, 21500);
+  assertEquals(result.has("a"), false);
 });
 
 Deno.test("applies percentage brackets on the provider price", () => {
   const rows = [{ id: "a", network: "mtn", name: "3GB (DataShare)", reseller_kobo: 112000 }];
   const result = computeCatalogMarkup(rows, BRACKETS, { ...CONFIG, value_density_enabled: false });
-  // 3.5% of 112000 = 3920
-  assertEquals(result.get("a")?.computed_markup_kobo, 3920);
+  // 6% of 112000 = 6720, above the N50 floor.
+  assertEquals(result.get("a")?.computed_markup_kobo, 6720);
 });
 
-Deno.test("gives the best-value sibling less markup and the weaker one more, at the same price", () => {
-  // The real 97.4-naira MTN pair: 200MB is nearly double the data of 110MB
-  // at the identical provider price.
+Deno.test("data volume never reduces margin between same-price plans", () => {
   const rows = [
     { id: "better", network: "mtn", name: "200MB (Social Media Data)", reseller_kobo: 9740 },
     { id: "weaker", network: "mtn", name: "110MB (GiftingPlan)", reseller_kobo: 9740 },
@@ -86,28 +111,36 @@ Deno.test("gives the best-value sibling less markup and the weaker one more, at 
   const result = computeCatalogMarkup(rows, BRACKETS, CONFIG);
   const better = result.get("better")!;
   const weaker = result.get("weaker")!;
-  // Base bracket markup here is 1200 kobo; best value pulls below it, worst rises above it.
-  if (!(better.computed_markup_kobo < 1200)) throw new Error("best-value plan should be marked up less than base");
-  if (!(weaker.computed_markup_kobo > 1200)) throw new Error("weaker-value plan should be marked up more than base");
-  if (!(better.computed_markup_kobo < weaker.computed_markup_kobo)) {
-    throw new Error("best-value plan must end up with a smaller markup than the weaker one");
-  }
+  assertEquals(better.computed_markup_kobo, 3000);
+  assertEquals(weaker.computed_markup_kobo, 3000);
 });
 
-Deno.test("never adjusts markup below the configured floor", () => {
-  // "better" is the far-better-value sibling here, so the density step
-  // pulls its markup down hard (90% max adjustment) — without the floor
-  // that would be 1200 * (1 - 0.90) = 120 kobo, well under 500.
-  const rows = [
-    { id: "weaker", network: "mtn", name: "50MB (X)", reseller_kobo: 100 },
-    { id: "better", network: "mtn", name: "5000MB (Y)", reseller_kobo: 104 },
-  ];
-  const result = computeCatalogMarkup(rows, BRACKETS, {
+Deno.test("N3,000 provider cost keeps at least N135 after 10% cashback", () => {
+  const rows = [{ id: "a", network: "mtn", name: "3GB", reseller_kobo: 300000 }];
+  const plan = computeCatalogMarkup(rows, BRACKETS, CONFIG).get("a")!;
+  assertEquals(plan.computed_markup_kobo, 15000);
+  assertEquals(plan.computed_cashback_kobo, 1500);
+  assertEquals(plan.computed_markup_kobo - plan.computed_cashback_kobo, 13500);
+});
+
+Deno.test("universal discount and cashback preserve the configured net floor", () => {
+  const rows = [{ id: "a", network: "mtn", name: "3GB", validity: "7 Days", reseller_kobo: 300000 }];
+  const plan = computeCatalogMarkup(rows, BRACKETS, {
     ...CONFIG,
-    value_density_max_adjust_percent: 90,
-    min_markup_floor_kobo: 500,
-  });
-  assertEquals(result.get("better")?.computed_markup_kobo, 500);
+    value_density_enabled: false,
+    discount_percent_of_markup: 20,
+    cashback_percent_of_markup: 10,
+  }).get("a")!;
+
+  assertEquals(plan.computed_markup_kobo, 19486);
+  assertEquals(plan.computed_list_price_kobo, 319500);
+  assertEquals(plan.computed_discount_kobo, 3900);
+  assertEquals(plan.computed_price_kobo, 315600);
+  assertEquals(plan.computed_cashback_kobo, 1900);
+  assertEquals(
+    plan.computed_markup_kobo - plan.computed_discount_kobo - plan.computed_cashback_kobo >= 13500,
+    true,
+  );
 });
 
 Deno.test("leaves plans with no matching bracket uncomputed rather than guessing", () => {

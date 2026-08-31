@@ -23,6 +23,8 @@ export interface SendEmailOptions {
   /** Plain-text alternative. Sending a multipart message (text + html) instead
    *  of HTML-only materially improves Gmail/Yahoo inbox placement. */
   text?: string;
+  /** Stable key for a logically identical request. Resend retains it for 24h. */
+  idempotencyKey?: string;
 }
 
 export async function sendEmail(
@@ -30,7 +32,7 @@ export async function sendEmail(
   subject: string,
   html: string,
   opts: SendEmailOptions = {},
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; id?: string; error?: string }> {
   if (!RESEND_API_KEY || !RESEND_FROM_EMAIL) return { ok: false, error: "Resend not configured" };
 
   try {
@@ -43,12 +45,17 @@ export async function sendEmail(
     if (opts.text) payload.text = opts.text;
     if (opts.replyTo) payload.reply_to = opts.replyTo;
 
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    };
+    if (opts.idempotencyKey) {
+      if (opts.idempotencyKey.length > 256) return { ok: false, error: "Invalid idempotency key" };
+      headers["Idempotency-Key"] = opts.idempotencyKey;
+    }
     const res = await fetchWithTimeout(RESEND_API_URL, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify(payload),
     }, 15_000);
 
@@ -56,7 +63,8 @@ export async function sendEmail(
       const text = await res.text();
       return { ok: false, error: text.slice(0, 300) };
     }
-    return { ok: true };
+    const data = await res.json().catch(() => ({})) as { id?: string };
+    return { ok: true, id: data.id };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
