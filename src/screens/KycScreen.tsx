@@ -21,11 +21,17 @@ import { useTheme } from '../components/ThemeProvider';
 import { analytics } from '../services/analytics.service';
 
 export default function KycScreen({ navigation, route }: any) {
-  // Reached either from Settings/Profile (verification is optional for the
-  // app generally) or from a hard gate — Crypto Buy/Sell or Wallet Funding
-  // (see CryptoScreen / WalletFundingScreen), which pass their own
-  // requiredFor reason. Those paths shouldn't tell the user this step is
-  // optional right after blocking them on it.
+  // Reached either from Settings/Profile or from a hard gate — Crypto
+  // Buy/Sell or Wallet Funding (see CryptoScreen / WalletFundingScreen),
+  // which pass their own requiredFor reason so the copy can name the exact
+  // thing that was just blocked.
+  //
+  // The Settings/Profile route used to call verification "optional, but
+  // recommended". It is not optional: KYC gates wallet funding both here and
+  // server-side (funding-credit.ts holds an unverified customer's money with
+  // KYC_REQUIRED), and funding is what pays for airtime, data and bills — so
+  // an unverified account cannot do anything. Two customers took that copy at
+  // its word, transferred 600 and 1,000 naira, and had it held.
   const requiredFor: string | undefined = route?.params?.requiredFor;
   useSensitiveScreenProtection();
   const { theme } = useTheme();
@@ -132,7 +138,7 @@ export default function KycScreen({ navigation, route }: any) {
               <Text style={styles.subtitle}>
                 {requiredFor
                   ? `Required before you can ${requiredFor}. Verify with either your NIN or BVN — whichever you have on hand. Your profile name will be updated to match your record.`
-                  : 'Optional, but recommended. Verify with either your NIN or BVN — whichever you have on hand. Your profile name will be updated to match your record.'}
+                  : 'Required before you can fund your wallet or buy crypto. Verify with either your NIN or BVN — whichever you have on hand. Your profile name will be updated to match your record.'}
               </Text>
 
               <View style={styles.idTypeToggle}>
