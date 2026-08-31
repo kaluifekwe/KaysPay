@@ -34,6 +34,34 @@ const UNPAID_TERMINAL_STATUSES = new Set(["abandoned", "expired", "cancelled"]);
 // not going to resolve itself. Escalated once for human eyes rather than
 // left invisible, which is how eight orders accumulated unnoticed.
 const STALE_ESCALATION_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Quidax defined their non-terminal states for us directly (2026-08-31),
+// which is the difference between guessing at these and knowing:
+//
+//   "pending"     - they have NOT received value for the transaction. It is
+//                   meant to transition to Abandoned after 30 minutes.
+//   "processing"  - they HAVE received value; the trade is being initiated.
+//   "needs_attention" - paid but stuck, and they attach a note saying why.
+//
+// So "processing" is a payment signal in its own right. That matters here
+// because our own fiat_received_at comes from the ramp webhook, which has
+// silently 401'd — an order can be genuinely paid with our record still
+// blank, exactly as the 19 Aug order was.
+const PAID_IN_FLIGHT_STATUSES = new Set(["processing"]);
+
+// Quidax says they have no value for a "pending" order, so nothing is owed.
+// Their own 30-minute auto-abandon has demonstrably not been firing (orders
+// sat "pending" for 7-8 days), so we close these ourselves rather than wait
+// for a terminal status that never comes. The window is deliberately far
+// wider than their 30 minutes: a slow bank transfer that lands late would
+// flip them to "processing", and closing before that would tell a customer
+// who did pay that their order failed.
+const UNPAID_PENDING_CLOSE_MS = 24 * 60 * 60 * 1000;
+
+// A buy normally completes in 2-3 minutes. Money received and still not
+// delivered hours later is not slow, it is stuck, and it is the one case
+// worth waking someone for.
+const PAID_IN_FLIGHT_ALERT_MS = 2 * 60 * 60 * 1000;
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
@@ -157,26 +185,62 @@ serve(async (req: Request) => {
           });
         }
       } else {
-        stillPending++;
-        // Not terminal on Quidax's side, but old enough that it is not
-        // going to resolve on its own. Raise it once (record_monitoring_alert
-        // dedupes on fingerprint) so it gets human attention instead of
-        // sitting pending forever.
         const ageMs = Date.now() - new Date(tx.created_at as string).getTime();
-        if (ageMs > STALE_ESCALATION_MS) {
-          escalated++;
-          await supabase.rpc("record_monitoring_alert", {
-            p_fingerprint: `crypto_buy_stale_${tx.id}`,
-            p_type: "crypto_buy_stuck_pending",
-            p_severity: meta.fiat_received_at ? "critical" : "warning",
-            p_details: {
-              transaction_id: tx.id,
-              merchant_reference: merchantReference,
-              quidax_status: remote.status,
-              age_days: Math.floor(ageMs / 86_400_000),
-              fiat_received_at: meta.fiat_received_at ?? null,
-            },
+        const paidInFlight = PAID_IN_FLIGHT_STATUSES.has(remote.status) || !!meta.fiat_received_at;
+
+        if (paidInFlight) {
+          // Money is with Quidax and the customer has nothing. Not closed —
+          // the trade may still land, and failing it here would strand a paid
+          // order — but escalated loudly, because this is somebody's money
+          // sitting undelivered.
+          stillPending++;
+          if (ageMs > PAID_IN_FLIGHT_ALERT_MS) {
+            escalated++;
+            await supabase.rpc("record_monitoring_alert", {
+              p_fingerprint: `crypto_buy_paid_inflight_${tx.id}`,
+              p_type: "crypto_buy_paid_but_undelivered",
+              p_severity: "critical",
+              p_details: {
+                transaction_id: tx.id,
+                merchant_reference: merchantReference,
+                quidax_status: remote.status,
+                age_hours: Math.floor(ageMs / 3_600_000),
+                fiat_received_at: meta.fiat_received_at ?? null,
+                // Quidax attaches a note explaining a needs_attention state.
+                provider_note: remote.errorMessage ?? null,
+                note: "Quidax reports value received. Customer is owed delivery or a refund.",
+              },
+            });
+          }
+        } else if (ageMs > UNPAID_PENDING_CLOSE_MS) {
+          // Quidax has no value for this and a full day has passed, so no
+          // transfer is still in flight. Close it the same quiet way as an
+          // abandoned checkout rather than leaving it pending forever.
+          await supabase.rpc("fail_crypto_buy", {
+            p_merchant_reference: merchantReference,
+            p_reason: "not_paid",
           });
+          notPaid++;
+        } else {
+          stillPending++;
+          // Still inside the window where a slow bank transfer could arrive.
+          const ageDays = Math.floor(ageMs / 86_400_000);
+          if (ageMs > STALE_ESCALATION_MS) {
+            escalated++;
+            await supabase.rpc("record_monitoring_alert", {
+              p_fingerprint: `crypto_buy_stale_${tx.id}`,
+              p_type: "crypto_buy_stuck_pending",
+              p_severity: "warning",
+              p_details: {
+                transaction_id: tx.id,
+                merchant_reference: merchantReference,
+                quidax_status: remote.status,
+                age_days: ageDays,
+                fiat_received_at: meta.fiat_received_at ?? null,
+                provider_note: remote.errorMessage ?? null,
+              },
+            });
+          }
         }
       }
     }
