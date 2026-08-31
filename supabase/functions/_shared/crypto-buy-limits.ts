@@ -20,7 +20,32 @@ export const FALLBACK_MAX_NGN = 2_000_000;
 // limits endpoint at all. Enforced as an additional floor on top of
 // whatever they report live, so their API's own number is never trusted
 // below this regardless of what it says.
-export const QUIDAX_MIN_TRADABLE_NGN = 3000;
+//
+// Raised to ₦10,000 on 2026-08-31. Quidax explained why that ₦2,790 order
+// hung: TRC20 gas is a flat $1, and the order was worth 0.9963 USDT — less
+// than the fee to move it. They also confirmed that money is not returned
+// ("it remains in that state"), so anything under a dollar is simply lost.
+//
+// The stuck order was the visible symptom; the flat fee is the real problem,
+// because it is charged per order regardless of size and comes out before
+// the customer's quote. Measured across every completed buy, the gap between
+// gross and delivered is $1.00–$1.08 every time:
+//
+//   ₦3,000  -> 2.17 USDT gross -> 1.12 delivered  (48% to gas)
+//   ₦5,000  -> 3.62 USDT gross -> 2.54 delivered  (30% to gas)
+//   ₦10,000 -> ~7.25 gross     -> ~6.2 delivered  (~14% to gas)
+//
+// A minimum that hands nearly half of someone's money to a network fee is
+// not a product worth shipping, so the floor is set where the fee becomes a
+// sensible share rather than where the trade merely survives. It stays in
+// naira rather than USD because at ₦10,000 (~7 USDT) the naira would have to
+// lose ~85% of its value before an order approached the $1 line — the drift
+// that made ₦3,000 fragile is not a concern at this size.
+//
+// Revisit if the TRC20 fee changes, or if on-ramp delivery moves to a
+// cheaper network (BEP20/Polygon gas is cents) — that would let this come
+// straight back down. Question outstanding with Quidax.
+export const QUIDAX_MIN_TRADABLE_NGN = 10000;
 
 export async function resolveBuyLimits(): Promise<{ minNgn: number; maxNgn: number }> {
   const limits = await getBuyLimits("ngn");
