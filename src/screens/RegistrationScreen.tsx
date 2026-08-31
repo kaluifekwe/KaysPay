@@ -432,19 +432,16 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
             </View>
             <Text style={styles.brandName}>KaysPay</Text>
           </View>
-          <Text style={styles.title}>Create Account</Text>
+          <Text style={styles.title}>Join KaysPay</Text>
           <Text style={styles.subtitle}>
-            {step === 1 ? 'Fill in your details to get started' : 'Set a password and transaction PIN'}
+            {step === 1 ? 'Send money, pay bills, and buy airtime in minutes' : 'Secure your account'}
           </Text>
 
           <View style={styles.progressContainer}>
-            <View style={styles.progressLabelRow}>
-              <Text style={styles.progressLabel}>
-                {step === 1 ? 'Step 1 of 2 — Personal Details' : 'Step 2 of 2 — Security'}
-              </Text>
-            </View>
-            <View style={styles.progressBar}>
-              <View style={[styles.progressFill, { width: step === 1 ? '50%' : '100%' }]} />
+            <View style={styles.progressSegments}>
+              <View style={[styles.progressSegment, styles.progressSegmentFilled]} />
+              <View style={[styles.progressSegment, step === 2 && styles.progressSegmentFilled]} />
+              <Text style={styles.progressLabel}>{step} of 2</Text>
             </View>
           </View>
         </View>
@@ -459,7 +456,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
           {step === 1 ? (
             <View style={styles.formCard}>
               <View style={styles.fieldContainer}>
-                {renderLabel('Full Name')}
+                {renderLabel('Full name')}
                 <View style={[styles.inputWrapper, getFieldStyle(!!fullNameError, fullNameValid, focusedField === 'fullName')]}>
                   {renderFieldIcon('person-outline')}
                   <TextInput
@@ -479,7 +476,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
               </View>
 
               <View style={styles.fieldContainer}>
-                {renderLabel('Email Address')}
+                {renderLabel('Email address')}
                 <View style={[styles.inputWrapper, getFieldStyle(!!emailError, emailValid, focusedField === 'email')]}>
                   {renderFieldIcon('mail-outline')}
                   <TextInput
@@ -502,7 +499,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
               </View>
 
               <View style={styles.fieldContainer}>
-                {renderLabel('Phone Number')}
+                {renderLabel('Phone number')}
                 <View style={[styles.inputWrapper, getFieldStyle(!!phoneError, phoneValid, focusedField === 'phone')]}>
                   {renderFieldIcon('call-outline')}
                   <TextInput
@@ -539,7 +536,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                 disabled={!isStep1Valid}
                 activeOpacity={0.8}
               >
-                <Text style={styles.createButtonText}>Next</Text>
+                <Text style={styles.createButtonText}>Continue</Text>
                 <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={styles.createButtonArrowIcon} />
               </TouchableOpacity>
             </View>
@@ -592,7 +589,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
               </View>
 
               <View style={styles.fieldContainer}>
-                {renderLabel('Confirm Password')}
+                {renderLabel('Confirm password')}
                 <View style={[styles.inputWrapper, getFieldStyle(!!confirmPasswordError, confirmPassword.length > 0 && !confirmPasswordError, focusedField === 'confirmPassword')]}>
                   {renderFieldIcon('lock-closed-outline')}
                   <TextInput
@@ -658,7 +655,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                   activeOpacity={0.8}
                 >
                   <Text style={styles.createButtonText}>
-                    {submitting ? 'Creating Account...' : 'Sign Up'}
+                    {submitting ? 'Creating account...' : 'Create account'}
                   </Text>
                   {!submitting && (
                     <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={styles.createButtonArrowIcon} />
@@ -705,10 +702,10 @@ function createStyles(theme: AppTheme) {
   title: { fontFamily: 'Helvetica-Bold', fontSize: 26, color: theme.ink, marginBottom: 4 },
   subtitle: { fontSize: 14, color: theme.inkMuted, marginBottom: 16 },
   progressContainer: { marginTop: 4 },
-  progressLabelRow: { marginBottom: 8 },
-  progressLabel: { fontSize: 11, color: theme.inkMuted },
-  progressBar: { height: 4, backgroundColor: theme.surfaceRaised, borderRadius: 2, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: theme.brand, borderRadius: 2 },
+  progressSegments: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  progressSegment: { flex: 1, height: 3, borderRadius: 2, backgroundColor: theme.surfaceRaised },
+  progressSegmentFilled: { backgroundColor: theme.brand },
+  progressLabel: { fontSize: 11, color: theme.inkMuted, fontWeight: '500' },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 40 },
   formCard: {
