@@ -12,13 +12,13 @@ function json(body: unknown, status = 200) {
 }
 
 function generateCode(): string {
-  // 6 secure-random digits (000000â€?99999, left-padded).
+  // 6 secure-random digits (000000ï¿½?99999, left-padded).
   const bytes = new Uint32Array(1);
   crypto.getRandomValues(bytes);
   return String(bytes[0] % 1_000_000).padStart(6, "0");
 }
 
-// Only ever verifies the signup email itself â€?email/phone are fixed at
+// Only ever verifies the signup email itself ï¿½?email/phone are fixed at
 // signup and never user-editable afterward (owner decision, 2026-07-06).
 serve(async (req: Request) => {
   const cors = handleCors(req);
@@ -44,7 +44,17 @@ serve(async (req: Request) => {
 
   if (!createResult?.ok) {
     if (createResult?.error === "RATE_LIMITED") {
-      return json({ success: false, error: "Please wait a moment before requesting another code." });
+      // Machine-readable code alongside the message. This one is not really a
+      // failure: it means a code was issued in the last 60 seconds and is
+      // still valid and sitting in the customer's inbox. The app needs to
+      // tell it apart from a genuine send failure so it can say "enter the
+      // code we already sent" and show the input, instead of an error screen
+      // that hides the very field they need.
+      return json({
+        success: false,
+        code: "RATE_LIMITED",
+        error: "Please wait a moment before requesting another code.",
+      });
     }
     if (createResult?.error === "DAILY_LIMIT_REACHED") {
       return json({ success: false, error: "Too many attempts today. Please try again tomorrow." });
@@ -55,7 +65,7 @@ serve(async (req: Request) => {
   const { subject, html, text } = otpEmail(code);
   const sendResult = await sendEmail(user.email, subject, html, { text });
   if (!sendResult.ok) {
-    // Surface the real Resend error in the function logs â€?otherwise a
+    // Surface the real Resend error in the function logs ï¿½?otherwise a
     // domain-not-verified / test-mode / bad-key rejection is invisible and
     // looks like a generic outage from the client's side.
     console.error("send-email-otp: Resend send failed:", sendResult.error);

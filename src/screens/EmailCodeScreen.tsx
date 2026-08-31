@@ -94,6 +94,17 @@ export default function EmailCodeScreen(props: any) {
 
       const result = await emailVerificationService.sendCode();
       if (!result.success) {
+        // RATE_LIMITED is not a failure: the server is telling us a code was
+        // issued within the last minute and is still valid, sitting in the
+        // customer's inbox. Treat it exactly like a successful send — record
+        // the timestamp so this screen stops asking again, start the cooldown,
+        // and fall through to the input. Showing an error here would hide the
+        // very field they need to type the code they already have.
+        if (result.code === 'RATE_LIMITED') {
+          await storageHelpers.setNumber(key, Date.now());
+          setResendTimer(59);
+          return;
+        }
         void analytics.track('email_verification_failed', { outcome: 'failed', failureCode: 'code_send_failed', metadata: { verification_method: 'email_otp' } });
         setInitError(safeErrorMessage(result.error, 'Could not send verification code.'));
         return;
@@ -233,15 +244,24 @@ export default function EmailCodeScreen(props: any) {
               <ActivityIndicator color={theme.brand} size="large" />
               <Text style={styles.subtitle}>Sending your verification code...</Text>
             </View>
-          ) : initError ? (
-            <View style={styles.initStateContainer}>
-              <Text style={styles.subtitle}>{initError}</Text>
-              <TouchableOpacity style={styles.verifyButton} onPress={sendInitialCode} activeOpacity={0.8}>
-                <Text style={styles.verifyButtonText}>Try Again</Text>
-              </TouchableOpacity>
-            </View>
           ) : (
             <>
+              {/* A failed send used to REPLACE this whole block with an error
+                  and a Try Again button, so the six code boxes were not
+                  rendered at all. Anyone who already had a code in their inbox
+                  — very common, since the send can fail after the email has
+                  gone out — had nowhere to type it, and Try Again only
+                  repeated the same failing send. The notice now sits above the
+                  input instead of standing in for it. */}
+              {initError ? (
+                <View style={styles.initErrorNotice}>
+                  <Text style={styles.initErrorText}>{initError}</Text>
+                  <Text style={styles.initErrorHint}>
+                    If you already have a code, enter it below.
+                  </Text>
+                </View>
+              ) : null}
+
               <Text style={[styles.subtitle, styles.subtitleTight]}>{subtitle}</Text>
 
               <View style={styles.spamHint}>
@@ -332,6 +352,26 @@ function createStyles(theme: AppTheme) {
     alignItems: 'center',
     paddingTop: 40,
     gap: 20,
+  },
+  initErrorNotice: {
+    backgroundColor: theme.errorBg,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 14,
+    gap: 4,
+  },
+  initErrorText: {
+    fontFamily: 'Helvetica',
+    fontSize: 13,
+    color: theme.down,
+    textAlign: 'center',
+  },
+  initErrorHint: {
+    fontFamily: 'Helvetica',
+    fontSize: 12,
+    color: theme.inkMuted,
+    textAlign: 'center',
   },
   title: {
     fontFamily: 'Helvetica-Bold',

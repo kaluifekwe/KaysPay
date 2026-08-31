@@ -5,6 +5,10 @@ export interface SendCodeResult {
   success: boolean;
   sentTo?: string;
   error?: string;
+  /** Machine-readable reason when success is false. 'RATE_LIMITED' means a
+   * code was already sent within the last minute and is still valid — the
+   * caller should show the code input, never an error screen that hides it. */
+  code?: string;
 }
 
 export interface VerifyCodeResult {
@@ -54,7 +58,7 @@ export const emailVerificationService = {
         return { success: false, error: await unwrapError(error, 'Could not send verification code. Please try again.') };
       }
       if (!data?.success) {
-        return { success: false, error: data?.error || 'Could not send verification code.' };
+        return { success: false, error: data?.error || 'Could not send verification code.', code: data?.code };
       }
       return { success: true, sentTo: data.sent_to };
     } catch {
