@@ -23,9 +23,9 @@ import {
 import { redactSecrets } from "../_shared/redact.ts";
 
 // Sell: pays the customer's bank account DIRECTLY via Quidax's Ramp
-// off-ramp, using Quidax's own liquidity â€?never touches the KaysPay
+// off-ramp, using Quidax's own liquidity ï¿½?never touches the KaysPay
 // wallet. Replaces the previous internal-swap-then-credit-wallet mechanism
-// (migration 119, now unused) â€?owner decision 2026-08-20, driven by not
+// (migration 119, now unused) ï¿½?owner decision 2026-08-20, driven by not
 // having float capital to keep Flutterwave/Paystack payout balances funded
 // for a wallet-based Transfer-out step. See migration 139.
 function json(body: unknown, status = 200) {
@@ -37,8 +37,20 @@ function json(body: unknown, status = 200) {
 
 const MIN_USDT = 1;
 const MAX_USDT = 2000;
-// Same network used throughout Buy/Withdraw for USDT â€?see EXTERNAL_NETWORK_MAP.
-const USDT_NETWORK = "trc20";
+// Same network used throughout Buy/Withdraw for USDT ï¿½?see EXTERNAL_NETWORK_MAP.
+// A sell moves the customer's USDT on-chain to Quidax's off-ramp, so it pays
+// a network fee â€” charged ON TOP of the amount sold, not taken out of the
+// naira payout. That made it easy to miss: payout rates looked clean at every
+// size while the customer was quietly spending an extra whole USDT. On TRC20
+// at 1.00 USDT, selling 3 USDT cost 4 and returned about â‚¦4,134 â€” an
+// effective â‚¦1,034 per USDT against a â‚¦1,378 headline, so a quarter of the
+// money went to the fee. It also blocked sales outright: holding 3.47 USDT
+// was not enough to sell 3.
+//
+// BEP20 charges $0.02 for the same movement (Quidax's own USDT fee table;
+// trc20 is joint most expensive at $1.00). Matches Buy's delivery network, so
+// coin arrives and leaves over one chain instead of straddling two.
+const USDT_NETWORK = "bep20";
 
 serve(async (req: Request) => {
   const cors = handleCors(req);
@@ -99,7 +111,7 @@ serve(async (req: Request) => {
   const idempotencyKey = String(body.idempotency_key || `crypto_sell_${user.id}_${Date.now()}`);
 
   // Idempotency short-circuit BEFORE the PIN/biometric token is spent and
-  // BEFORE any Quidax call â€?same discipline as transfer-send. Found by the
+  // BEFORE any Quidax call ï¿½?same discipline as transfer-send. Found by the
   // 2026-08-20 Strix pentest (vuln-0001/0004): without this, a replayed
   // request (retry, double-tap, a fresh step-up token on the same logical
   // sale) sailed straight through to a SECOND real Quidax withdrawal, since
@@ -135,7 +147,7 @@ serve(async (req: Request) => {
 
   try {
     const account = await getOrCreateCryptoAccount(supabase, user);
-    // Server-trusted identity for the off-ramp's name-match check â€?never
+    // Server-trusted identity for the off-ramp's name-match check ï¿½?never
     // the mutable profile name (see deriveVerifiedQuidaxIdentity's own
     // comment for why: Strix pentest 2026-08-20, vuln-0002/0003).
     const identity = await deriveVerifiedQuidaxIdentity(supabase, user);
@@ -143,7 +155,7 @@ serve(async (req: Request) => {
       return json({ success: false, error: "Complete identity verification before selling crypto to a bank account." }, 403);
     }
 
-    // Balance is checked against Quidax, never a local number â€?a stale
+    // Balance is checked against Quidax, never a local number ï¿½?a stale
     // local copy could authorize a sale the user can't actually cover.
     const wallets = await getSubAccountWallets(account.quidaxUserId);
     const usdt = wallets.find((w) => w.currency.toLowerCase() === "usdt");
@@ -196,7 +208,7 @@ serve(async (req: Request) => {
       return json({ success: false, error: "Could not prepare this sale. Please try again." }, 500);
     }
 
-    // Recorded BEFORE the crypto actually leaves the sub-account â€?the
+    // Recorded BEFORE the crypto actually leaves the sub-account ï¿½?the
     // withdrawal below is the irreversible step, same discipline as the
     // old flow recording before confirmSwapQuotation.
     const { data: txId, error: recordError } = await supabase.rpc("record_crypto_sell_offramp_pending", {
@@ -224,7 +236,7 @@ serve(async (req: Request) => {
         reference: merchantReference,
       });
     } catch (withdrawError) {
-      // The crypto may or may not have actually moved at this point â€?no
+      // The crypto may or may not have actually moved at this point ï¿½?no
       // wallet debit exists to roll back either way, so this is flagged for
       // manual follow-up rather than silently failed (see migration 139).
       await supabase.rpc("fail_crypto_sell_offramp", { p_reference: merchantReference, p_reason: "withdrawal_failed" });

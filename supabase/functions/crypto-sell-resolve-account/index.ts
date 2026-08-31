@@ -12,28 +12,30 @@ import {
 import { redactSecrets } from "../_shared/redact.ts";
 
 // Resolves a bank account BEFORE a Sell, so the customer sees the account
-// name confirmed while still filling in the form â€?matches Transfer's
+// name confirmed while still filling in the form ï¿½?matches Transfer's
 // verify-before-commit UX, added after the owner asked for it specifically
 // (the first version of Sell only checked at submit time). Rate-limited on
-// its own â€?same account-number-to-name enumeration surface as
+// its own ï¿½?same account-number-to-name enumeration surface as
 // transfer-resolve-account.
 //
-// Off-ramp has no standalone "verify" endpoint â€?the only way to check a
+// Off-ramp has no standalone "verify" endpoint ï¿½?the only way to check a
 // name match IS to initiate + attach a bank account for real. This does
 // exactly that with a throwaway reference; the customer's real Sell later
 // runs its own separate initiate+attach with a fresh reference, so this
 // probe never shares state with (or blocks) the actual sale. No crypto ever
-// moves here â€?confirm/withdraw only happen in crypto-sell itself.
+// moves here ï¿½?confirm/withdraw only happen in crypto-sell itself.
 //
 // Must match crypto-sell/index.ts's own MIN_USDT/MAX_USDT exactly: this
 // probe used to only check crypto_amount > 0, so an amount below Quidax's
 // real minimum (e.g. 0.9) still got sent to their off-ramp initiate call,
-// which rejected it with a bare "Invalid amount" â€?surfacing here as the
+// which rejected it with a bare "Invalid amount" ï¿½?surfacing here as the
 // generic "Could not verify this account" and wrongly pointing the
 // customer at their bank details instead of the amount they typed.
 const MIN_USDT = 1;
 const MAX_USDT = 2000;
-const USDT_NETWORK = "trc20";
+// Must match crypto-sell's USDT_NETWORK â€” this path also quotes the fee back
+// to the customer. See the note there: BEP20 costs $0.02 against TRC20's $1.00.
+const USDT_NETWORK = "bep20";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {

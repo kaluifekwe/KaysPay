@@ -1722,7 +1722,13 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 {sellQuote && (
                   <View style={styles.sellQuoteCard}>
                     <Text style={styles.sellQuoteText}>Amount to sell: {formatUsdt(sellQuote.amount)}</Text>
-                    <Text style={styles.sellQuoteText}>TRC20 network fee: {formatUsdt(sellQuote.networkFee)}</Text>
+                    {/* The network name comes from the quote rather than being
+                        hardcoded: it read "TRC20" even after selling moved to
+                        BEP20, so the customer was shown the wrong chain next to
+                        a real fee. */}
+                    <Text style={styles.sellQuoteText}>
+                      {sellQuote.network.toUpperCase()} network fee: {formatUsdt(sellQuote.networkFee)}
+                    </Text>
                     <Text style={styles.sellQuoteTotal}>Total required: {formatUsdt(sellQuote.totalRequired)}</Text>
                   </View>
                 )}

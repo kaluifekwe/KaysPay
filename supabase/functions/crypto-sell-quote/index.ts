@@ -6,7 +6,10 @@ import { getCryptoWithdrawalFee, getSubAccountWallets, isQuidaxConfigured } from
 
 const MIN_USDT = 1;
 const MAX_USDT = 2000;
-const NETWORK = "trc20";
+// Must match crypto-sell's USDT_NETWORK — this quote is what the customer is
+// shown before confirming, so a mismatch would quote one fee and charge
+// another. See the note there: BEP20 costs $0.02 against TRC20's $1.00.
+const NETWORK = "bep20";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders(), "Content-Type": "application/json" } });
