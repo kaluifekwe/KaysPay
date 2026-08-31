@@ -44,11 +44,37 @@ export const StorageKeys = {
   CRYPTO_SCREEN_LAST_VISIT: 'crypto_screen_last_visit',
 };
 
+// SecureStore validates every key against /^[\w.-]+$/ and THROWS on anything
+// else — so a key built from a dynamic value (an email, a user id joined with
+// ':') rejects every read and write. Because each helper below catches and
+// returns undefined, that failure is completely silent: the value simply never
+// stores, and reads forever answer "nothing here".
+//
+// Three onboarding keys were built that way, and none had ever stored a single
+// value on any device:
+//   email_otp_last_sent_at:<email>   -> the email OTP resend cooldown never
+//                                       applied, so every remount of the
+//                                       verification screen sent a NEW code
+//                                       and silently invalidated the one
+//                                       already in the customer's inbox.
+//   pending_signup_pin:<userId>      -> the fallback that re-saves a signup
+//                                       PIN when the first attempt fails.
+//   biometric_prompt_signup_pin:<..> -> the one-time post-signup biometric
+//                                       offer, which therefore never appeared.
+//
+// Sanitizing here rather than at each call site means a dynamic key cannot
+// reintroduce this. Any already-valid key maps to itself, so nothing that
+// currently works changes, and nothing needs migrating: the broken keys never
+// held a value to migrate.
+function safeKey(key: string): string {
+  return key.replace(/[^\w.-]/g, '_');
+}
+
 // Helper functions using SecureStore (max 2KB per item)
 export const storageHelpers = {
   getString: async (key: string): Promise<string | undefined> => {
     try {
-      return (await SecureStore.getItemAsync(key)) ?? undefined;
+      return (await SecureStore.getItemAsync(safeKey(key))) ?? undefined;
     } catch {
       return undefined;
     }
@@ -56,7 +82,7 @@ export const storageHelpers = {
 
   setString: async (key: string, value: string): Promise<void> => {
     try {
-      await SecureStore.setItemAsync(key, value);
+      await SecureStore.setItemAsync(safeKey(key), value);
     } catch (error) {
       console.error('Failed to store string:', error);
     }
@@ -64,7 +90,7 @@ export const storageHelpers = {
 
   getNumber: async (key: string): Promise<number | undefined> => {
     try {
-      const value = await SecureStore.getItemAsync(key);
+      const value = await SecureStore.getItemAsync(safeKey(key));
       return value ? Number(value) : undefined;
     } catch {
       return undefined;
@@ -73,7 +99,7 @@ export const storageHelpers = {
 
   setNumber: async (key: string, value: number): Promise<void> => {
     try {
-      await SecureStore.setItemAsync(key, String(value));
+      await SecureStore.setItemAsync(safeKey(key), String(value));
     } catch (error) {
       console.error('Failed to store number:', error);
     }
@@ -81,7 +107,7 @@ export const storageHelpers = {
 
   getBoolean: async (key: string): Promise<boolean | undefined> => {
     try {
-      const value = await SecureStore.getItemAsync(key);
+      const value = await SecureStore.getItemAsync(safeKey(key));
       if (value === null || value === undefined) return undefined;
       return value === 'true';
     } catch {
@@ -91,7 +117,7 @@ export const storageHelpers = {
 
   setBoolean: async (key: string, value: boolean): Promise<void> => {
     try {
-      await SecureStore.setItemAsync(key, String(value));
+      await SecureStore.setItemAsync(safeKey(key), String(value));
     } catch (error) {
       console.error('Failed to store boolean:', error);
     }
@@ -99,7 +125,7 @@ export const storageHelpers = {
 
   getObject: async <T>(key: string): Promise<T | undefined> => {
     try {
-      const json = await SecureStore.getItemAsync(key);
+      const json = await SecureStore.getItemAsync(safeKey(key));
       return json ? JSON.parse(json) : undefined;
     } catch {
       return undefined;
@@ -113,7 +139,7 @@ export const storageHelpers = {
         console.warn('Object too large for SecureStore, skipping:', key);
         return;
       }
-      await SecureStore.setItemAsync(key, json);
+      await SecureStore.setItemAsync(safeKey(key), json);
     } catch (error) {
       console.error('Failed to store object:', error);
     }
@@ -121,7 +147,7 @@ export const storageHelpers = {
 
   delete: async (key: string): Promise<void> => {
     try {
-      await SecureStore.deleteItemAsync(key);
+      await SecureStore.deleteItemAsync(safeKey(key));
     } catch (error) {
       console.error('Failed to delete:', error);
     }
@@ -132,7 +158,7 @@ export const storageHelpers = {
       // SecureStore doesn't have clearAll, we delete keys individually
       const allKeys = Object.values(StorageKeys);
       for (const key of allKeys) {
-        await SecureStore.deleteItemAsync(key).catch(() => {});
+        await SecureStore.deleteItemAsync(safeKey(key)).catch(() => {});
       }
     } catch (error) {
       console.error('Failed to clear storage:', error);

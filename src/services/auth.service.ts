@@ -17,7 +17,7 @@ export interface AuthResult {
 // stashSignupPin / ensurePinSaved). Scoped per-account (user id suffix) so a
 // PIN stashed for one account can never be read back and silently adopted by
 // a different account signed in later on the same device.
-const pendingPinKey = (userId: string) => `pending_signup_pin:${userId}`;
+const pendingPinKey = (userId: string) => `pending_signup_pin_${userId}`;
 
 // Separate stash, same shape as pendingPinKey above: holds the just-created
 // PIN only long enough to offer biometric enrollment once, right after a
@@ -25,7 +25,7 @@ const pendingPinKey = (userId: string) => `pending_signup_pin:${userId}`;
 // skipped for these users, since they already set a PIN during Registration
 // — see AppNavigator's needsBiometricPrompt check). Cleared the moment that
 // one-time prompt is shown, whether the user enables or declines.
-const biometricPromptPinKey = (userId: string) => `biometric_prompt_signup_pin:${userId}`;
+const biometricPromptPinKey = (userId: string) => `biometric_prompt_signup_pin_${userId}`;
 
 // Pre-scoping key name used before this fix. No longer written, but a stray
 // value may still exist on devices that signed up under the old code — purged
