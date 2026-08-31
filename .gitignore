@@ -74,3 +74,9 @@ supabase/.temp/
 .env*
 
 .vercel
+
+# Firebase config. Holds API keys for every app in the shared DispatchPH
+# project (KaysPay, kaysmarket, dispatchph), so it must not live in this
+# repo. Supplied to EAS builds as the GOOGLE_SERVICES_JSON file secret;
+# see app.config.js.
+google-services.json

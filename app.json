@@ -7,7 +7,24 @@
     "icon": "./assets/icon-green.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSExceptionDomains": {
+            "supabase.co": {
+              "NSIncludesSubdomains": true,
+              "NSExceptionAllowsInsecureHTTP": false,
+              "NSExceptionRequiresForwardSecrecy": true
+            },
+            "expo.dev": {
+              "NSIncludesSubdomains": true,
+              "NSExceptionAllowsInsecureHTTP": false,
+              "NSExceptionRequiresForwardSecrecy": true
+            }
+          }
+        }
+      }
     },
     "android": {
       "allowBackup": false,
@@ -57,7 +74,16 @@
           "backgroundColor": "#1A5C3A"
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {
