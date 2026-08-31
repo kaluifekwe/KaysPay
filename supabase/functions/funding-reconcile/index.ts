@@ -10,6 +10,11 @@ import { redactSecrets } from "../_shared/redact.ts";
 const OVERLAP_MS = 5 * 60 * 1000;
 const INITIAL_LOOKBACK_MS = 60 * 60 * 1000;
 const MAX_PAGES_PER_RUN = 5;
+// How stale a provider's last successful sweep may get before it is swept
+// even with no unresolved funding_events. Deliberately under the monitor's
+// 15-minute funding_reconcile_stale threshold (migration 110) so a healthy
+// system never trips its own alarm.
+const PERIODIC_SWEEP_MS = 10 * 60 * 1000;
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }); }
 type ReconcileState = { provider: FundingProvider; window_from: string | null; window_to: string | null; next_page: number; last_success_at: string | null };
 
@@ -109,7 +114,35 @@ serve(async (req: Request) => {
     const providers = new Set<FundingProvider>();
     if ((paystackCheck.count ?? 0) > 0) providers.add("paystack");
     if ((flutterwaveCheck.count ?? 0) > 0) providers.add("flutterwave");
+    // An unresolved funding_events row means a webhook arrived but could not
+    // be credited. That is only ONE of the two ways funding breaks. The other
+    // is a webhook that never arrives at all, which leaves no row anywhere —
+    // so gating the sweep purely on those counts made the recovery path
+    // depend on evidence that exists only when the failure it recovers from
+    // did not happen. Between 26 Aug and 31 Aug that gate meant the provider
+    // sweep never ran once.
+    //
+    // So a provider whose last successful sweep has gone stale is swept
+    // regardless. This keeps the original intent — no polling every two
+    // minutes on a quiet system — while guaranteeing the sweep that actually
+    // catches missed webhooks still runs on a predictable cadence.
+    const sweepFloor = new Date(Date.now() - PERIODIC_SWEEP_MS).toISOString();
+    const { data: staleState, error: staleError } = await db
+      .from("funding_reconciliation_state")
+      .select("provider, last_success_at")
+      .or(`last_success_at.is.null,last_success_at.lt.${sweepFloor}`);
+    if (staleError) throw staleError;
+    for (const row of staleState || []) providers.add(row.provider as FundingProvider);
+
     if (providers.size === 0) {
+      // Nothing to sweep. Still stamp last_run_at: this job DID run, and
+      // leaving the timestamp untouched made a healthy idle system read as
+      // dead to the monitor, firing a permanent critical alert. That noise is
+      // not harmless — it buried the crypto-buy stuck-order alerts.
+      const ranAt = new Date().toISOString();
+      await db.from("funding_reconciliation_state")
+        .update({ last_run_at: ranAt, updated_at: ranAt })
+        .in("provider", ["paystack", "flutterwave"]);
       return { checked: false, skipped: true, reason: "no_unresolved_funding", providers: [] };
     }
 

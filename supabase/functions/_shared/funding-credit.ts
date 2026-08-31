@@ -181,6 +181,35 @@ export async function processFundingCandidate(
     return { outcome: "unmatched" };
   }
 
+  // Settled money is recognised BEFORE the KYC gate below. Order matters: the
+  // duplicate test used to live inside credit_wallet_funding, which an
+  // unverified user never reaches, so re-reading an already-credited payment
+  // held money that had in fact been in the customer's wallet for days. They
+  // were then told to verify their identity "before it can be added to your
+  // wallet" — about a balance they could already see and spend.
+  //
+  // A payment that is already credited is finished. Nothing about the
+  // customer's KYC state can make it un-happen, so there is nothing to hold.
+  const { data: alreadyCredited, error: creditedError } = await db.rpc("funding_already_credited", {
+    p_user_id: userId,
+    p_reference: candidate.reference,
+    p_amount: candidate.amountKobo,
+    p_source: candidate.provider,
+  });
+  if (creditedError) {
+    await updateEvent(db, candidate, { status: "error", error_code: "CREDITED_LOOKUP_FAILED" });
+    throw creditedError;
+  }
+  if (alreadyCredited === true) {
+    await updateEvent(db, candidate, {
+      user_id: userId,
+      status: "duplicate",
+      error_code: null,
+      processed_at: new Date().toISOString(),
+    });
+    return { outcome: "duplicate", userId };
+  }
+
   // KYC is enforced here, at the shared server-side money boundary. This
   // protects old app builds and modified clients as well as the latest UI.
   // A real provider transfer is never discarded: it is durably held without
