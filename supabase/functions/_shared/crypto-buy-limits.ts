@@ -21,31 +21,29 @@ export const FALLBACK_MAX_NGN = 2_000_000;
 // whatever they report live, so their API's own number is never trusted
 // below this regardless of what it says.
 //
-// Raised to ₦10,000 on 2026-08-31. Quidax explained why that ₦2,790 order
-// hung: TRC20 gas is a flat $1, and the order was worth 0.9963 USDT — less
-// than the fee to move it. They also confirmed that money is not returned
-// ("it remains in that state"), so anything under a dollar is simply lost.
+// This was briefly raised to ₦10,000 on 2026-08-31 and is now back to
+// ₦3,000, because the reason for raising it has gone away.
 //
-// The stuck order was the visible symptom; the flat fee is the real problem,
-// because it is charged per order regardless of size and comes out before
-// the customer's quote. Measured across every completed buy, the gap between
-// gross and delivered is $1.00–$1.08 every time:
+// Quidax explained that the ₦2,790 order hung because TRC20 gas is a flat $1
+// and the order was worth 0.9963 USDT — less than the fee to move it. They
+// also confirmed that money is never returned ("it remains in that state").
+// Being a FLAT fee, it hit small orders hardest: measured across every
+// completed buy the gap between gross and delivered was $1.00–$1.08 every
+// time, so a ₦3,000 purchase delivered barely half its value. ₦10,000 was
+// the size at which that fee stopped being outrageous.
 //
-//   ₦3,000  -> 2.17 USDT gross -> 1.12 delivered  (48% to gas)
-//   ₦5,000  -> 3.62 USDT gross -> 2.54 delivered  (30% to gas)
-//   ₦10,000 -> ~7.25 gross     -> ~6.2 delivered  (~14% to gas)
+// It was never the real fix. crypto-buy was settling on TRC20 in the belief
+// that it was the cheapest network; Quidax's own fee table shows it is joint
+// most expensive at $1.00, while BEP20 is $0.02. Delivery moved to BEP20, so
+// the fee that justified a ₦10,000 floor is now two cents and a ₦3,000
+// purchase delivers ~99% of its value.
 //
-// A minimum that hands nearly half of someone's money to a network fee is
-// not a product worth shipping, so the floor is set where the fee becomes a
-// sensible share rather than where the trade merely survives. It stays in
-// naira rather than USD because at ₦10,000 (~7 USDT) the naira would have to
-// lose ~85% of its value before an order approached the $1 line — the drift
-// that made ₦3,000 fragile is not a concern at this size.
-//
-// Revisit if the TRC20 fee changes, or if on-ramp delivery moves to a
-// cheaper network (BEP20/Polygon gas is cents) — that would let this come
-// straight back down. Question outstanding with Quidax.
-export const QUIDAX_MIN_TRADABLE_NGN = 10000;
+// Keeping ₦3,000 rather than dropping to the ₦2,000 Quidax's limits endpoint
+// reports: their number is what let the lost ₦2,790 order through, and their
+// support separately confirmed (2026-08-20) that ₦3,000 is the real floor for
+// the underlying trade to execute. Their API's own figure is still never
+// trusted below this.
+export const QUIDAX_MIN_TRADABLE_NGN = 3000;
 
 export async function resolveBuyLimits(): Promise<{ minNgn: number; maxNgn: number }> {
   const limits = await getBuyLimits("ngn");

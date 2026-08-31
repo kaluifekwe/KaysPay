@@ -38,9 +38,30 @@ function json(body: unknown, status = 200) {
   });
 }
 
-// TRC-20 is the cheapest network to settle on, and Ramp pays out on-chain
-// even when the destination is a Quidax-hosted address.
-const DELIVERY_NETWORK = "trc20";
+// Ramp pays out ON-CHAIN even when the destination is a Quidax-hosted
+// address — Quidax confirmed (2026-08-31) that an internal credit is not
+// possible, so every purchase pays a network fee to move coin from Quidax
+// back into Quidax. The network is therefore the only lever on that fee.
+//
+// This used to say TRC-20 was "the cheapest network to settle on". It is not,
+// and that single wrong belief is what made a ₦3,000 purchase deliver barely
+// half its value. Quidax's own USDT fee table:
+//
+//   celo $0.005 · polygon $0.01 · bep20 $0.02 · solana $0.025 · ton $0.035
+//   lisk $1.00 · trc20 $1.00 · erc20 $2.00
+//
+// TRC-20 is joint-most-expensive, beaten only by Ethereum. On a ₦3,000 order
+// that $1 was 48% of the customer's money, and on anything under a dollar the
+// trade could not execute at all — Quidax keeps that money ("it remains in
+// that state"), which is how a ₦2,790 order was lost.
+//
+// bep20 over the cheaper polygon/celo deliberately: delivery lands in the
+// customer's own Quidax sub-account, and crypto-withdraw only offers TRC20,
+// ERC20 and BEP20. Choosing a network we can also withdraw on means this is
+// safe whether or not Quidax holds one fungible USDT balance per sub-account
+// — a question they have not answered. Two cents versus one is not worth
+// betting customer funds on the answer.
+const DELIVERY_NETWORK = "bep20";
 
 // Same format rules as crypto.service.ts's client-side check and
 // crypto-withdraw's server-side check �?never trust the client's own
