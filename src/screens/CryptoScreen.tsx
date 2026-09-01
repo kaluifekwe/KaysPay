@@ -31,6 +31,8 @@ import {
   cryptoService,
   isValidCryptoAddress,
   CRYPTO_NETWORKS,
+  WITHDRAW_SINGLE_NETWORK_ASSETS,
+  type CryptoAsset,
   type CryptoNetwork,
   type SavedCryptoAddress,
   type QuidaxWalletBalance,
@@ -416,6 +418,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [sellQuoteLoading, setSellQuoteLoading] = useState(false);
   const [sellQuoteError, setSellQuoteError] = useState<string | null>(null);
 
+  const [wdAsset, setWdAsset] = useState<CryptoAsset>('USDT');
   const [wdNetwork, setWdNetwork] = useState<CryptoNetwork>('TRC20');
   const [wdAddress, setWdAddress] = useState('');
   const [wdAmount, setWdAmount] = useState('');
@@ -547,6 +550,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // Quidax sub-account — never the legacy `usdtBalance` ledger number,
   // which only backs the not-yet-migrated Buy flow.
   const quidaxUsdtBalance = quidaxUsdt ? Number(quidaxUsdt.balance) : null;
+  // Withdraw's balance source generalizes to whichever asset is selected —
+  // same live-from-Quidax rule as USDT, just keyed by wdAsset.
+  const quidaxWdWallet = quidaxWallets.find((w) => w.currency === wdAsset);
+  const wdBalance = wdAsset === 'USDT' ? quidaxUsdtBalance : (quidaxWdWallet ? Number(quidaxWdWallet.balance) : null);
 
   // Only actual crypto belongs in the crypto total and asset list. Quidax
   // also returns its fiat NGN wallet; mixing that into `heldWallets` made
@@ -614,7 +621,18 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // to a different address, same discipline as the meter-verify flow.
   useEffect(() => {
     setWdVerified(false);
-  }, [wdAddress, wdNetwork]);
+  }, [wdAddress, wdNetwork, wdAsset]);
+
+  // loadAll only ever fetches USDT's saved addresses (the default asset on
+  // mount) — this covers every other asset the picker switches to.
+  useEffect(() => {
+    if (wdAsset === 'USDT') return;
+    let cancelled = false;
+    cryptoService.listSavedAddresses(wdAsset).then((list) => {
+      if (!cancelled) setSavedAddresses(list);
+    });
+    return () => { cancelled = true; };
+  }, [wdAsset]);
 
   useEffect(() => {
     setBuyDestVerified(false);
@@ -662,28 +680,31 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   }, [numericSellUsdt]);
 
   // Same purpose as the sell-quote effect above: show the real network fee
-  // before confirming, not after. Re-fetches on network change too — unlike
-  // Sell (one fixed network), Withdraw's fee depends entirely on which
-  // network the customer picked, and TRC20/ERC20 differ from BEP20 by two
-  // orders of magnitude for the identical send.
+  // before confirming, not after. Re-fetches on network/asset change too —
+  // unlike Sell (one fixed network), Withdraw's fee depends entirely on
+  // which network the customer picked (for USDT) or which asset (for a
+  // single-network one), and TRC20/ERC20 differ from BEP20 by two orders of
+  // magnitude for the identical send. No client-side amount floor/ceiling
+  // here beyond "greater than zero" — the real min/max is asset-specific
+  // (5 USDT means nothing for BTC) and comes back live in the quote itself.
   useEffect(() => {
     setWdQuote(null);
     setWdQuoteError(null);
-    if (!Number.isFinite(numericWdAmount) || numericWdAmount < 5 || numericWdAmount > 2000) {
+    if (!Number.isFinite(numericWdAmount) || numericWdAmount <= 0) {
       setWdQuoteLoading(false);
       return;
     }
     let cancelled = false;
     const handle = setTimeout(async () => {
       setWdQuoteLoading(true);
-      const result = await cryptoService.getWithdrawQuote(wdNetwork, numericWdAmount);
+      const result = await cryptoService.getWithdrawQuote(wdAsset, wdAsset === 'USDT' ? wdNetwork : '', numericWdAmount);
       if (cancelled) return;
       setWdQuoteLoading(false);
       if (result.success && result.quote) setWdQuote(result.quote);
       else setWdQuoteError(result.error || 'Could not calculate the live network fee.');
     }, 400);
     return () => { cancelled = true; clearTimeout(handle); };
-  }, [numericWdAmount, wdNetwork]);
+  }, [numericWdAmount, wdAsset, wdNetwork]);
 
   useEffect(() => {
     if (!sellBank || sellAccountNumber.length !== 10 || sellQuote?.sufficient !== true) return;
@@ -730,12 +751,12 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // accurate on every real purchase made this session.
   const sellNgnEstimate = sellRate && numericSellUsdt > 0 ? numericSellUsdt * sellRate : null;
 
-  const wdAddressValid = wdAddress.trim().length > 0 && isValidCryptoAddress(wdNetwork, wdAddress);
+  const wdAddressValid = wdAddress.trim().length > 0 && isValidCryptoAddress(wdAsset, wdAsset === 'USDT' ? wdNetwork : '', wdAddress);
   const wdAddressError = wdAddress.trim().length > 0 && !wdAddressValid
-    ? `This doesn't look like a valid ${wdNetwork} address.`
+    ? `This doesn't look like a valid ${wdAsset === 'USDT' ? wdNetwork : wdAsset} address.`
     : null;
 
-  const buyDestAddressValid = buyDestAddress.trim().length > 0 && isValidCryptoAddress(buyDestNetwork, buyDestAddress);
+  const buyDestAddressValid = buyDestAddress.trim().length > 0 && isValidCryptoAddress('USDT', buyDestNetwork, buyDestAddress);
   const buyDestAddressError = buyDestAddress.trim().length > 0 && !buyDestAddressValid
     ? `This doesn't look like a valid ${buyDestNetwork} address.`
     : null;
@@ -770,11 +791,13 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // Requires a live quote confirming both that the balance actually covers
   // amount + fee (not just amount — the same gap that let a full-balance
   // Sell pass locally and bounce at Quidax, fixed there first) and that the
-  // amount clears this specific network's real minimum, not the flat 5
-  // shown before a network is even picked.
-  const canWithdraw = Number.isFinite(numericWdAmount) && numericWdAmount >= 5 && numericWdAmount <= 2000
-    && quidaxUsdtBalance != null && wdAddressValid && wdVerified
-    && wdQuote?.sufficient === true && numericWdAmount >= wdQuote.minForNetwork;
+  // amount clears this asset/network's real minimum and maximum — both
+  // computed live per asset, never a flat USDT-shaped number (5 BTC would
+  // be absurd, 2000 BTC more so).
+  const canWithdraw = Number.isFinite(numericWdAmount) && numericWdAmount > 0
+    && wdBalance != null && wdAddressValid && wdVerified
+    && wdQuote?.sufficient === true && numericWdAmount >= wdQuote.minForNetwork
+    && numericWdAmount <= wdQuote.maxLimit;
 
   const handleBuy = useCallback(async () => {
     if (!canBuy || !selectedBuyAsset || buyLoading) return;
@@ -865,18 +888,19 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   }, [canSell, sellBank, sellAccountNumber, sellNgnEstimate, numericSellUsdt, authorize, loadAll]);
 
   const submitWithdraw = useCallback(async () => {
+    const wdNetworkForRequest = wdAsset === 'USDT' ? wdNetwork : '';
     const authResult = await authorize({
       title: 'Confirm Crypto Withdrawal',
-      subtitle: `${numericWdAmount} USDT · ${wdNetwork} · ${wdAddress.trim()}`,
+      subtitle: `${numericWdAmount} ${wdAsset} · ${wdAsset === 'USDT' ? wdNetwork : wdAsset} · ${wdAddress.trim()}`,
     });
     if (!authResult) return;
     setActionAmountNgn(null);
     setActionState('processing');
-    const result = await cryptoService.withdraw(wdNetwork, wdAddress, numericWdAmount, authResult.token);
+    const result = await cryptoService.withdraw(wdAsset, wdNetworkForRequest, wdAddress, numericWdAmount, authResult.token);
     if (result.success) {
       setActionMessage(result.message ?? null);
       setActionState('success');
-      await cryptoService.saveAddress(wdNetwork, wdAddress, '');
+      await cryptoService.saveAddress(wdAsset, wdNetworkForRequest, wdAddress, '');
       setWdAddress('');
       setWdAmount('');
       setWdVerified(false);
@@ -885,15 +909,27 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       setActionError(result.error || 'Withdrawal failed. Please try again.');
       setActionState('failed');
     }
-  }, [numericWdAmount, wdNetwork, wdAddress, authorize, loadAll]);
+  }, [numericWdAmount, wdAsset, wdNetwork, wdAddress, authorize, loadAll]);
 
   const handleWithdraw = useCallback(() => {
     if (!canWithdraw) return;
     submitWithdraw();
   }, [canWithdraw, submitWithdraw]);
 
+  // Explicit reset on an actual asset-picker tap only — NOT a useEffect
+  // keyed on wdAsset, which would also fire (and wipe the address right
+  // back out) when handlePickSaved below sets both asset and address
+  // together for a saved BTC/USDT address.
+  const handlePickWdAsset = useCallback((next: CryptoAsset) => {
+    setWdAsset(next);
+    setWdAddress('');
+    setWdAmount('');
+    setWdVerified(false);
+  }, []);
+
   const handlePickSaved = useCallback((addr: SavedCryptoAddress) => {
-    setWdNetwork(addr.network);
+    setWdAsset(addr.asset);
+    if (addr.asset === 'USDT' && addr.network) setWdNetwork(addr.network as CryptoNetwork);
     setWdAddress(addr.address);
     setWdVerified(false);
     cryptoService.touchAddress(addr.id);
@@ -1853,9 +1889,24 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             {tab === 'withdraw' && (
               <View>
                 <Text style={styles.notLiveBanner}>
-                  Sends the USDT held in your KaysPay Wallet to any external wallet. Network fees are deducted by the
+                  Sends crypto held in your KaysPay Wallet to any external wallet. Network fees are deducted by the
                   network itself.
                 </Text>
+
+                <Text style={styles.label}>Asset</Text>
+                <View style={styles.networkRow}>
+                  {(['USDT', ...WITHDRAW_SINGLE_NETWORK_ASSETS] as CryptoAsset[]).map((a) => (
+                    <TouchableOpacity
+                      key={a}
+                      style={[styles.networkChip, wdAsset === a && styles.networkChipSelected]}
+                      onPress={() => handlePickWdAsset(a)}
+                    >
+                      <Text style={[styles.networkChipText, wdAsset === a && styles.networkChipTextSelected]}>
+                        {a}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
 
                 {savedAddresses.length > 0 && (
                   <>
@@ -1863,51 +1914,55 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                     {savedAddresses.map((a) => (
                       <TouchableOpacity key={a.id} style={styles.savedRow} onPress={() => handlePickSaved(a)}>
                         <Text style={styles.savedRowText} numberOfLines={1}>
-                          {a.label ? `${a.label} · ` : ''}{a.address.slice(0, 6)}...{a.address.slice(-4)} ({a.network})
+                          {a.label ? `${a.label} · ` : ''}{a.address.slice(0, 6)}...{a.address.slice(-4)} ({a.asset === 'USDT' ? a.network : a.asset})
                         </Text>
                       </TouchableOpacity>
                     ))}
                   </>
                 )}
 
-                <Text style={styles.label}>Network</Text>
-                <View style={styles.networkRow}>
-                  {CRYPTO_NETWORKS.map((n) => (
-                    <TouchableOpacity
-                      key={n.key}
-                      style={[styles.networkChip, wdNetwork === n.key && styles.networkChipSelected]}
-                      onPress={() => setWdNetwork(n.key)}
-                    >
-                      <Text style={[styles.networkChipText, wdNetwork === n.key && styles.networkChipTextSelected]}>
-                        {n.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                {wdAsset === 'USDT' && (
+                  <>
+                    <Text style={styles.label}>Network</Text>
+                    <View style={styles.networkRow}>
+                      {CRYPTO_NETWORKS.map((n) => (
+                        <TouchableOpacity
+                          key={n.key}
+                          style={[styles.networkChip, wdNetwork === n.key && styles.networkChipSelected]}
+                          onPress={() => setWdNetwork(n.key)}
+                        >
+                          <Text style={[styles.networkChipText, wdNetwork === n.key && styles.networkChipTextSelected]}>
+                            {n.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </>
+                )}
 
                 <Text style={styles.label}>Wallet Address</Text>
                 <TextInput
                   style={styles.input}
                   value={wdAddress}
                   onChangeText={setWdAddress}
-                  placeholder={`Paste your ${wdNetwork} address`}
+                  placeholder={`Paste your ${wdAsset === 'USDT' ? wdNetwork : wdAsset} address`}
                   placeholderTextColor={theme.inkFaint}
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
                 {wdAddressError && <Text style={styles.errorText}>{wdAddressError}</Text>}
 
-                <Text style={styles.label}>Amount (USDT)</Text>
+                <Text style={styles.label}>Amount ({wdAsset})</Text>
                 <TextInput
                   style={styles.input}
                   value={wdAmount}
                   onChangeText={(t) => setWdAmount(t.replace(/[^0-9.]/g, ''))}
-                  placeholder="e.g. 20"
+                  placeholder={wdAsset === 'USDT' ? 'e.g. 20' : 'e.g. 0.001'}
                   placeholderTextColor={theme.inkFaint}
                   keyboardType="decimal-pad"
                 />
-                {quidaxUsdtBalance != null && numericWdAmount > quidaxUsdtBalance && (
-                  <Text style={styles.errorText}>Insufficient USDT balance.</Text>
+                {wdBalance != null && numericWdAmount > wdBalance && (
+                  <Text style={styles.errorText}>Insufficient {wdAsset} balance.</Text>
                 )}
 
                 {/* Shows the real per-network fee before confirming — the
@@ -1916,22 +1971,27 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                     fees with nothing on screen ever warning it was coming. */}
                 {wdQuote && (
                   <View style={styles.sellQuoteCard}>
-                    <Text style={styles.sellQuoteText}>Amount to withdraw: {formatUsdt(wdQuote.amount)}</Text>
+                    <Text style={styles.sellQuoteText}>Amount to withdraw: {formatCoin(wdQuote.amount, wdAsset)}</Text>
                     <Text style={styles.sellQuoteText}>
-                      {wdQuote.network} network fee: {formatUsdt(wdQuote.networkFee)}
+                      {wdQuote.network} network fee: {formatCoin(wdQuote.networkFee, wdAsset)}
                       {wdQuote.feeSharePercent != null ? ` (${wdQuote.feeSharePercent}%)` : ''}
                     </Text>
-                    <Text style={styles.sellQuoteTotal}>Total required: {formatUsdt(wdQuote.totalRequired)}</Text>
+                    <Text style={styles.sellQuoteTotal}>Total required: {formatCoin(wdQuote.totalRequired, wdAsset)}</Text>
                   </View>
                 )}
                 {wdQuote && !wdQuote.sufficient && (
                   <Text style={styles.errorText}>
-                    You need {formatUsdt(wdQuote.totalRequired)}, but only {formatUsdt(wdQuote.available)} is available.
+                    You need {formatCoin(wdQuote.totalRequired, wdAsset)}, but only {formatCoin(wdQuote.available, wdAsset)} is available.
                   </Text>
                 )}
                 {wdQuote && numericWdAmount > 0 && numericWdAmount < wdQuote.minForNetwork && (
                   <Text style={styles.errorText}>
-                    Enter at least {formatUsdt(wdQuote.minForNetwork)} for {wdQuote.network} — the network fee makes anything smaller not worth sending.
+                    Enter at least {formatCoin(wdQuote.minForNetwork, wdAsset)} for {wdQuote.network} — the network fee makes anything smaller not worth sending.
+                  </Text>
+                )}
+                {wdQuote && numericWdAmount > wdQuote.maxLimit && (
+                  <Text style={styles.errorText}>
+                    Enter an amount up to {formatCoin(wdQuote.maxLimit, wdAsset)}.
                   </Text>
                 )}
                 {wdQuoteError && <Text style={styles.errorText}>{wdQuoteError}</Text>}
@@ -1939,7 +1999,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 {wdAddressValid && numericWdAmount > 0 && (
                   <View style={styles.confirmBox}>
                     <Text style={styles.confirmText}>
-                      Sending {Number.isFinite(numericWdAmount) ? numericWdAmount : 0} USDT on {wdNetwork} to{'\n'}
+                      Sending {Number.isFinite(numericWdAmount) ? numericWdAmount : 0} {wdAsset} on {wdAsset === 'USDT' ? wdNetwork : wdAsset} to{'\n'}
                       {wdAddress.trim()}
                     </Text>
                     <Text style={styles.confirmWarning}>
@@ -1959,7 +2019,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   onPress={handleWithdraw}
                   disabled={!canWithdraw}
                 >
-                  <Text style={styles.primaryButtonText}>Withdraw USDT</Text>
+                  <Text style={styles.primaryButtonText}>Withdraw {wdAsset}</Text>
                 </TouchableOpacity>
               </View>
             )}

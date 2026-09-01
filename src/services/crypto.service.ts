@@ -7,14 +7,23 @@ import { safeErrorMessage } from '../utils/errorMessages';
 // product via bank transfer (supabase/functions/crypto-buy); Sell and
 // Withdraw spend the sub-account balance directly through Quidax's
 // exchange API (crypto-sell, crypto-withdraw).
-export type CryptoAsset = 'USDT';
+// Assets Withdraw supports sending to an external wallet — extended one at
+// a time (see _shared/crypto-withdraw-assets.ts on the server, which is the
+// real source of truth this must stay in sync with). USDT is multi-network
+// (the customer picks TRC20/ERC20/BEP20); every other asset here withdraws
+// over its own single native chain, so WITHDRAW_SINGLE_NETWORK_ASSETS
+// carries no network choice for the customer to make.
+export type CryptoAsset = 'USDT' | 'BTC';
+export const WITHDRAW_SINGLE_NETWORK_ASSETS: SwapAssetCode[] = ['BTC'];
 export type CryptoNetwork = 'TRC20' | 'ERC20' | 'BEP20';
 
 // Coins Buy supports beyond USDT — kept in sync with the curated list in
 // supabase/functions/_shared/crypto-assets.ts. Each goes through a two-leg
 // purchase (NGN -> USDT -> swap, see crypto-buy/crypto-quidax-webhook) and
-// lands in the KaysPay crypto account only — no external-wallet delivery
-// for these yet, only USDT keeps that option.
+// lands in the KaysPay crypto account. External-wallet delivery straight
+// from Buy is still USDT-only; a swap-target coin can only leave the app via
+// a separate Withdraw afterward, and only once that asset is in
+// WITHDRAW_SINGLE_NETWORK_ASSETS above.
 export type SwapAssetCode = 'BTC' | 'ETH' | 'SOL' | 'XRP' | 'TRX' | 'LTC' | 'DOGE' | 'ADA';
 export type BuyAsset = 'USDT' | SwapAssetCode;
 
@@ -38,23 +47,35 @@ export const CRYPTO_NETWORKS: { key: CryptoNetwork; label: string }[] = [
   { key: 'BEP20', label: 'BEP-20 (BNB Smart Chain)' },
 ];
 
-// Same rules enforced server-side in crypto-withdraw/index.ts — this copy is
-// only for instant UI feedback (e.g. "this doesn't look right" the moment
-// the user pastes), never trusted on its own for the actual send.
+// Same rules enforced server-side (crypto-withdraw/index.ts via
+// _shared/crypto-withdraw-assets.ts) — this copy is only for instant UI
+// feedback (e.g. "this doesn't look right" the moment the user pastes),
+// never trusted on its own for the actual send.
 const ADDRESS_PATTERNS: Record<CryptoNetwork, RegExp> = {
   TRC20: /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
   ERC20: /^0x[a-fA-F0-9]{40}$/,
   BEP20: /^0x[a-fA-F0-9]{40}$/,
 };
 
-export function isValidCryptoAddress(network: CryptoNetwork, address: string): boolean {
-  return ADDRESS_PATTERNS[network].test(address.trim());
+// Single-network assets (see WITHDRAW_SINGLE_NETWORK_ASSETS) — one pattern
+// per asset instead of per network, since there's no network to choose.
+// BTC: legacy P2PKH (1...), P2SH (3...), native SegWit/Taproot bech32
+// (bc1...) — a stable protocol-level standard, matches the server exactly.
+const SINGLE_NETWORK_ADDRESS_PATTERNS: Partial<Record<CryptoAsset, RegExp>> = {
+  BTC: /^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{25,90})$/,
+};
+
+export function isValidCryptoAddress(asset: CryptoAsset, network: CryptoNetwork | '', address: string): boolean {
+  const trimmed = address.trim();
+  if (asset === 'USDT') return network !== '' && ADDRESS_PATTERNS[network].test(trimmed);
+  const pattern = SINGLE_NETWORK_ADDRESS_PATTERNS[asset];
+  return !!pattern && pattern.test(trimmed);
 }
 
 export interface SavedCryptoAddress {
   id: string;
   asset: CryptoAsset;
-  network: CryptoNetwork;
+  network: CryptoNetwork | '';
   address: string;
   label: string | null;
   lastUsedAt: string;
@@ -87,6 +108,7 @@ export interface CryptoSellQuote {
 }
 
 export interface CryptoWithdrawQuote {
+  asset: string;
   amount: number;
   network: string;
   networkFee: number;
@@ -399,19 +421,21 @@ export const cryptoService = {
     }
   },
 
-  // Same purpose as getSellQuote for Sell: shows the real per-network fee
-  // before the customer confirms, rather than finding out from a smaller
-  // balance afterward. Withdraw needs network as an input (the customer
-  // picks it — Sell always uses one fixed network), which is also what
-  // decides min_for_network: TRC20/ERC20's real fee makes a small
-  // withdrawal not worth sending; BEP20's doesn't.
+  // Same purpose as getSellQuote for Sell: shows the real per-asset/network
+  // fee before the customer confirms, rather than finding out from a
+  // smaller balance afterward. USDT needs a network as an input (the
+  // customer picks it — TRC20/ERC20's real fee makes a small withdrawal not
+  // worth sending, BEP20's doesn't); a single-network asset like BTC has
+  // nothing to pick, so `network` is ignored server-side for those (see
+  // resolveWithdrawTarget) — pass the asset code itself or ''.
   async getWithdrawQuote(
-    network: CryptoNetwork,
+    asset: CryptoAsset,
+    network: CryptoNetwork | '',
     cryptoAmount: number,
   ): Promise<{ success: boolean; quote?: CryptoWithdrawQuote; error?: string }> {
     try {
       const { data, error } = await withTimeout(
-        supabase.functions.invoke('crypto-withdraw-quote', { body: { network, crypto_amount: cryptoAmount } }),
+        supabase.functions.invoke('crypto-withdraw-quote', { body: { asset, network, crypto_amount: cryptoAmount } }),
       );
       if (error || !data?.success) {
         let message = data?.error || 'Could not calculate the live network fee.';
@@ -424,6 +448,7 @@ export const cryptoService = {
       return {
         success: true,
         quote: {
+          asset: String(data.asset || asset),
           amount: Number(data.amount),
           network: String(data.network || network),
           networkFee: Number(data.network_fee),
@@ -509,9 +534,10 @@ export const cryptoService = {
   },
 
   async withdraw(
-    network: CryptoNetwork,
+    asset: CryptoAsset,
+    network: CryptoNetwork | '',
     address: string,
-    usdtAmount: number,
+    cryptoAmount: number,
     authToken: string,
   ): Promise<CryptoActionResult> {
     try {
@@ -519,10 +545,10 @@ export const cryptoService = {
       const { data, error } = await withTimeout(
         supabase.functions.invoke('crypto-withdraw', {
           body: {
-            asset: 'USDT',
+            asset,
             network,
             address: address.trim(),
-            crypto_amount: usdtAmount,
+            crypto_amount: cryptoAmount,
             auth_token: authToken,
             idempotency_key: idempotencyKey,
           },
@@ -569,14 +595,14 @@ export const cryptoService = {
     }));
   },
 
-  async saveAddress(network: CryptoNetwork, address: string, label: string): Promise<void> {
+  async saveAddress(asset: CryptoAsset, network: CryptoNetwork | '', address: string, label: string): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     await withTimeout(
       (async () => await supabase.from('crypto_saved_addresses').upsert(
         {
           user_id: user.id,
-          asset: 'USDT',
+          asset,
           network,
           address: address.trim(),
           label: label.trim() || null,
