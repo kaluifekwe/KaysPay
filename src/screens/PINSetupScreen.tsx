@@ -16,14 +16,16 @@ import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { Strings } from '../constants/strings';
 import { authService } from '../services/auth.service';
-import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 
 interface PINSetupScreenProps {
   navigation: any;
 }
 
+// Deliberately no screenshot protection here — every digit is rendered via
+// secureTextEntry (masked dots), never plaintext, so there's nothing a
+// screenshot could expose. Blocking it anyway only stopped users from
+// reporting real errors at exactly this step, right after signup.
 export default function PINSetupScreen({ navigation }: PINSetupScreenProps) {
-  useSensitiveScreenProtection();
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const [pin, setPin] = useState(['', '', '', '']);

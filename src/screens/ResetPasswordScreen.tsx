@@ -38,7 +38,6 @@ interface Props {
 }
 
 export default function ResetPasswordScreen({ navigation, route }: Props) {
-  useSensitiveScreenProtection();
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const email = route?.params?.email || '';
@@ -48,6 +47,10 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
   const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  // Reset code stays visible on purpose (it's the user's own short-lived,
+  // single-use code) — only block while a chosen password is actually
+  // rendered in plaintext via the reveal toggle, the one durable secret here.
+  useSensitiveScreenProtection(showPassword || showConfirm);
   const [focused, setFocused] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);

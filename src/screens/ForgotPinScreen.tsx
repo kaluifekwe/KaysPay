@@ -26,10 +26,13 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
 const KEY_SIZE = 64;
 
 export default function ForgotPinScreen({ navigation }: { navigation: any }) {
-  useSensitiveScreenProtection();
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const [step, setStep] = useState<Step>('request');
+  // Only the 'code' step ever renders plaintext (the reset code itself, in a
+  // plain TextInput) — 'new'/'confirm' show masked dots only, never digits.
+  // Scoping to just that step keeps every other error state screenshottable.
+  useSensitiveScreenProtection(step === 'code');
   const [sentTo, setSentTo] = useState('your verified email');
   const [code, setCode] = useState('');
   const [newPin, setNewPin] = useState('');
