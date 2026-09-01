@@ -19,6 +19,7 @@ import AiAssistantPage from './pages/AiAssistantPage';
 import IncidentsPage from './pages/IncidentsPage';
 import BusinessIntelligencePage from './pages/BusinessIntelligencePage';
 import MfaPage from './pages/MfaPage';
+import CryptoRecoveryPage from './pages/CryptoRecoveryPage';
 
 function Shell() {
   const { role, session } = useAuth();
@@ -42,6 +43,7 @@ function Shell() {
           <NavLink to="/security">Security Alerts</NavLink>
           <NavLink to="/settings">Settings</NavLink>
           {role === 'super_admin' && <NavLink to="/admins">Admins</NavLink>}
+          {role === 'super_admin' && <NavLink to="/crypto-recovery">Crypto Recovery</NavLink>}
         </nav>
         <div className="muted" style={{ fontSize: 11, marginTop: 24, wordBreak: 'break-all' }}>
           {session?.user.email}
@@ -63,6 +65,7 @@ function Shell() {
           <Route path="/security" element={<SecurityAlertsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           {role === 'super_admin' && <Route path="/admins" element={<AdminsPage />} />}
+          {role === 'super_admin' && <Route path="/crypto-recovery" element={<CryptoRecoveryPage />} />}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
