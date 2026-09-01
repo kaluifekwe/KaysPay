@@ -34,6 +34,7 @@ import {
 import { walletService } from '../services/wallet.service';
 import { useCachedData } from '../hooks/useCachedData';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
+import { analytics } from '../services/analytics.service';
 import ResultStatusView from '../components/ResultStatusView';
 
 interface TravelEsimScreenProps {
@@ -236,6 +237,7 @@ function TravelEsimContent({ navigation }: TravelEsimScreenProps) {
 
     setErrorMessage('');
     setBuyState('processing');
+    void analytics.track('esim_started', { outcome: 'started' });
 
     try {
       const result = await esimService.buyPlan(
@@ -250,12 +252,15 @@ function TravelEsimContent({ navigation }: TravelEsimScreenProps) {
         setResultQrUrl(result.qrcode_url || null);
         setResultAppleInstallUrl(result.direct_apple_installation_url || null);
         setBuyState('success');
+        void analytics.track('esim_completed', { outcome: 'completed' });
         refreshMyEsims();
       } else {
+        void analytics.track('esim_failed', { outcome: 'failed', failureCode: 'purchase_rejected' });
         setErrorMessage(result.error || 'eSIM purchase failed. Please try again.');
         setBuyState('error');
       }
     } catch {
+      void analytics.track('esim_failed', { outcome: 'failed', failureCode: 'purchase_unavailable' });
       setErrorMessage('An unexpected error occurred. Please check your connection and try again.');
       setBuyState('error');
     }

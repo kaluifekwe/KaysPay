@@ -26,6 +26,7 @@ import {
   type AvailableCountry,
 } from '../services/foreignNumber.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
+import { analytics } from '../services/analytics.service';
 
 interface ForeignNumbersScreenProps {
   navigation: {
@@ -198,6 +199,7 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
       if (pollRef.current) clearInterval(pollRef.current);
 
       if (result.cancelled) {
+        void analytics.track('foreign_number_failed', { outcome: 'failed', failureCode: 'cancelled_no_code' });
         setWaitMessage(
           result.refunded
             ? 'No code arrived, so this number was cancelled and your wallet has been refunded. You can try another number or country.'
@@ -206,6 +208,7 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
         return;
       }
       if (result.code) {
+        void analytics.track('foreign_number_completed', { outcome: 'completed' });
         setReceivedCode(result.code);
         setStep('done');
       }
@@ -220,6 +223,7 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
 
     setErrorMessage('');
     setPurchasing(true);
+    void analytics.track('foreign_number_started', { outcome: 'started' });
 
     try {
       const result = await foreignNumberService.purchase(selectedService.id, selectedCountry.id, authResult.token, selectedService.name, priceKobo ?? undefined);
@@ -230,9 +234,11 @@ export default function ForeignNumbersScreen({ navigation }: ForeignNumbersScree
         setStep('waiting');
         startPolling(result.activation_id);
       } else {
+        void analytics.track('foreign_number_failed', { outcome: 'failed', failureCode: 'purchase_rejected' });
         setErrorMessage(result.error || 'Purchase failed. Please try again.');
       }
     } catch {
+      void analytics.track('foreign_number_failed', { outcome: 'failed', failureCode: 'purchase_unavailable' });
       setErrorMessage('An unexpected error occurred. Please check your connection and try again.');
     } finally {
       setPurchasing(false);

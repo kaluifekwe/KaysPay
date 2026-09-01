@@ -26,6 +26,7 @@ import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
 import { formatNaira } from '../utils/formatCurrency';
 import { storageHelpers, StorageKeys } from '../lib/mmkv';
+import { analytics } from '../services/analytics.service';
 import {
   cryptoService,
   isValidCryptoAddress,
@@ -768,6 +769,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       setBuyLoading(false);
       return;
     }
+    void analytics.track('crypto_buy_started', { outcome: 'started' });
     const result = await cryptoService.buy(
       selectedBuyAsset,
       numericBuyNgn,
@@ -792,6 +794,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       // commits via "Done — I'll transfer now" below.
       loadAll();
     } else {
+      void analytics.track('crypto_buy_failed', { outcome: 'failed', failureCode: 'purchase_rejected' });
       setActionError(result.error || 'Purchase failed. Please try again.');
       setActionState('failed');
     }

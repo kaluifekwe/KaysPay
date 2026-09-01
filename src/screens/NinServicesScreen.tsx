@@ -25,6 +25,7 @@ import { Spacing } from '../constants/spacing';
 import { formatNaira } from '../utils/formatCurrency';
 import { ninService, NinRecord, BvnRecord, NinModificationType } from '../services/nin.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
+import { analytics } from '../services/analytics.service';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 import ResultStatusView from '../components/ResultStatusView';
 import { sharePdf, downloadPdf } from '../utils/pdf';
@@ -761,6 +762,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
 
     setVerifyError('');
     setVerifyState('processing');
+    void analytics.track('nin_services_started', { outcome: 'started', metadata: { verification_method: 'nin' } });
 
     const claimed = {
       firstname: firstname.trim() || undefined,
@@ -775,7 +777,9 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
       setRecord(result.record);
       setMatches(result.matches);
       setVerifyState('result');
+      void analytics.track('nin_services_completed', { outcome: 'completed', metadata: { verification_method: 'nin' } });
     } else {
+      void analytics.track('nin_services_failed', { outcome: 'failed', failureCode: 'nin_rejected', metadata: { verification_method: 'nin' } });
       setVerifyError(result.error || 'Could not verify this NIN. Please try again.');
       setVerifyState('error');
     }
@@ -829,11 +833,14 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
 
     setBvnError('');
     setBvnState('processing');
+    void analytics.track('nin_services_started', { outcome: 'started', metadata: { verification_method: 'bvn' } });
     const result = await ninService.verifyBvn(bvnNumber, authResult.token, selectedBvnTier);
     if (result.success && result.record) {
       setBvnRecord(result.record);
       setBvnState('result');
+      void analytics.track('nin_services_completed', { outcome: 'completed', metadata: { verification_method: 'bvn' } });
     } else {
+      void analytics.track('nin_services_failed', { outcome: 'failed', failureCode: 'bvn_rejected', metadata: { verification_method: 'bvn' } });
       setBvnError(result.error || 'Could not verify this BVN. Please try again.');
       setBvnState('error');
     }

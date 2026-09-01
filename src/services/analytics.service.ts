@@ -11,7 +11,19 @@ export type AnalyticsEventType =
   | 'account_created' | 'email_verification_started' | 'email_verification_failed' | 'email_verified'
   | 'pin_setup_completed' | 'biometric_offer_completed' | 'home_viewed' | 'kyc_started'
   | 'kyc_failed' | 'kyc_completed' | 'funding_viewed' | 'funding_started'
-  | 'funding_failed' | 'first_funding_completed' | 'first_purchase_completed';
+  | 'funding_failed' | 'first_funding_completed' | 'first_purchase_completed'
+  // Started/failed for the 4 purchase flows that had no instrumentation at
+  // all — until now there was no way to tell "opened the screen and left"
+  // apart from "started buying and the provider rejected it". No
+  // crypto_buy_completed: unlike the other three, a buy settles later via a
+  // provider webhook the client is not reliably present for, and true
+  // completion is already known authoritatively server-side (the
+  // transactions-table trigger that drives first_purchase_at) — a client
+  // "completed" event here would just be guessing.
+  | 'crypto_buy_started' | 'crypto_buy_failed'
+  | 'foreign_number_started' | 'foreign_number_failed' | 'foreign_number_completed'
+  | 'nin_services_started' | 'nin_services_failed' | 'nin_services_completed'
+  | 'esim_started' | 'esim_failed' | 'esim_completed';
 
 type AnalyticsOutcome = 'view' | 'started' | 'completed' | 'failed' | 'skipped';
 type MetadataKey = 'slide_index' | 'entry_point' | 'verification_method' | 'funding_method';

@@ -20,6 +20,13 @@ const EVENTS = new Set([
   "pin_setup_completed", "biometric_offer_completed", "home_viewed", "kyc_started", "kyc_failed",
   "kyc_completed", "funding_viewed", "funding_started", "funding_failed",
   "first_funding_completed", "first_purchase_completed",
+  // Started/failed abandonment tracking for the 4 purchase flows that
+  // previously had none at all (see analytics.service.ts's AnalyticsEventType
+  // for the full reasoning, including why crypto_buy has no _completed).
+  "crypto_buy_started", "crypto_buy_failed",
+  "foreign_number_started", "foreign_number_failed", "foreign_number_completed",
+  "nin_services_started", "nin_services_failed", "nin_services_completed",
+  "esim_started", "esim_failed", "esim_completed",
 ]);
 const OUTCOMES = new Set(["view", "started", "completed", "failed", "skipped"]);
 const PLATFORMS = new Set(["android", "ios", "web", "unknown"]);
