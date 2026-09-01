@@ -62,6 +62,23 @@ function newRequestId() {
 type Provider = "vtunaija";
 
 const CATALOG_STALE_MS = 30 * 60 * 1000;
+
+// VTUnaija sells airtime at 100% of face value up front, then pays back a
+// commission afterward -- unlike electricity (a flat pass-through, cost =
+// amount) or data (a live per-plan catalog), so there's no reseller_kobo
+// lookup for this one. Real cost to KaysPay is amount * (1 - commission).
+// These are our account's confirmed Premium-tier rates (checked directly
+// against the VTUnaija dashboard, 2026-09-01) -- Basic tier differs for
+// every network except MTN, so this must be re-verified if the account
+// tier ever changes. Airtime was previously the one service type with zero
+// cost tracking at all: 101 completed orders, all contributing ₦0 provable
+// margin to the profit report, regardless of real volume.
+const AIRTIME_COMMISSION_PERCENT: Record<NetworkProvider, number> = {
+  mtn: 3.0,
+  airtel: 3.2,
+  glo: 6.0,
+  "9mobile": 5.5,
+};
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const CRON_SECRET = Deno.env.get("CRON_SECRET");
 
@@ -188,6 +205,7 @@ async function resolvePurchase(body: any, supabase: ReturnType<typeof adminClien
           amount: amount / KOBO,
           airtime_type: "VTU",
         },
+        providerCostKobo: Math.round(amount * (1 - AIRTIME_COMMISSION_PERCENT[network] / 100)),
       };
     }
 
