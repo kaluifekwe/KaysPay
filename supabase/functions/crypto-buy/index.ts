@@ -13,7 +13,6 @@ import {
 import { getUsdNgnRate } from "../_shared/esim-catalog.ts";
 import { createDepositAddress, getMarketTicker, isQuidaxConfigured, QuidaxError } from "../_shared/quidax-client.ts";
 import { getOrCreateCryptoAccount } from "../_shared/crypto-account.ts";
-import { findSwapAsset } from "../_shared/crypto-assets.ts";
 import {
   confirmOnRamp,
   initiateOnRamp,
@@ -129,10 +128,18 @@ serve(async (req: Request) => {
   }
 
   const asset = String(body.asset || "USDT").trim().toUpperCase();
-  const swapAsset = asset === "USDT" ? null : findSwapAsset(asset);
-  if (asset !== "USDT" && !swapAsset) {
-    return json({ success: false, error: "Unsupported asset" }, 400);
+
+  // Non-USDT coins are buy-only right now: crypto-sell and crypto-withdraw
+  // both hard-reject anything but USDT, and there is no convert/swap path a
+  // customer can reach on their own. A completed BTC/ETH/SOL/etc purchase
+  // would sit in the account with no exit until Convert ships. Gated
+  // server-side (not just hidden client-side) so an older app build, or
+  // anyone calling this endpoint directly, cannot create one of those stuck
+  // purchases either. Re-enable per-coin once Convert (swap to USDT) lands.
+  if (asset !== "USDT") {
+    return json({ success: false, error: "This coin isn't available to buy yet. USDT is available now." }, 400);
   }
+  const swapAsset = null;
 
   // Optional: send the purchased USDT straight to an external wallet instead
   // of the customer's own KaysPay crypto account. Validated the same way a
