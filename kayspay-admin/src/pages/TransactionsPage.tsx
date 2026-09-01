@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { callAdmin, AdminApiError } from '../lib/adminApi';
 import { formatFundingProvider, formatTxAmount, SERVICES, TxRow } from '../lib/transactions';
 import TransactionDetailModal from '../components/TransactionDetailModal';
+import { useHidden, HIDDEN_MASK } from '../lib/hidden';
 
 interface TxResponse {
   transactions: TxRow[];
@@ -23,6 +24,7 @@ export default function TransactionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<TxRow | null>(null);
+  const [namesHidden, toggleNamesHidden] = useHidden('transactions:names');
 
   // Debounce the phone search so every keystroke doesn't fire a request.
   useEffect(() => {
@@ -66,6 +68,14 @@ export default function TransactionsPage() {
           onChange={(e) => setPhoneInput(e.target.value)}
           style={{ width: 240 }}
         />
+        <button
+          type="button"
+          className="secondary"
+          onClick={toggleNamesHidden}
+          style={{ marginLeft: 'auto' }}
+        >
+          {namesHidden ? '🙈 Names hidden' : '👁️ Hide customer names'}
+        </button>
       </div>
 
       {error && <div className="error-text">{error}</div>}
@@ -92,7 +102,7 @@ export default function TransactionsPage() {
               {rows.map((r) => (
                 <tr key={r.id} className="clickable" onClick={() => setSelected(r)}>
                   <td>{new Date(r.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
-                  <td>{r.users?.full_name || r.users?.phone || '—'}</td>
+                  <td>{namesHidden ? HIDDEN_MASK : (r.users?.full_name || r.users?.phone || '—')}</td>
                   <td>{r.type}</td>
                   <td>{r.type === 'wallet_fund'
                     ? formatFundingProvider(r.funding_provider)

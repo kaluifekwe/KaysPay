@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { callAdmin, AdminApiError } from '../lib/adminApi';
 import { formatNaira, groupServiceVolumes } from '../lib/transactions';
+import HideableStat from '../components/HideableStat';
 
 interface Report {
   total_users: number;
@@ -113,26 +114,11 @@ export default function DashboardPage() {
       {!loading && report && integrity && (
         <>
           <div className="stat-grid" style={{ marginBottom: 20 }}>
-            <div className="stat accent">
-              <div className="value">{report.total_users.toLocaleString()}</div>
-              <div className="label">Total users</div>
-            </div>
-            <div className="stat accent">
-              <div className="value">{report.new_users_in_range}</div>
-              <div className="label">New users</div>
-            </div>
-            <div className="stat accent">
-              <div className="value">{report.orders_in_range}</div>
-              <div className="label">Orders</div>
-            </div>
-            <div className="stat accent">
-              <div className="value">{report.orders_completed_in_range}</div>
-              <div className="label">Completed orders</div>
-            </div>
-            <div className="stat dark">
-              <div className="value">{formatNaira(report.volume_kobo_in_range)}</div>
-              <div className="label">Total volume</div>
-            </div>
+            <HideableStat id="totalUsers" tone="accent" value={report.total_users.toLocaleString()} label="Total users" />
+            <HideableStat id="newUsers" tone="accent" value={String(report.new_users_in_range)} label="New users" />
+            <HideableStat id="orders" tone="accent" value={String(report.orders_in_range)} label="Orders" />
+            <HideableStat id="completedOrders" tone="accent" value={String(report.orders_completed_in_range)} label="Completed orders" />
+            <HideableStat id="totalVolume" tone="dark" value={formatNaira(report.volume_kobo_in_range)} label="Total volume" />
           </div>
 
           <div className="card">
