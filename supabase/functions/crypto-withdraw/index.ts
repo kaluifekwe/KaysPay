@@ -12,11 +12,15 @@ import {
 } from "../_shared/auth.ts";
 import { getOrCreateCryptoAccount } from "../_shared/crypto-account.ts";
 import { createWithdrawal, getCryptoWithdrawalFee, getSubAccountWallets, isQuidaxConfigured } from "../_shared/quidax-client.ts";
+import { DUST_FLOOR, maxWithdrawInAssetUnits, resolveWithdrawTarget } from "../_shared/crypto-withdraw-assets.ts";
 
-// Withdraw USDT from the user's OWN Quidax sub-account to an external
+// Withdraw crypto from the user's OWN Quidax sub-account to an external
 // wallet address. Quidax debits their sub-account balance directly �?no
 // local crypto ledger is touched, since the balance the app shows is read
-// live from Quidax and debiting here too would double-count.
+// live from Quidax and debiting here too would double-count. USDT keeps its
+// multi-network shape (customer picks TRC20/ERC20/BEP20); every other
+// supported asset withdraws over its own single native chain, see
+// _shared/crypto-withdraw-assets.ts for exactly which and why.
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -24,29 +28,10 @@ function json(body: unknown, status = 200) {
   });
 }
 
-// Same format rules as crypto.service.ts's client-side check �?never trust
-// the client's own validation for what's ultimately an irreversible send.
-const ADDRESS_PATTERNS: Record<string, RegExp> = {
-  TRC20: /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
-  ERC20: /^0x[a-fA-F0-9]{40}$/,
-  BEP20: /^0x[a-fA-F0-9]{40}$/,
-};
-
-// App-facing network keys -> Quidax's own network codes.
-const NETWORK_MAP: Record<string, string> = {
-  TRC20: "trc20",
-  ERC20: "erc20",
-  BEP20: "bep20",
-};
-
-// Absolute floor only. The real, enforced minimum is computed live per
-// network from Quidax's own fee below — see crypto-withdraw-quote, which
-// this mirrors exactly so the client is never quoted one number and charged
-// another. A flat 5 USDT floor made sense when every network cost about the
-// same; it doesn't when TRC20 is $1, ERC20 is $2, and BEP20 is $0.02 for the
-// identical send.
-const MIN_USDT = 5;
-const MAX_USDT = 2000;
+// Real minimum is always computed live per network from Quidax's own fee
+// (mirrors crypto-withdraw-quote exactly, so the client is never quoted one
+// number and charged another) -- capped so the fee can never exceed
+// MAX_FEE_SHARE of what's being sent.
 const MAX_FEE_SHARE = 0.2;
 
 serve(async (req: Request) => {
@@ -64,24 +49,21 @@ serve(async (req: Request) => {
     return json({ error: e.message }, e.status);
   }
 
-  const asset = String(body.asset || "USDT");
-  const network = String(body.network || "");
   const address = String(body.address || "").trim();
   const cryptoAmount = Number(body.crypto_amount);
 
-  if (asset !== "USDT") {
-    return json({ success: false, error: "Unsupported asset" }, 400);
+  const target = resolveWithdrawTarget(String(body.asset || "USDT"), String(body.network || ""));
+  if (!target) {
+    return json({ success: false, error: "Unsupported asset or network" }, 400);
   }
-  const pattern = ADDRESS_PATTERNS[network];
-  const quidaxNetwork = NETWORK_MAP[network];
-  if (!pattern || !quidaxNetwork) {
-    return json({ success: false, error: "Unsupported network" }, 400);
+  const { asset, networkLabel, config } = target;
+  const dustFloor = DUST_FLOOR[asset] ?? DUST_FLOOR.USDT;
+
+  if (!config.addressPattern.test(address)) {
+    return json({ success: false, error: `This doesn't look like a valid ${networkLabel} address.` }, 400);
   }
-  if (!pattern.test(address)) {
-    return json({ success: false, error: `This doesn't look like a valid ${network} address.` }, 400);
-  }
-  if (!Number.isFinite(cryptoAmount) || cryptoAmount < MIN_USDT || cryptoAmount > MAX_USDT) {
-    return json({ success: false, error: `Enter an amount between ${MIN_USDT} and ${MAX_USDT} USDT` }, 400);
+  if (!Number.isFinite(cryptoAmount) || cryptoAmount <= 0) {
+    return json({ success: false, error: "Enter a valid amount." }, 400);
   }
 
   // Fail closed BEFORE any PIN-token side effect �?a blocked withdrawal
@@ -125,7 +107,7 @@ serve(async (req: Request) => {
   try {
     const account = await getOrCreateCryptoAccount(supabase, user);
 
-    const [wallets, withdrawalFee] = await Promise.all([
+    const [wallets, withdrawalFee, maxWithdraw] = await Promise.all([
       getSubAccountWallets(account.quidaxUserId),
       // Quidax deducts the network fee ON TOP of `amount` (the same
       // withdrawal call crypto-sell makes to its own off-ramp deposit
@@ -133,18 +115,26 @@ serve(async (req: Request) => {
       // Never trust the client's minimum: re-verified here from scratch so
       // a stale quote, or a request that skipped the quote step entirely,
       // can't slip a fee-eating amount through.
-      getCryptoWithdrawalFee({ currency: asset.toLowerCase(), amount: cryptoAmount, network: quidaxNetwork }),
+      getCryptoWithdrawalFee({ currency: config.quidaxCurrency, amount: cryptoAmount, network: config.quidaxNetwork }),
+      maxWithdrawInAssetUnits(config.quidaxCurrency),
     ]);
-    const usdt = wallets.find((w) => w.currency.toLowerCase() === "usdt");
-    const available = Number(usdt?.balance ?? 0);
+    const wallet = wallets.find((w) => w.currency.toLowerCase() === config.quidaxCurrency);
+    const available = Number(wallet?.balance ?? 0);
     const fee = withdrawalFee.fee;
     const totalRequired = cryptoAmount + fee;
 
-    const minForNetwork = Math.max(MIN_USDT, fee / MAX_FEE_SHARE);
+    if (cryptoAmount > maxWithdraw) {
+      return json({
+        success: false,
+        error: `Enter an amount up to ${maxWithdraw.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")} ${asset}.`,
+      }, 400);
+    }
+
+    const minForNetwork = Math.max(dustFloor, fee / MAX_FEE_SHARE);
     if (cryptoAmount < minForNetwork) {
       return json({
         success: false,
-        error: `Enter at least ${minForNetwork.toFixed(2)} USDT for ${network} — the network fee makes anything smaller not worth sending.`,
+        error: `Enter at least ${minForNetwork} ${asset} for ${networkLabel} — the network fee makes anything smaller not worth sending.`,
         min_for_network: minForNetwork,
         network_fee: fee,
       });
@@ -153,7 +143,7 @@ serve(async (req: Request) => {
     if (!Number.isFinite(available) || available + 1e-8 < totalRequired) {
       return json({
         success: false,
-        error: `You need ${totalRequired.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")} USDT: ${cryptoAmount} USDT to withdraw plus ${fee} USDT network fee.`,
+        error: `You need ${totalRequired.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")} ${asset}: ${cryptoAmount} ${asset} to withdraw plus ${fee} ${asset} network fee.`,
         network_fee: fee,
       });
     }
@@ -164,7 +154,7 @@ serve(async (req: Request) => {
       p_user_id: user.id,
       p_asset: asset,
       p_crypto_micro: cryptoMicro,
-      p_network: network,
+      p_network: networkLabel,
       p_address: address,
       p_reference: reference,
     });
@@ -176,11 +166,11 @@ serve(async (req: Request) => {
     try {
       await createWithdrawal({
         quidaxUserId: account.quidaxUserId,
-        currency: "usdt",
+        currency: config.quidaxCurrency,
         amount: String(cryptoAmount),
         fundUid: address,
         reference,
-        network: quidaxNetwork,
+        network: config.quidaxNetwork,
       });
     } catch (sendError) {
       await supabase.rpc("settle_crypto_withdrawal", {

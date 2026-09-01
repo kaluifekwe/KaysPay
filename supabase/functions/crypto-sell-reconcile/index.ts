@@ -28,26 +28,18 @@ serve(async (req: Request) => {
     const floor = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
-    const { data: stuck, error } = await supabase
-      .from("transactions")
-      .select("id, metadata")
-      .eq("status", "pending")
-      .eq("type", "crypto_sell")
-      .lte("created_at", floor)
-      .gte("created_at", cutoff)
-      .limit(50);
+    let completed = 0, failed = 0, stillPending = 0, skipped = 0, checked = 0;
 
-    if (error) return { checked: 0, error: error.message };
-
-    let completed = 0, failed = 0, stillPending = 0, skipped = 0;
-
-    for (const tx of stuck || []) {
+    // A single transaction's requery + settle, shared by both sweeps below.
+    // Returns which bucket it landed in, or null if it couldn't be checked
+    // at all (no reference on record, or Quidax genuinely unreachable).
+    const reconcileOne = async (tx: { id: string; metadata: unknown }): Promise<"completed" | "failed" | "pending" | null> => {
       const meta = (tx.metadata as any) || {};
       const merchantReference = String(meta.quidax_merchant_reference || "");
       const candidates = Array.from(new Set(
         [String(meta.quidax_reference || ""), merchantReference].filter(Boolean),
       ));
-      if (candidates.length === 0) { skipped++; continue; }
+      if (candidates.length === 0) return null;
 
       let remote: Awaited<ReturnType<typeof requeryOffRamp>> | null = null;
       let lastError: unknown = null;
@@ -65,13 +57,12 @@ serve(async (req: Request) => {
 
       if (!remote) {
         if (lastError) console.error(`crypto-sell-reconcile: requery failed for tx ${tx.id}:`, lastError instanceof Error ? lastError.message : String(lastError));
-        skipped++;
-        continue;
+        return null;
       }
 
       const key = merchantReference || candidates[0];
       if (remote.status === "successful" || remote.fiatPayoutStatus === "completed") {
-        if (!remote.fiatPayoutAmount || remote.fiatPayoutAmount <= 0) { skipped++; continue; }
+        if (!remote.fiatPayoutAmount || remote.fiatPayoutAmount <= 0) return null;
         const { error: settleError } = await supabase.rpc("complete_crypto_sell_offramp", {
           p_reference: key,
           p_ngn_kobo: Math.round(remote.fiatPayoutAmount * 100),
@@ -81,19 +72,64 @@ serve(async (req: Request) => {
         });
         if (settleError) {
           console.error(`crypto-sell-reconcile: complete_crypto_sell_offramp failed for ${key}:`, settleError.message);
-          skipped++;
-          continue;
+          return null;
         }
-        completed++;
+        return "completed";
       } else if (remote.status === "failed" || remote.fiatPayoutStatus === "failed") {
         await supabase.rpc("fail_crypto_sell_offramp", { p_reference: key, p_reason: "reconcile_failed" });
-        failed++;
-      } else {
-        stillPending++;
+        return "failed";
+      }
+      return "pending";
+    };
+
+    const { data: stuck, error } = await supabase
+      .from("transactions")
+      .select("id, metadata")
+      .eq("status", "pending")
+      .eq("type", "crypto_sell")
+      .lte("created_at", floor)
+      .gte("created_at", cutoff)
+      .limit(50);
+
+    if (error) return { checked: 0, error: error.message };
+    checked += stuck?.length ?? 0;
+
+    for (const tx of stuck || []) {
+      const outcome = await reconcileOne(tx);
+      if (outcome === "completed") completed++;
+      else if (outcome === "failed") failed++;
+      else if (outcome === "pending") stillPending++;
+      else skipped++;
+    }
+
+    // Self-heals a sale we'd already marked 'failed' if Quidax later
+    // confirms it actually succeeded (today's real incident: an amount
+    // mismatch held it for manual review, then Quidax approved it after
+    // the fact) -- no admin action needed for this to catch up on its own.
+    // Excludes anything an admin already resolved by hand (migration 183).
+    const { data: recentlyFailedRaw, error: failedError } = await supabase
+      .from("transactions")
+      .select("id, metadata")
+      .eq("status", "failed")
+      .eq("type", "crypto_sell")
+      .gte("created_at", cutoff)
+      .limit(50);
+
+    if (!failedError) {
+      // Filtered here rather than in the query -- JSONB path filters via the
+      // JS client are easy to get subtly wrong (a missing key vs. an
+      // explicit false behave differently across `is`/`eq`/`neq`). A plain
+      // JS check is unambiguous: only skip a row an admin actually resolved.
+      const recentlyFailed = (recentlyFailedRaw || []).filter((tx) => (tx.metadata as any)?.resolved_manually !== true);
+      checked += recentlyFailed.length;
+      for (const tx of recentlyFailed) {
+        const outcome = await reconcileOne(tx);
+        if (outcome === "completed") completed++;
+        else skipped++;
       }
     }
 
-    return { checked: stuck?.length ?? 0, completed, failed, stillPending, skipped };
+    return { checked, completed, failed, stillPending, skipped };
   });
 
   return json(result);
