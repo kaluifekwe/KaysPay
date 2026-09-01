@@ -1457,13 +1457,13 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
           )}
 
           <View style={styles.actionsRow}>
-            {/* Withdraw (crypto -> external wallet) is parked (owner
-                2026-08-20, see migration 141): Buy/Sell cover the core
-                Naira<->crypto need, and external-wallet withdrawal is a
-                narrower, lower-priority feature. The tab and its backend
-                stay in the repo behind the 'crypto_withdraw' kill switch;
-                add 'withdraw' back to this list if it's ever wanted again. */}
-            {(['deposit', 'buy', 'sell'] as Tab[]).map((t) => (
+            {/* Withdraw (crypto -> external wallet) was parked 2026-08-20
+                (migration 141) as a narrower, lower-priority feature behind
+                the 'crypto_withdraw' kill switch. Re-added to the tab list
+                2026-09-02 now that it's been extended past USDT-only (BTC,
+                see crypto-withdraw-assets.ts) and is an active feature
+                again — the kill switch itself was already left enabled. */}
+            {(['deposit', 'buy', 'sell', 'withdraw'] as Tab[]).map((t) => (
               <TouchableOpacity key={t} style={styles.actionItem} onPress={() => handleSelectTab(t)} activeOpacity={0.75}>
                 <View style={[styles.actionIcon, tab === t && styles.actionIconActive]}>
                   <Ionicons name={TAB_ICONS[t]} size={20} color={theme.brand} />
