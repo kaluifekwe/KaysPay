@@ -167,33 +167,71 @@ export function TransactionAuthProvider({ children }: { children: React.ReactNod
   // reading the PIN out of the device's hardware-backed keychain, and that
   // PIN then goes through the exact same server-side verify_user_pin check
   // as manual entry, so the resulting token is equally trustworthy.
+  // A single biometric miss (getBiometricPin returning null, or a keychain
+  // read throwing) stays completely silent, same as before — it's almost
+  // always just a cancelled or declined OS prompt, and flagging every one of
+  // those would be alarming noise. But those two outcomes are also exactly
+  // what a PERMANENTLY invalidated keychain entry produces (SecureStore's own
+  // docs: a requireAuthentication entry "will become inaccessible if there
+  // are changes to the user's biometric settings, such as adding a new
+  // fingerprint" — every read fails after that, forever, no matter how good
+  // the scan is), and the app has no other way to tell the two apart. So a
+  // SECOND miss in a row is treated as that signal: it surfaces a message,
+  // because a person who is deliberately retrying to authorize a payment and
+  // fails twice straight is not just fat-fingering a cancel.
+  const noteBiometricOutcome = useCallback(async (succeeded: boolean) => {
+    if (succeeded) {
+      await storageHelpers.setNumber(StorageKeys.BIOMETRIC_CONSECUTIVE_FAILURES, 0);
+      return;
+    }
+    const prior = (await storageHelpers.getNumber(StorageKeys.BIOMETRIC_CONSECUTIVE_FAILURES)) ?? 0;
+    const next = prior + 1;
+    await storageHelpers.setNumber(StorageKeys.BIOMETRIC_CONSECUTIVE_FAILURES, next);
+    if (next >= 2) {
+      setError("Biometric isn't working on this device. Re-enable it in Settings, or use your PIN below.");
+    }
+  }, []);
+
   const tryBiometric = useCallback(async () => {
     try {
       const pinFromKeychain = await authService.getBiometricPin();
-      if (!pinFromKeychain) return; // not enrolled/declined — fall back to manual PIN
+      if (!pinFromKeychain) {
+        void noteBiometricOutcome(false);
+        return; // not enrolled/declined/broken — fall back to manual PIN
+      }
 
       setChecking(true);
       const res = await authService.verifyPIN(pinFromKeychain, maxUsesRef.current);
       setChecking(false);
 
       if (res.valid && res.token) {
+        void noteBiometricOutcome(true);
         finish({ token: res.token, pin: pinFromKeychain });
       } else if (res.restricted || res.error === 'FINANCIAL_ACTIONS_RESTRICTED') {
+        // An account-level restriction, not a biometric/hardware problem —
+        // the biometric step itself worked (a PIN came out of the keychain).
+        // Its own message already tells the customer what to do, so this
+        // must not also count toward "biometric might be broken".
         setError('Financial transactions are temporarily restricted for your protection. Reset your transaction PIN using your verified email or contact support.');
       } else if (res.locked) {
+        // Same reasoning: a PIN lockout, not a biometric failure.
         const fallbackSeconds = res.lockedUntil
           ? Math.max(1, Math.ceil((new Date(res.lockedUntil).getTime() - Date.now()) / 1000))
           : 15 * 60;
         applyLockStatus({ locked: true, retryAfterSeconds: fallbackSeconds });
+      } else {
+        // A PIN did come out of the keychain but the server rejected it —
+        // most likely stale (changed on another device since biometric was
+        // last enabled). Re-enabling biometric in Settings fixes this too,
+        // so it counts the same as a hardware miss.
+        void noteBiometricOutcome(false);
       }
-      // If it somehow fails (PIN changed since last biometric enrollment,
-      // etc.), silently fall back to manual PIN entry instead of showing an
-      // error the user can't act on.
     } catch {
       setChecking(false);
-      // fall back to PIN silently
+      void noteBiometricOutcome(false);
+      // fall back to PIN silently (beyond the 2nd-miss message above)
     }
-  }, [applyLockStatus, finish]);
+  }, [applyLockStatus, finish, noteBiometricOutcome]);
 
   const showPinModal = useCallback(
     (opts: AuthorizeOptions, resolve: (value: AuthorizeResult | null) => void) => {

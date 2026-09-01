@@ -42,6 +42,14 @@ export const StorageKeys = {
   // show Fund Wallet's "you don't need to fund for crypto" nudge, so people
   // topping up for airtime/data never see a crypto message.
   CRYPTO_SCREEN_LAST_VISIT: 'crypto_screen_last_visit',
+  // How many biometric attempts in a row have failed to produce a valid PIN
+  // — see TransactionAuthProvider.tryBiometric. A single failure is treated
+  // as an ordinary cancel/decline and stays silent, same as before; only a
+  // second one in a row (which a stale or invalidated keychain entry
+  // produces every single time, forever, with no way for the app to detect
+  // that on its own) surfaces a message telling the customer biometric needs
+  // re-enabling. Reset to 0 the moment biometric succeeds.
+  BIOMETRIC_CONSECUTIVE_FAILURES: 'biometric_consecutive_failures',
 };
 
 // SecureStore validates every key against /^[\w.-]+$/ and THROWS on anything
