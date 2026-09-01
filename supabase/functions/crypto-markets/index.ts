@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { adminClient, enforceRateLimit, getAuthUser } from "../_shared/auth.ts";
 import { getAllMarketTickers, isQuidaxConfigured } from "../_shared/quidax-client.ts";
+import { SUPPORTED_SWAP_ASSETS } from "../_shared/crypto-assets.ts";
 
 // Read-only live prices for the Buy coin picker �?one call to Quidax's
 // "list market tickers" endpoint covers every market, so this picks out the
@@ -41,13 +42,16 @@ serve(async (req: Request) => {
     const tickers = await getAllMarketTickers();
 
     const usdtNgn = tickers["usdtngn"];
-    // Non-USDT coins are hidden from the picker for now (see crypto-buy,
-    // which also rejects them server-side): Sell and Withdraw both reject
-    // anything but USDT, and there is no Convert path yet, so a completed
-    // BTC/ETH/SOL/etc purchase would have no exit. Re-add SUPPORTED_SWAP_ASSETS
-    // here once Convert ships.
+    // Re-enabled (owner decision) now that external-wallet withdraw is being
+    // built out per asset (BTC/ETH first, see crypto-withdraw) rather than
+    // requiring an in-app Sell/Convert path — "buy and hold, withdraw out
+    // when ready" is a complete exit on its own. A coin whose withdraw
+    // support hasn't landed yet just isn't withdrawable from the app UI
+    // until it does; the balance itself is never at risk either way, since
+    // it always sits in the customer's own Quidax sub-account, readable live.
     const coins = [
       { code: "USDT", name: "Tether", stablecoin: true, quidaxCode: "usdt" },
+      ...SUPPORTED_SWAP_ASSETS.map((a) => ({ code: a.code, name: a.name, stablecoin: false, quidaxCode: a.quidaxCode })),
     ].map((coin) => {
       // Prefer a direct <coin>ngn market where Quidax lists one (most
       // majors). Several coins here (confirmed against Quidax's own

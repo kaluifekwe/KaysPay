@@ -20,6 +20,7 @@ import {
   QuidaxRampError,
 } from "../_shared/quidax-ramp-client.ts";
 import { resolveBuyLimits } from "../_shared/crypto-buy-limits.ts";
+import { findSwapAsset } from "../_shared/crypto-assets.ts";
 import { redactSecrets } from "../_shared/redact.ts";
 
 // Buy (Phase 3): a REAL purchase. Quidax issues a single-use bank account,
@@ -129,17 +130,19 @@ serve(async (req: Request) => {
 
   const asset = String(body.asset || "USDT").trim().toUpperCase();
 
-  // Non-USDT coins are buy-only right now: crypto-sell and crypto-withdraw
-  // both hard-reject anything but USDT, and there is no convert/swap path a
-  // customer can reach on their own. A completed BTC/ETH/SOL/etc purchase
-  // would sit in the account with no exit until Convert ships. Gated
-  // server-side (not just hidden client-side) so an older app build, or
-  // anyone calling this endpoint directly, cannot create one of those stuck
-  // purchases either. Re-enable per-coin once Convert (swap to USDT) lands.
-  if (asset !== "USDT") {
-    return json({ success: false, error: "This coin isn't available to buy yet. USDT is available now." }, 400);
+  // Owner decision: a completed BTC/ETH/SOL/etc purchase is no longer
+  // required to have an in-app Sell/Convert path to be a valid exit --
+  // withdraw-to-external-wallet is being extended per asset instead (see
+  // crypto-withdraw), starting with BTC and ETH. Until a given coin's
+  // withdraw support actually lands, its balance still isn't stuck: it sits
+  // in the customer's own Quidax sub-account exactly like USDT's does,
+  // readable live, just not withdrawable from the app UI yet. Gated
+  // server-side (not just the picker) so an older app build, or anyone
+  // calling this endpoint directly, is held to the same supported list.
+  const swapAsset = asset === "USDT" ? null : findSwapAsset(asset);
+  if (asset !== "USDT" && !swapAsset) {
+    return json({ success: false, error: "This coin isn't available to buy yet." }, 400);
   }
-  const swapAsset = null;
 
   // Optional: send the purchased USDT straight to an external wallet instead
   // of the customer's own KaysPay crypto account. Validated the same way a
