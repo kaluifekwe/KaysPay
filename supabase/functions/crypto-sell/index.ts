@@ -91,7 +91,15 @@ serve(async (req: Request) => {
   }
 
   const asset = String(body.asset || "USDT");
-  const cryptoAmount = Number(body.crypto_amount);
+  // Rounded to 4dp here, once, and used for every downstream call (balance
+  // check, fee check, initiateOffRamp, the persisted crypto_micro, and the
+  // final createWithdrawal). Real incident: a client-computed amount with
+  // 5+ decimals (e.g. 4.70644) was sent as-is to initiateOffRamp, which
+  // quotes/expects only 4dp on Quidax's side (4.7064) -- the two legs then
+  // disagreed on the actual on-chain deposit, and Quidax's system held the
+  // sale for manual review over a discrepancy that was entirely ours to
+  // avoid. Confirmed directly by Quidax support, not guessed.
+  const cryptoAmount = Math.round(Number(body.crypto_amount) * 10_000) / 10_000;
   const bankCode = String(body.bank_code || "").trim();
   const bankName = String(body.bank_name || "").trim();
   const accountNumber = String(body.account_number || "").trim();
