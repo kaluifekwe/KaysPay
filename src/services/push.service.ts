@@ -26,8 +26,14 @@ export const pushService = {
   async registerForPush(): Promise<void> {
     try {
       if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('default', {
-          name: 'Default',
+        // A NEW channel id, not 'default' — Android locks a channel's sound
+        // setting permanently the first time it's created, and only lets
+        // apps change its name/description afterward. Any device that
+        // already had 'default' created silently (e.g. from an earlier
+        // test build) would stay silent forever no matter what we set here.
+        // A fresh id sidesteps that for every device, old and new.
+        await Notifications.setNotificationChannelAsync('transactions', {
+          name: 'Transactions',
           importance: Notifications.AndroidImportance.DEFAULT,
         });
       }
