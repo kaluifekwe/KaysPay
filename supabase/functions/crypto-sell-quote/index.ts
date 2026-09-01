@@ -3,6 +3,7 @@ import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { adminClient, enforceRateLimit, getAuthUser, isDeviceSessionAllowed, readJsonBody, RequestBodyError } from "../_shared/auth.ts";
 import { getOrCreateCryptoAccount } from "../_shared/crypto-account.ts";
 import { getCryptoWithdrawalFee, getSubAccountWallets, isQuidaxConfigured } from "../_shared/quidax-client.ts";
+import { getSellQuote } from "../_shared/quidax-ramp-client.ts";
 
 const MIN_USDT = 1;
 const MAX_USDT = 2000;
@@ -42,9 +43,14 @@ serve(async (req: Request) => {
 
   try {
     const account = await getOrCreateCryptoAccount(db, user);
-    const [wallets, feeRule] = await Promise.all([
+    const [wallets, feeRule, sellQuote] = await Promise.all([
       getSubAccountWallets(account.quidaxUserId),
       getCryptoWithdrawalFee({ currency: "usdt", amount, network: NETWORK }),
+      // Quidax's own figure for what actually lands in the bank, rather than
+      // the client multiplying a market rate and hoping. Resolves to null on
+      // any failure, and the client keeps its rate-based estimate — a quote
+      // outage must never block a sale.
+      getSellQuote({ token: "usdt", currency: "ngn", tokenAmount: amount, network: NETWORK }),
     ]);
     const wallet = wallets.find((entry) => entry.currency.toLowerCase() === "usdt");
     const available = Number(wallet?.balance ?? 0);
@@ -57,6 +63,10 @@ serve(async (req: Request) => {
       network_fee: fee,
       fee_type: feeRule.type,
       total_required: totalRequired,
+      // Naira the customer actually receives, from Quidax, net of their
+      // processor fee. Null when the quote could not be read.
+      expected_ngn: sellQuote?.toAmount ?? null,
+      processor_fee_ngn: sellQuote?.fee ?? null,
       available,
       sufficient: Number.isFinite(available) && available + 1e-8 >= totalRequired,
       max_sell: Math.max(0, Math.min(MAX_USDT, available - fee)),

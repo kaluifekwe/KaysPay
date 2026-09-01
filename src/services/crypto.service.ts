@@ -80,6 +80,10 @@ export interface CryptoSellQuote {
   maxSell: number;
   minSell: number;
   maxLimit: number;
+  /** Naira Quidax says will actually land, net of their processor fee.
+   * Null when their quote could not be read — fall back to the estimate. */
+  expectedNgn: number | null;
+  processorFeeNgn: number | null;
 }
 
 function newIdempotencyKey(prefix: string): string {
@@ -371,6 +375,8 @@ export const cryptoService = {
           maxSell: Number(data.max_sell),
           minSell: Number(data.min_sell),
           maxLimit: Number(data.max_limit),
+          expectedNgn: data.expected_ngn != null ? Number(data.expected_ngn) : null,
+          processorFeeNgn: data.processor_fee_ngn != null ? Number(data.processor_fee_ngn) : null,
         },
       };
     } catch {

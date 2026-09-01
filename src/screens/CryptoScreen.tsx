@@ -1730,6 +1730,16 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                       {sellQuote.network.toUpperCase()} network fee: {formatUsdt(sellQuote.networkFee)}
                     </Text>
                     <Text style={styles.sellQuoteTotal}>Total required: {formatUsdt(sellQuote.totalRequired)}</Text>
+                    {/* Quidax's own figure for what lands in the bank. The
+                        estimate above it is a market rate times the amount, so
+                        it cannot know about their processor fee and always
+                        reads high — a real 2 USDT sale showed ≈₦2,756 and paid
+                        ₦2,668. Shown only when their quote answered. */}
+                    {sellQuote.expectedNgn != null && (
+                      <Text style={styles.sellQuoteReceive}>
+                        You receive: {formatNaira(sellQuote.expectedNgn)}
+                      </Text>
+                    )}
                   </View>
                 )}
                 {sellQuote && !sellQuote.sufficient && (
@@ -2325,6 +2335,7 @@ function createStyles(theme: AppTheme) {
   sellQuoteCard: { marginTop: Spacing.S, padding: Spacing.M, borderRadius: 12, backgroundColor: theme.surfaceRaised },
   sellQuoteText: { ...Typography.BODY_SMALL, color: theme.inkMuted, marginBottom: 4 },
   sellQuoteTotal: { ...Typography.BODY, color: theme.ink, fontWeight: '700' },
+  sellQuoteReceive: { ...Typography.BODY, color: theme.brand, fontWeight: '700', marginTop: 6 },
   receiveRow: { marginTop: Spacing.S, paddingTop: Spacing.M, borderTopWidth: 1, borderTopColor: theme.hairline },
   receiveLabel: { ...Typography.BODY, fontWeight: '700', color: theme.ink },
   receiveValue: { ...Typography.BODY, fontFamily: MONO, fontWeight: '700', color: theme.brand },

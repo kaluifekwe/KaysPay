@@ -341,6 +341,47 @@ export interface PurchaseLimits {
 /** Quidax's own min/max per fiat purchase — read live rather than hardcoded,
  * since breaching it fails the transaction after the customer has already
  * been shown an account to pay into. */
+/** Quidax's own quote for a sell: what the customer actually receives in
+ * naira for a given crypto amount on a given network, after their fees.
+ *
+ * The Sell screen used to multiply a market rate by the amount and show that
+ * as the estimate. It reads high every time, because it cannot know about
+ * Quidax's processor fee — a real 2 USDT sale was quoted ₦2,756 and settled
+ * at ₦2,668, and the customer has no way to tell a fee from a bad rate.
+ *
+ * Returns null rather than throwing: an estimate is a nice-to-have, and a
+ * quote outage must never be the reason somebody cannot sell. Callers fall
+ * back to the rate-based figure.
+ *
+ * Note this is separate from, and does not include, the crypto withdrawal fee
+ * charged to move the coin out of the customer's sub-account into the
+ * off-ramp (see crypto-sell). That one is deducted in USDT before any of this
+ * applies. */
+export async function getSellQuote(params: {
+  token: string;
+  currency: string;
+  tokenAmount: number;
+  network: string;
+}): Promise<{ toAmount: number; fee: number } | null> {
+  try {
+    const query = new URLSearchParams({
+      token: params.token.toLowerCase(),
+      currency: params.currency.toLowerCase(),
+      token_amount: String(params.tokenAmount),
+      token_network: params.network.toLowerCase(),
+    });
+    const { status, data } = await callRamp(`/purchase_quotes/sell?${query.toString()}`);
+    const payload = unwrap(status, data, "Could not read the sell quote");
+    const toAmount = Number(payload.to_amount);
+    const fee = Number(payload.fee);
+    if (!Number.isFinite(toAmount) || toAmount <= 0) return null;
+    return { toAmount, fee: Number.isFinite(fee) ? fee : 0 };
+  } catch (e) {
+    console.error("quidax-ramp: could not read sell quote:", e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
 export async function getBuyLimits(currency = "ngn"): Promise<PurchaseLimits | null> {
   try {
     const { status, data } = await callRamp(`/purchase_limits/buy?currency_symbol=${encodeURIComponent(currency)}`);
