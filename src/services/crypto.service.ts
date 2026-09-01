@@ -86,6 +86,21 @@ export interface CryptoSellQuote {
   processorFeeNgn: number | null;
 }
 
+export interface CryptoWithdrawQuote {
+  amount: number;
+  network: string;
+  networkFee: number;
+  feeSharePercent: number | null;
+  totalRequired: number;
+  available: number;
+  sufficient: boolean;
+  /** The real minimum for this specific network, computed live from
+   * Quidax's own fee — not the flat floor shown before a network is picked. */
+  minForNetwork: number;
+  maxWithdraw: number;
+  maxLimit: number;
+}
+
 function newIdempotencyKey(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -377,6 +392,48 @@ export const cryptoService = {
           maxLimit: Number(data.max_limit),
           expectedNgn: data.expected_ngn != null ? Number(data.expected_ngn) : null,
           processorFeeNgn: data.processor_fee_ngn != null ? Number(data.processor_fee_ngn) : null,
+        },
+      };
+    } catch {
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  },
+
+  // Same purpose as getSellQuote for Sell: shows the real per-network fee
+  // before the customer confirms, rather than finding out from a smaller
+  // balance afterward. Withdraw needs network as an input (the customer
+  // picks it — Sell always uses one fixed network), which is also what
+  // decides min_for_network: TRC20/ERC20's real fee makes a small
+  // withdrawal not worth sending; BEP20's doesn't.
+  async getWithdrawQuote(
+    network: CryptoNetwork,
+    cryptoAmount: number,
+  ): Promise<{ success: boolean; quote?: CryptoWithdrawQuote; error?: string }> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('crypto-withdraw-quote', { body: { network, crypto_amount: cryptoAmount } }),
+      );
+      if (error || !data?.success) {
+        let message = data?.error || 'Could not calculate the live network fee.';
+        try {
+          const body = await (error as any)?.context?.json?.();
+          if (body?.error) message = body.error;
+        } catch {}
+        return { success: false, error: message };
+      }
+      return {
+        success: true,
+        quote: {
+          amount: Number(data.amount),
+          network: String(data.network || network),
+          networkFee: Number(data.network_fee),
+          feeSharePercent: data.fee_share_percent != null ? Number(data.fee_share_percent) : null,
+          totalRequired: Number(data.total_required),
+          available: Number(data.available),
+          sufficient: data.sufficient === true,
+          minForNetwork: Number(data.min_for_network),
+          maxWithdraw: Number(data.max_withdraw),
+          maxLimit: Number(data.max_limit),
         },
       };
     } catch {

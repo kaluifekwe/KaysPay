@@ -11,10 +11,10 @@ import {
   RequestBodyError,
 } from "../_shared/auth.ts";
 import { getOrCreateCryptoAccount } from "../_shared/crypto-account.ts";
-import { createWithdrawal, getSubAccountWallets, isQuidaxConfigured } from "../_shared/quidax-client.ts";
+import { createWithdrawal, getCryptoWithdrawalFee, getSubAccountWallets, isQuidaxConfigured } from "../_shared/quidax-client.ts";
 
 // Withdraw USDT from the user's OWN Quidax sub-account to an external
-// wallet address. Quidax debits their sub-account balance directly â€?no
+// wallet address. Quidax debits their sub-account balance directly ï¿½?no
 // local crypto ledger is touched, since the balance the app shows is read
 // live from Quidax and debiting here too would double-count.
 function json(body: unknown, status = 200) {
@@ -24,7 +24,7 @@ function json(body: unknown, status = 200) {
   });
 }
 
-// Same format rules as crypto.service.ts's client-side check â€?never trust
+// Same format rules as crypto.service.ts's client-side check ï¿½?never trust
 // the client's own validation for what's ultimately an irreversible send.
 const ADDRESS_PATTERNS: Record<string, RegExp> = {
   TRC20: /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
@@ -39,8 +39,15 @@ const NETWORK_MAP: Record<string, string> = {
   BEP20: "bep20",
 };
 
+// Absolute floor only. The real, enforced minimum is computed live per
+// network from Quidax's own fee below â€” see crypto-withdraw-quote, which
+// this mirrors exactly so the client is never quoted one number and charged
+// another. A flat 5 USDT floor made sense when every network cost about the
+// same; it doesn't when TRC20 is $1, ERC20 is $2, and BEP20 is $0.02 for the
+// identical send.
 const MIN_USDT = 5;
 const MAX_USDT = 2000;
+const MAX_FEE_SHARE = 0.2;
 
 serve(async (req: Request) => {
   const cors = handleCors(req);
@@ -77,7 +84,7 @@ serve(async (req: Request) => {
     return json({ success: false, error: `Enter an amount between ${MIN_USDT} and ${MAX_USDT} USDT` }, 400);
   }
 
-  // Fail closed BEFORE any PIN-token side effect â€?a blocked withdrawal
+  // Fail closed BEFORE any PIN-token side effect ï¿½?a blocked withdrawal
   // must never look or feel like it partially happened.
   if (!isQuidaxConfigured()) {
     return json({
@@ -118,11 +125,37 @@ serve(async (req: Request) => {
   try {
     const account = await getOrCreateCryptoAccount(supabase, user);
 
-    const wallets = await getSubAccountWallets(account.quidaxUserId);
+    const [wallets, withdrawalFee] = await Promise.all([
+      getSubAccountWallets(account.quidaxUserId),
+      // Quidax deducts the network fee ON TOP of `amount` (the same
+      // withdrawal call crypto-sell makes to its own off-ramp deposit
+      // address â€” see that function's own note on this exact mechanic).
+      // Never trust the client's minimum: re-verified here from scratch so
+      // a stale quote, or a request that skipped the quote step entirely,
+      // can't slip a fee-eating amount through.
+      getCryptoWithdrawalFee({ currency: asset.toLowerCase(), amount: cryptoAmount, network: quidaxNetwork }),
+    ]);
     const usdt = wallets.find((w) => w.currency.toLowerCase() === "usdt");
     const available = Number(usdt?.balance ?? 0);
-    if (!Number.isFinite(available) || available < cryptoAmount) {
-      return json({ success: false, error: "Insufficient USDT balance." });
+    const fee = withdrawalFee.fee;
+    const totalRequired = cryptoAmount + fee;
+
+    const minForNetwork = Math.max(MIN_USDT, fee / MAX_FEE_SHARE);
+    if (cryptoAmount < minForNetwork) {
+      return json({
+        success: false,
+        error: `Enter at least ${minForNetwork.toFixed(2)} USDT for ${network} â€” the network fee makes anything smaller not worth sending.`,
+        min_for_network: minForNetwork,
+        network_fee: fee,
+      });
+    }
+
+    if (!Number.isFinite(available) || available + 1e-8 < totalRequired) {
+      return json({
+        success: false,
+        error: `You need ${totalRequired.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")} USDT: ${cryptoAmount} USDT to withdraw plus ${fee} USDT network fee.`,
+        network_fee: fee,
+      });
     }
 
     // Recorded BEFORE the send, so an on-chain transfer can never happen

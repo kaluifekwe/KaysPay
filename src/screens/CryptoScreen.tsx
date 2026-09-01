@@ -38,6 +38,7 @@ import {
   type BuyAsset,
   type MarketCoin,
   type CryptoSellQuote,
+  type CryptoWithdrawQuote,
 } from '../services/crypto.service';
 import { kycService } from '../services/kyc.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
@@ -420,6 +421,9 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [wdAmount, setWdAmount] = useState('');
   const [wdVerified, setWdVerified] = useState(false);
   const [savedAddresses, setSavedAddresses] = useState<SavedCryptoAddress[]>([]);
+  const [wdQuote, setWdQuote] = useState<CryptoWithdrawQuote | null>(null);
+  const [wdQuoteLoading, setWdQuoteLoading] = useState(false);
+  const [wdQuoteError, setWdQuoteError] = useState<string | null>(null);
 
   // A Buy Quidax auto-refunded (paying account name didn't match) and is
   // waiting on the customer's own bank details — see CryptoRefundBankModal.
@@ -657,6 +661,30 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     return () => { cancelled = true; clearTimeout(handle); };
   }, [numericSellUsdt]);
 
+  // Same purpose as the sell-quote effect above: show the real network fee
+  // before confirming, not after. Re-fetches on network change too — unlike
+  // Sell (one fixed network), Withdraw's fee depends entirely on which
+  // network the customer picked, and TRC20/ERC20 differ from BEP20 by two
+  // orders of magnitude for the identical send.
+  useEffect(() => {
+    setWdQuote(null);
+    setWdQuoteError(null);
+    if (!Number.isFinite(numericWdAmount) || numericWdAmount < 5 || numericWdAmount > 2000) {
+      setWdQuoteLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      setWdQuoteLoading(true);
+      const result = await cryptoService.getWithdrawQuote(wdNetwork, numericWdAmount);
+      if (cancelled) return;
+      setWdQuoteLoading(false);
+      if (result.success && result.quote) setWdQuote(result.quote);
+      else setWdQuoteError(result.error || 'Could not calculate the live network fee.');
+    }, 400);
+    return () => { cancelled = true; clearTimeout(handle); };
+  }, [numericWdAmount, wdNetwork]);
+
   useEffect(() => {
     if (!sellBank || sellAccountNumber.length !== 10 || sellQuote?.sufficient !== true) return;
     const handle = setTimeout(async () => {
@@ -739,8 +767,14 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     }
     setSellUsdt(String(maximum));
   }, [quidaxUsdtBalance]);
+  // Requires a live quote confirming both that the balance actually covers
+  // amount + fee (not just amount — the same gap that let a full-balance
+  // Sell pass locally and bounce at Quidax, fixed there first) and that the
+  // amount clears this specific network's real minimum, not the flat 5
+  // shown before a network is even picked.
   const canWithdraw = Number.isFinite(numericWdAmount) && numericWdAmount >= 5 && numericWdAmount <= 2000
-    && quidaxUsdtBalance != null && numericWdAmount <= quidaxUsdtBalance && wdAddressValid && wdVerified;
+    && quidaxUsdtBalance != null && wdAddressValid && wdVerified
+    && wdQuote?.sufficient === true && numericWdAmount >= wdQuote.minForNetwork;
 
   const handleBuy = useCallback(async () => {
     if (!canBuy || !selectedBuyAsset || buyLoading) return;
@@ -1875,6 +1909,32 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 {quidaxUsdtBalance != null && numericWdAmount > quidaxUsdtBalance && (
                   <Text style={styles.errorText}>Insufficient USDT balance.</Text>
                 )}
+
+                {/* Shows the real per-network fee before confirming — the
+                    withdraw screen used to show none at all, on any network,
+                    for any amount. A 5 USDT withdrawal on ERC20 cost $2 in
+                    fees with nothing on screen ever warning it was coming. */}
+                {wdQuote && (
+                  <View style={styles.sellQuoteCard}>
+                    <Text style={styles.sellQuoteText}>Amount to withdraw: {formatUsdt(wdQuote.amount)}</Text>
+                    <Text style={styles.sellQuoteText}>
+                      {wdQuote.network} network fee: {formatUsdt(wdQuote.networkFee)}
+                      {wdQuote.feeSharePercent != null ? ` (${wdQuote.feeSharePercent}%)` : ''}
+                    </Text>
+                    <Text style={styles.sellQuoteTotal}>Total required: {formatUsdt(wdQuote.totalRequired)}</Text>
+                  </View>
+                )}
+                {wdQuote && !wdQuote.sufficient && (
+                  <Text style={styles.errorText}>
+                    You need {formatUsdt(wdQuote.totalRequired)}, but only {formatUsdt(wdQuote.available)} is available.
+                  </Text>
+                )}
+                {wdQuote && numericWdAmount > 0 && numericWdAmount < wdQuote.minForNetwork && (
+                  <Text style={styles.errorText}>
+                    Enter at least {formatUsdt(wdQuote.minForNetwork)} for {wdQuote.network} — the network fee makes anything smaller not worth sending.
+                  </Text>
+                )}
+                {wdQuoteError && <Text style={styles.errorText}>{wdQuoteError}</Text>}
 
                 {wdAddressValid && numericWdAmount > 0 && (
                   <View style={styles.confirmBox}>
