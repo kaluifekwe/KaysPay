@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { emailVerificationService } from '../services/emailVerification.service';
+import { authService } from '../services/auth.service';
 import { safeErrorMessage } from '../utils/errorMessages';
 import { storageHelpers } from '../lib/mmkv';
 import { AppTheme } from '../constants/theme';
@@ -216,6 +217,33 @@ export default function EmailCodeScreen(props: any) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Escape hatch for a typo'd signup email — this gate has no other way
+  // out (gestureEnabled: false, no back route), so anyone whose email is
+  // wrong was previously stuck here forever on every reopen. Signs out and
+  // leaves the account behind unverified; the same sign-out already used
+  // for a normal logout elsewhere, so the root navigator's own auth
+  // listener handles routing back to Welcome/Registration automatically.
+  const handleStartOver = () => {
+    Alert.alert(
+      'Start over?',
+      "You'll be signed out so you can sign up again with the correct email.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Start over',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await authService.signOut();
+            } catch {
+              /* auth state listener handles the redirect regardless */
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const maskedEmail = email.replace(/^(.{2}).*(@.*)$/, '$1***$2');
   const subtitle = `We sent a 6-digit code to ${maskedEmail}`;
 
@@ -314,6 +342,13 @@ export default function EmailCodeScreen(props: any) {
                     <Text style={styles.resendText}>{sending ? 'Sending...' : 'Resend Code'}</Text>
                   </TouchableOpacity>
                 )}
+              </View>
+
+              <View style={styles.startOverContainer}>
+                <Text style={styles.startOverHint}>
+                  Wrong email?{' '}
+                  <Text style={styles.startOverLink} onPress={handleStartOver}>Start over</Text>
+                </Text>
               </View>
             </>
           )}
@@ -462,6 +497,21 @@ function createStyles(theme: AppTheme) {
     fontSize: 14,
     color: theme.brand,
     fontWeight: '700',
+  },
+  startOverContainer: {
+    alignItems: 'center',
+    marginTop: 22,
+    paddingTop: 16,
+    borderTopWidth: 0.5,
+    borderTopColor: theme.border,
+  },
+  startOverHint: {
+    fontSize: 12.5,
+    color: theme.inkMuted,
+  },
+  startOverLink: {
+    color: theme.brand,
+    fontWeight: '600',
   },
   });
 }
