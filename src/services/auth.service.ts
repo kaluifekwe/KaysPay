@@ -5,7 +5,7 @@ import { clearAllCache } from '../utils/cache';
 import { passwordValidationError } from '../utils/password';
 import { safeErrorMessage } from '../utils/errorMessages';
 import { withTimeout } from '../utils/network';
-import { clearAnalyticsState } from '../services/analytics.service';
+import { analytics, clearAnalyticsState } from '../services/analytics.service';
 
 export interface AuthResult {
   success: boolean;
@@ -396,6 +396,13 @@ export const authService = {
       const res = await authService.savePIN(pending);
       if (res.success) {
         await authService.clearStashedPin(userId);
+        // The onboarding funnel's only pin_setup_completed signal used to be
+        // RegistrationScreen's own immediate save, which its own comments
+        // admit is best-effort (it can race the just-created session). This
+        // fallback path is where most PINs actually end up landing, so it
+        // needs to fire the event too or the funnel undercounts a step that
+        // is, in practice, succeeding almost every time.
+        void analytics.track('pin_setup_completed', { outcome: 'completed' });
         return true;
       }
       return false;
