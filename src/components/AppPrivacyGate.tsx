@@ -58,6 +58,7 @@ export function AppPrivacyGate({ children }: { children: React.ReactNode }) {
       const session = await authService.getCurrentSession();
       if (!session) {
         awayLockRef.current = false;
+        backgroundedAt.current = null;
         setLocked(false);
         setCheckingSecurity(false);
         await Promise.all([
@@ -119,6 +120,7 @@ export function AppPrivacyGate({ children }: { children: React.ReactNode }) {
         await storageHelpers.delete(StorageKeys.PIN_LOCKED_UNTIL);
         setLocked(awayLockRef.current);
         if (!awayLockRef.current) {
+          backgroundedAt.current = null;
           await storageHelpers.delete(StorageKeys.PRIVACY_BACKGROUNDED_AT);
         }
       } catch {
@@ -158,6 +160,7 @@ export function AppPrivacyGate({ children }: { children: React.ReactNode }) {
       });
       if (result) {
         awayLockRef.current = false;
+        backgroundedAt.current = null;
         await Promise.all([
           storageHelpers.delete(StorageKeys.PRIVACY_BACKGROUNDED_AT),
           storageHelpers.delete(StorageKeys.PIN_LOCKED_UNTIL),
@@ -242,7 +245,18 @@ export function AppPrivacyGate({ children }: { children: React.ReactNode }) {
       supabase.auth.startAutoRefresh();
       startHeartbeat();
 
-      backgroundedAt.current = null;
+      // backgroundedAt.current is deliberately NOT reset here. This used to
+      // unconditionally null it on every foreground, which was a real PIN
+      // bypass: background the app while it's sitting locked on the PIN
+      // screen (never entering it), foreground again, and this ran BEFORE
+      // checkSecurity had a chance to confirm anything — so the very next
+      // backgrounding saw backgroundedAt.current === null and overwrote
+      // PRIVACY_BACKGROUNDED_AT with "just now", erasing the original
+      // hours-old away timestamp. Reopening after that found nothing to
+      // suggest a long absence and skipped the lock entirely. It is now
+      // cleared only where the lock is actually resolved — no session,
+      // confirmed not locked, or a successful unlock — the same three
+      // places PRIVACY_BACKGROUNDED_AT itself already gets cleared.
       void checkSecurity();
       void deviceSessionService.isRevoked().then((revoked) => {
         if (revoked) void authService.signOut();
