@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { callAdmin, AdminApiError } from '../lib/adminApi';
 import { formatFundingProvider, formatTxAmount, SERVICES, TxRow } from '../lib/transactions';
 import TransactionDetailModal from '../components/TransactionDetailModal';
@@ -13,6 +13,22 @@ interface TxResponse {
 
 const STATUSES = ['', 'pending', 'completed', 'failed', 'refunded'];
 
+// admin-transactions already reads and applies date_from/date_to server-side
+// (created_at gte/lte) — this was purely a missing UI, the backend was ready.
+// Same range-picker convention as DashboardPage, so "7 days" means the same
+// thing on both pages.
+type RangeKey = 'all' | 'today' | '7d' | '30d' | 'custom';
+const RANGE_LABELS: { key: RangeKey; label: string }[] = [
+  { key: 'all', label: 'All time' },
+  { key: 'today', label: 'Today' },
+  { key: '7d', label: '7 days' },
+  { key: '30d', label: '30 days' },
+  { key: 'custom', label: 'Custom range' },
+];
+function toDateInputValue(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
 export default function TransactionsPage() {
   const [rows, setRows] = useState<TxRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -25,6 +41,26 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<TxRow | null>(null);
   const [namesHidden, toggleNamesHidden] = useHidden('transactions:names');
+  // Defaults to 'all' (no date restriction) rather than mirroring Dashboard's
+  // 30-day default — this page is also used to look up a specific phone
+  // number's full history, so the safer default is the one that matches
+  // today's existing behavior exactly until someone deliberately narrows it.
+  const [range, setRange] = useState<RangeKey>('all');
+  const [customStart, setCustomStart] = useState(toDateInputValue(new Date(Date.now() - 7 * 86400000)));
+  const [customEnd, setCustomEnd] = useState(toDateInputValue(new Date()));
+
+  const { dateFrom, dateTo } = useMemo(() => {
+    if (range === 'all') return { dateFrom: null as Date | null, dateTo: null as Date | null };
+    const now = new Date();
+    if (range === 'today') {
+      const s = new Date(now); s.setHours(0, 0, 0, 0);
+      return { dateFrom: s, dateTo: now };
+    }
+    if (range === '7d') return { dateFrom: new Date(now.getTime() - 7 * 86400000), dateTo: now };
+    if (range === '30d') return { dateFrom: new Date(now.getTime() - 30 * 86400000), dateTo: now };
+    // custom: end of the selected end-date, so it includes that whole day
+    return { dateFrom: new Date(customStart + 'T00:00:00'), dateTo: new Date(customEnd + 'T23:59:59.999') };
+  }, [range, customStart, customEnd]);
 
   // Debounce the phone search so every keystroke doesn't fire a request.
   useEffect(() => {
@@ -36,7 +72,13 @@ export default function TransactionsPage() {
     setLoading(true);
     setError(null);
     const types = SERVICES.find((s) => s.label === service)?.types.join(',') ?? '';
-    callAdmin<TxResponse>('admin-transactions', { query: { page: String(page), status, phone, types } })
+    callAdmin<TxResponse>('admin-transactions', {
+      query: {
+        page: String(page), status, phone, types,
+        date_from: dateFrom ? dateFrom.toISOString() : '',
+        date_to: dateTo ? dateTo.toISOString() : '',
+      },
+    })
       .then((r) => {
         setRows(r.transactions);
         setTotal(r.total);
@@ -45,14 +87,40 @@ export default function TransactionsPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, [page, status, phone, service]);
+  useEffect(load, [page, status, phone, service, dateFrom, dateTo]);
 
   const pageSize = 50;
   const maxPage = Math.max(0, Math.ceil(total / pageSize) - 1);
 
   return (
     <div>
-      <h2>Transactions</h2>
+      <div className="row between" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+        <h2 style={{ margin: 0 }}>Transactions</h2>
+        <div className="range-picker">
+          {RANGE_LABELS.map((r) => (
+            <div
+              key={r.key}
+              className={`range-pill ${range === r.key ? 'active' : ''}`}
+              onClick={() => { setRange(r.key); setPage(0); }}
+            >
+              {r.label}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {range === 'custom' && (
+        <div className="row" style={{ gap: 12, marginBottom: 16 }}>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label>From</label>
+            <input type="date" value={customStart} onChange={(e) => { setCustomStart(e.target.value); setPage(0); }} />
+          </div>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label>To</label>
+            <input type="date" value={customEnd} onChange={(e) => { setCustomEnd(e.target.value); setPage(0); }} />
+          </div>
+        </div>
+      )}
 
       <div className="row" style={{ marginBottom: 16, gap: 12 }}>
         <select value={service} onChange={(e) => { setService(e.target.value); setPage(0); }} style={{ width: 220 }}>
