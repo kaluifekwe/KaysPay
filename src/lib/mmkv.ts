@@ -51,6 +51,12 @@ export const StorageKeys = {
   // show Fund Wallet's "you don't need to fund for crypto" nudge, so people
   // topping up for airtime/data never see a crypto message.
   CRYPTO_SCREEN_LAST_VISIT: 'crypto_screen_last_visit',
+  // Set the first time this device ever sees a completed purchase — see
+  // analytics.service.ts's trackFirstPurchaseIfNeeded(). Deliberately
+  // persisted rather than an in-memory ref (like first_funding_completed
+  // uses): "first" needs to survive the app being closed and reopened, not
+  // just the current screen staying mounted.
+  HAS_COMPLETED_FIRST_PURCHASE: 'has_completed_first_purchase',
   // How many biometric attempts in a row have failed to produce a valid PIN
   // — see TransactionAuthProvider.tryBiometric. A single failure is treated
   // as an ordinary cancel/decline and stays silent, same as before; only a

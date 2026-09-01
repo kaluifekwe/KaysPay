@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { vtuService, type NetworkProvider, type DataBundle, type ExamType, type VTUResult } from '../services/vtu.service';
 import { downloadPdf, sharePdf } from '../utils/pdf';
 import { buildElectricityReceiptHtml } from '../utils/receipts';
+import { analytics } from '../services/analytics.service';
 
 type TxStatus = 'processing' | 'success' | 'failed';
 
@@ -114,6 +115,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
     if (m?.serials && m.serials.length) setSerials(m.serials);
     if (m?.cashback_earned_kobo) setCashbackEarned(m.cashback_earned_kobo / 100);
     setStatus('success');
+    void analytics.trackFirstPurchaseIfNeeded();
   }, [stopPolling]);
 
   const settleFailed = useCallback((msg?: string) => {

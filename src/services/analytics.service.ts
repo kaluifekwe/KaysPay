@@ -176,4 +176,21 @@ export async function clearAnalyticsState(): Promise<void> {
   await storageHelpers.delete(StorageKeys.ANALYTICS_INSTALLATION_ID);
 }
 
-export const analytics = { track, flush };
+// Fires 'first_purchase_completed' the first time this device ever sees a
+// completed purchase, then never again. Centralised here — one call site per
+// purchase-success point, instead of each screen re-implementing its own
+// "was this the first" check — specifically because the *other* first-time
+// funnel events (pin_setup, first_funding) drifted or went unwired when that
+// logic lived separately in each screen. Persisted via storageHelpers rather
+// than an in-memory ref: unlike first_funding_completed's balance-crossing-
+// zero check (which only knows "first time observed in this sitting" and can
+// misfire again after a balance later returns to zero), this needs to stay
+// true for the life of the install, across app restarts.
+export async function trackFirstPurchaseIfNeeded(): Promise<void> {
+  const already = await storageHelpers.getBoolean(StorageKeys.HAS_COMPLETED_FIRST_PURCHASE);
+  if (already) return;
+  await storageHelpers.setBoolean(StorageKeys.HAS_COMPLETED_FIRST_PURCHASE, true);
+  void track('first_purchase_completed', { outcome: 'completed' });
+}
+
+export const analytics = { track, flush, trackFirstPurchaseIfNeeded };
