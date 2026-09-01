@@ -245,6 +245,9 @@ verify_jwt = true
 [functions.admin-dashboard-stats]
 verify_jwt = true
 
+[functions.admin-share-report]
+verify_jwt = true
+
 [functions.admin-onboarding-report]
 verify_jwt = true
 

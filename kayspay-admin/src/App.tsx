@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { supabase } from './lib/supabase';
@@ -11,9 +12,18 @@ import PricingPage from './pages/PricingPage';
 import AdminsPage from './pages/AdminsPage';
 import SecurityAlertsPage from './pages/SecurityAlertsPage';
 import SettingsPage from './pages/SettingsPage';
+import OnboardingPage from './pages/OnboardingPage';
+import CampaignsPage from './pages/CampaignsPage';
+import OperationsPage from './pages/OperationsPage';
+import AiAssistantPage from './pages/AiAssistantPage';
+import IncidentsPage from './pages/IncidentsPage';
+import BusinessIntelligencePage from './pages/BusinessIntelligencePage';
+import MfaPage from './pages/MfaPage';
+import SharePage from './pages/SharePage';
 
 function Shell() {
   const { role, session } = useAuth();
+  const [aiOpen,setAiOpen]=useState(false);
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -21,7 +31,13 @@ function Shell() {
         <div className="role-badge">{role === 'super_admin' ? 'Super Admin' : 'Support'}</div>
         <nav>
           <NavLink to="/" end>Dashboard</NavLink>
+          <NavLink to="/onboarding">Onboarding</NavLink>
+          {role === 'super_admin' && <NavLink to="/campaigns">Campaigns</NavLink>}
+          <NavLink to="/operations">Operations</NavLink>
+          <NavLink to="/incidents">Incident Centre</NavLink>
+          <NavLink to="/business-intelligence">Business Intelligence</NavLink>
           <NavLink to="/transactions">Transactions</NavLink>
+          <NavLink to="/share">Share</NavLink>
           <NavLink to="/users">User Lookup</NavLink>
           <NavLink to="/services">Kill Switches</NavLink>
           <NavLink to="/pricing">Pricing</NavLink>
@@ -37,7 +53,13 @@ function Shell() {
       <main className="main">
         <Routes>
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/onboarding" element={<OnboardingPage />} />
+          {role === 'super_admin' && <Route path="/campaigns" element={<CampaignsPage />} />}
+          <Route path="/operations" element={<OperationsPage />} />
+          <Route path="/incidents" element={<IncidentsPage />} />
+          <Route path="/business-intelligence" element={<BusinessIntelligencePage />} />
           <Route path="/transactions" element={<TransactionsPage />} />
+          <Route path="/share" element={<SharePage />} />
           <Route path="/users" element={<UserLookupPage />} />
           <Route path="/services" element={<ServiceControlsPage />} />
           <Route path="/pricing" element={<PricingPage />} />
@@ -47,6 +69,7 @@ function Shell() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+      {role==='super_admin'&&<><button className={`ai-copilot-launcher ${aiOpen?'open':''}`} aria-label={aiOpen?'Close KaysPay AI':'Open KaysPay AI'} aria-expanded={aiOpen} onClick={()=>setAiOpen(value=>!value)}><span>AI</span>{aiOpen?'Close':'Ask KaysPay AI'}</button><div className={`ai-copilot-backdrop ${aiOpen?'open':''}`} onClick={()=>setAiOpen(false)}/><aside className={`ai-copilot-panel ${aiOpen?'open':''}`} aria-hidden={!aiOpen}><button className="ai-copilot-close" aria-label="Close KaysPay AI" onClick={()=>setAiOpen(false)}>×</button><AiAssistantPage/></aside></>}
     </div>
   );
 }
@@ -64,11 +87,12 @@ function NotAuthorized() {
 }
 
 export default function App() {
-  const { loading, session, role, needsBootstrap } = useAuth();
+  const { loading, session, role, needsBootstrap, currentLevel } = useAuth();
 
   if (loading) return <div className="login-shell"><p style={{ color: '#fff' }}>Loading…</p></div>;
   if (!session) return <LoginPage />;
   if (!role && needsBootstrap) return <BootstrapPage />;
   if (!role) return <NotAuthorized />;
+  if (currentLevel !== 'aal2') return <MfaPage />;
   return <Shell />;
 }
