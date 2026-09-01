@@ -20,6 +20,7 @@ import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password'
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
 import { analytics } from '../services/analytics.service';
+import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 
 const NIGERIAN_PREFIXES = [
   '0703', '0706', '0802', '0803', '0805', '0806', '0807', '0808', '0809', '0810',
@@ -99,6 +100,10 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
   const [pinError, setPinError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  // PIN digits are always secureTextEntry-masked here — only the password
+  // reveal toggle ever renders a real plaintext secret, so that's the only
+  // moment worth blocking. Keeps every error state on Step 2 screenshottable.
+  useSensitiveScreenProtection(showPassword || showConfirmPassword);
 
   const [submitting, setSubmitting] = useState(false);
   const [marketingEmailOptIn, setMarketingEmailOptIn] = useState(false);
