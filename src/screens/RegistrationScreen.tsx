@@ -628,7 +628,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
               </View>
 
               <View style={styles.fieldContainer}>
-                {renderLabel('Confirm PIN')}
+                {renderLabel('Confirm transaction PIN')}
                 {renderPinRow(confirmPin, setConfirmPin, confirmPinRefs)}
                 {renderError(pinError)}
               </View>
@@ -715,7 +715,7 @@ function createStyles(theme: AppTheme) {
     backgroundColor: theme.surface, borderRadius: 16, padding: 20,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
-  fieldContainer: { marginBottom: 20 },
+  fieldContainer: { marginBottom: 14 },
   label: { fontSize: 13, color: theme.ink, fontWeight: '500', marginBottom: 6 },
   required: { color: theme.down },
   inputWrapper: {
