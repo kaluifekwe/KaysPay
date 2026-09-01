@@ -10,12 +10,19 @@ import { supabase } from '../lib/supabase';
 import { storageHelpers, StorageKeys } from '../lib/mmkv';
 
 const LOCK_AFTER_MS = 60 * 60 * 1000;
+// How often the "still active" heartbeat re-persists while foregrounded —
+// see the heartbeat effect below. Far more often than needed for accuracy
+// (only needs to land within LOCK_AFTER_MS of the real backgrounding time),
+// chosen mainly so a very short foreground session still gets at least one
+// heartbeat written before it ends.
+const HEARTBEAT_INTERVAL_MS = 60 * 1000;
 
 export function AppPrivacyGate({ children }: { children: React.ReactNode }) {
   const { authorize } = useTransactionAuth();
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const backgroundedAt = useRef<number | null>(null);
+  const heartbeatInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const unlocking = useRef(false);
   const checkingRef = useRef(false);
   // A check requested while another was mid-flight, replayed on completion.
@@ -66,13 +73,20 @@ export function AppPrivacyGate({ children }: { children: React.ReactNode }) {
       // deadline was persisted the last time the server reported one. Waiting
       // on the network to learn what we can compute here is what made every
       // cold start sit behind a security screen.
-      const [storedBackgroundedAt, storedLockedUntil] = await Promise.all([
+      const [storedBackgroundedAt, storedLockedUntil, storedLastActiveAt] = await Promise.all([
         storageHelpers.getNumber(StorageKeys.PRIVACY_BACKGROUNDED_AT),
         storageHelpers.getNumber(StorageKeys.PIN_LOCKED_UNTIL),
+        storageHelpers.getNumber(StorageKeys.LAST_ACTIVE_AT),
       ]);
 
-      const wasAwayTooLong = typeof storedBackgroundedAt === 'number' &&
-        Date.now() - storedBackgroundedAt >= LOCK_AFTER_MS;
+      // storedBackgroundedAt is the precise signal and wins whenever it
+      // exists. storedLastActiveAt (the heartbeat) is consulted only when it
+      // doesn't — exactly the case where the backgrounding write got lost to
+      // a process kill, which is also the only case where it's needed: if
+      // the app is closing normally, backgroundedAt lands fine.
+      const wasAwayTooLong = typeof storedBackgroundedAt === 'number'
+        ? Date.now() - storedBackgroundedAt >= LOCK_AFTER_MS
+        : typeof storedLastActiveAt === 'number' && Date.now() - storedLastActiveAt >= LOCK_AFTER_MS;
       const locallyPinLocked = typeof storedLockedUntil === 'number' &&
         storedLockedUntil > Date.now();
 
@@ -184,6 +198,33 @@ export function AppPrivacyGate({ children }: { children: React.ReactNode }) {
     // nothing actually being wrong with their account.
     supabase.auth.startAutoRefresh();
 
+    // Backup for the PRIVACY_BACKGROUNDED_AT write below, which fires
+    // unawaited at the exact instant the app backgrounds — also the moment
+    // Android is likeliest to kill the process to reclaim memory, especially
+    // after a long stretch backgrounded on the lower-RAM devices this app
+    // targets. If that write is lost, checkSecurity's away-too-long check
+    // has nothing to compare against and the lock is silently skipped no
+    // matter how long the phone actually sat untouched. This re-persists
+    // "still active as of now" every HEARTBEAT_INTERVAL_MS while foregrounded
+    // as a second, sturdier signal it can fall back to instead — same
+    // start/stop shape as supabase.auth's auto-refresh just above, since it
+    // has the identical requirement of not running while backgrounded (RN
+    // suspends JS timers there anyway, but the interval must still be
+    // explicitly cleared or it leaks across the transition).
+    const startHeartbeat = () => {
+      if (heartbeatInterval.current !== null) return;
+      void storageHelpers.setNumber(StorageKeys.LAST_ACTIVE_AT, Date.now());
+      heartbeatInterval.current = setInterval(() => {
+        void storageHelpers.setNumber(StorageKeys.LAST_ACTIVE_AT, Date.now());
+      }, HEARTBEAT_INTERVAL_MS);
+    };
+    const stopHeartbeat = () => {
+      if (heartbeatInterval.current === null) return;
+      clearInterval(heartbeatInterval.current);
+      heartbeatInterval.current = null;
+    };
+    startHeartbeat();
+
     const onStateChange = (next: AppStateStatus) => {
       if (next !== 'active') {
         if (backgroundedAt.current === null) {
@@ -193,11 +234,13 @@ export function AppPrivacyGate({ children }: { children: React.ReactNode }) {
             backgroundedAt.current,
           );
         }
+        stopHeartbeat();
         supabase.auth.stopAutoRefresh();
         return;
       }
 
       supabase.auth.startAutoRefresh();
+      startHeartbeat();
 
       backgroundedAt.current = null;
       void checkSecurity();
@@ -209,6 +252,7 @@ export function AppPrivacyGate({ children }: { children: React.ReactNode }) {
     const change = AppState.addEventListener('change', onStateChange);
     return () => {
       change.remove();
+      stopHeartbeat();
       supabase.auth.stopAutoRefresh();
     };
   }, [checkSecurity]);

@@ -27,6 +27,15 @@ export const StorageKeys = {
   // server remains authoritative for the PIN lock deadline.
   PRIVACY_BACKGROUNDED_AT: 'privacy_backgrounded_at',
   PIN_LOCKED_UNTIL: 'pin_locked_until',
+  // Written every ~60s while the app is foregrounded (see AppPrivacyGate's
+  // heartbeat) — "still active as of this moment", as a backup for
+  // PRIVACY_BACKGROUNDED_AT. That write fires unawaited at the exact instant
+  // the app backgrounds, which is also the moment Android is likeliest to
+  // kill the process to reclaim memory; if it does, the write is lost and
+  // the away-lock has nothing to compare against on the next open, no matter
+  // how long the phone actually sat backgrounded. This heartbeat is never
+  // more than a minute stale, so it can't have the same failure mode.
+  LAST_ACTIVE_AT: 'last_active_at',
   // 'light' | 'dark' — see src/components/ThemeProvider.tsx.
   THEME_MODE: 'theme_mode',
   // Last known server value for the support WhatsApp number, so Contact
