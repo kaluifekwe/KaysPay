@@ -1087,7 +1087,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
               <Ionicons name="time-outline" size={28} color={theme.down} />
               <Text style={styles.expiredTitle}>This bank account has expired</Text>
               <Text style={styles.expiredText}>
-                Quidax's one-time account is only valid for 30 minutes. Start a new purchase to get a fresh one.
+                This one-time account is only valid for 30 minutes. Start a new purchase to get a fresh one.
               </Text>
               <TouchableOpacity
                 style={styles.copyAddressButton}
