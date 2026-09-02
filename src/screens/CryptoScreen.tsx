@@ -45,6 +45,7 @@ import {
 import { kycService } from '../services/kyc.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import ProviderLogo from '../components/ProviderLogo';
+import BankLogoIcon from '../components/BankLogoIcon';
 import { CRYPTO_LOGOS } from '../utils/providerLogos';
 import ResultStatusView, { type ResultStatus } from '../components/ResultStatusView';
 import QrCodeView from '../components/QrCodeView';
@@ -175,42 +176,6 @@ function formatUsdt(n: number): string {
 
 function formatCoin(n: number, code: string): string {
   return formatCrypto(n, code);
-}
-
-// Not every bank in the list has a logo (the free public source only covers
-// the major institutions) — falls back to a plain initial badge rather than
-// a broken image, and to a real image if a fetched one fails to load.
-function BankLogoIcon({ bank, size }: { bank: { name: string; logo?: string }; size: number }) {
-  const { theme } = useTheme();
-  const [failed, setFailed] = useState(false);
-  const showImage = !!bank.logo && !failed;
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        overflow: 'hidden',
-        backgroundColor: theme.surfaceRaised,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: Spacing.S,
-      }}
-    >
-      {showImage ? (
-        <Image
-          source={{ uri: bank.logo }}
-          style={{ width: size, height: size }}
-          resizeMode="contain"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <Text style={{ ...Typography.CAPTION, color: theme.inkMuted, fontWeight: '700' }}>
-          {bank.name.charAt(0).toUpperCase()}
-        </Text>
-      )}
-    </View>
-  );
 }
 
 export default function CryptoScreen({ navigation }: CryptoScreenProps) {
@@ -405,15 +370,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // Sell pays a bank account directly (off-ramp) — no separate verify step
   // for this first version; a name mismatch surfaces as an error after
   // tapping Sell, same as every other input on this screen already works.
-  const [sellBanks, setSellBanks] = useState<{ code: string; name: string; logo?: string }[]>([]);
-  const [sellBanksLoading, setSellBanksLoading] = useState(false);
-  const [sellBankPickerVisible, setSellBankPickerVisible] = useState(false);
-  const [sellBankSearch, setSellBankSearch] = useState('');
-  const [sellBank, setSellBank] = useState<{ code: string; name: string; logo?: string } | null>(null);
-  const [sellAccountNumber, setSellAccountNumber] = useState('');
-  const [sellVerifyState, setSellVerifyState] = useState<'idle' | 'checking' | 'verified' | 'failed'>('idle');
-  const [sellVerifiedName, setSellVerifiedName] = useState<string | null>(null);
-  const [sellVerifyError, setSellVerifyError] = useState<string | null>(null);
   const [sellQuote, setSellQuote] = useState<CryptoSellQuote | null>(null);
   const [sellQuoteLoading, setSellQuoteLoading] = useState(false);
   const [sellQuoteError, setSellQuoteError] = useState<string | null>(null);
@@ -511,6 +467,13 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       if (v !== undefined) setBalanceVisible(v);
     });
   }, [loadAll, loadMarkets]);
+
+  // Refreshes balances every time this screen regains focus — needed now
+  // that Sell's bank/confirm step lives on its own screen (CryptoSellBank):
+  // returning here after a successful sale used to rely on that screen's
+  // own loadAll() call, which no longer exists on this screen once the
+  // action moved elsewhere.
+  useFocusEffect(useCallback(() => { loadAll(); }, [loadAll]));
 
   // Safety net: retry once if the customer opens Buy and the initial
   // markets fetch above happened to fail.
@@ -638,27 +601,9 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     setBuyDestVerified(false);
   }, [buyDestAddress, buyDestNetwork]);
 
-  useEffect(() => {
-    if (tab !== 'sell' || sellBanks.length > 0 || sellBanksLoading) return;
-    setSellBanksLoading(true);
-    cryptoService.listSellBanks().then((list) => {
-      setSellBanksLoading(false);
-      setSellBanks(list);
-    });
-  }, [tab, sellBanks.length, sellBanksLoading]);
-
   const numericBuyNgn = parseFloat(buyNgn);
   const numericSellUsdt = parseFloat(sellUsdt);
   const numericWdAmount = parseFloat(wdAmount);
-
-  // Resets whenever any input the verification depended on changes — a
-  // verified checkmark must never survive an edit to the amount, bank, or
-  // account number it was verified against.
-  useEffect(() => {
-    setSellVerifyState('idle');
-    setSellVerifiedName(null);
-    setSellVerifyError(null);
-  }, [sellUsdt, sellBank, sellAccountNumber]);
 
   useEffect(() => {
     setSellQuote(null);
@@ -706,25 +651,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     return () => { cancelled = true; clearTimeout(handle); };
   }, [numericWdAmount, wdAsset, wdNetwork]);
 
-  useEffect(() => {
-    if (!sellBank || sellAccountNumber.length !== 10 || sellQuote?.sufficient !== true) return;
-    const handle = setTimeout(async () => {
-      setSellVerifyState('checking');
-      const res = await cryptoService.resolveSellAccount(numericSellUsdt, sellBank.code, sellAccountNumber);
-      setSellVerifyState((current) => {
-        if (current !== 'checking') return current;
-        return res.success ? 'verified' : 'failed';
-      });
-      if (res.success) {
-        setSellVerifiedName(res.accountName || null);
-      } else {
-        setSellVerifyError(res.error || 'Could not verify this account.');
-      }
-    }, 700);
-    return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sellBank, sellAccountNumber, numericSellUsdt, sellQuote?.sufficient]);
-
   const selectedMarket = markets.find((m) => m.code === selectedBuyAsset) || null;
 
   const visibleMarkets = markets
@@ -766,10 +692,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const canBuy = !!selectedBuyAsset && Number.isFinite(numericBuyNgn) && numericBuyNgn > 0
     && !buyBelowMin && !buyAboveMax
     && (!buyToExternal || (buyDestAddressValid && buyDestVerified));
-  const sellAccountNumberValid = /^\d{10}$/.test(sellAccountNumber);
-  const canSell = Number.isFinite(numericSellUsdt) && numericSellUsdt >= 1 && numericSellUsdt <= 2000
-    && sellQuote?.sufficient === true
-    && !!sellBank && sellAccountNumberValid && sellVerifyState === 'verified';
+  // Bank/account details now live on CryptoSellBankScreen (step 2) — this
+  // only gates whether the live quote is in a state worth proceeding from.
+  const canProceedSell = Number.isFinite(numericSellUsdt) && numericSellUsdt >= 1 && numericSellUsdt <= 2000
+    && sellQuote?.sufficient === true;
 
   const handleSellMax = useCallback(async () => {
     if (quidaxUsdtBalance == null || quidaxUsdtBalance < 1) return;
@@ -857,35 +783,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     }
   }, [canBuy, selectedBuyAsset, buyLoading, numericBuyNgn, buyToExternal, buyDestNetwork, buyDestAddress, authorize, loadAll]);
 
-  const handleSell = useCallback(async () => {
-    if (!canSell || !sellBank) return;
-    const authResult = await authorize({
-      title: 'Confirm Crypto Sale',
-      amount: sellNgnEstimate ?? undefined,
-      subtitle: `${sellBank.name} · ${sellAccountNumber}`,
-      // Sell pays the customer's bank account directly from Quidax's own
-      // liquidity -- it never touches the KaysPay wallet (see
-      // crypto-sell/index.ts) -- and sellNgnEstimate is proceeds the user
-      // is about to RECEIVE, not an amount spent from the wallet, so a
-      // wallet-balance check against it is backwards.
-      skipBalanceCheck: true,
-    });
-    if (!authResult) return;
-    setActionAmountNgn(sellNgnEstimate);
-    setActionState('processing');
-    const result = await cryptoService.sell(numericSellUsdt, sellBank.code, sellBank.name, sellAccountNumber, authResult.token);
-    if (result.success) {
-      setActionMessage(result.message ?? null);
-      setActionState('success');
-      setSellUsdt('');
-      setSellBank(null);
-      setSellAccountNumber('');
-      loadAll();
-    } else {
-      setActionError(result.error || 'Sale failed. Please try again.');
-      setActionState('failed');
-    }
-  }, [canSell, sellBank, sellAccountNumber, sellNgnEstimate, numericSellUsdt, authorize, loadAll]);
+  const handleProceedToSell = useCallback(() => {
+    if (!canProceedSell || !sellQuote) return;
+    navigation.navigate('CryptoSellBank', { sellUsdt: numericSellUsdt, sellQuote });
+  }, [canProceedSell, sellQuote, numericSellUsdt, navigation]);
 
   const submitWithdraw = useCallback(async () => {
     const wdNetworkForRequest = wdAsset === 'USDT' ? wdNetwork : '';
@@ -1791,7 +1692,12 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 {sellNgnEstimate != null && (
                   <Text style={styles.estimateText}>≈ {formatNaira(sellNgnEstimate)}</Text>
                 )}
-                {sellQuoteLoading && <Text style={styles.hintText}>Checking live network fee…</Text>}
+                {sellQuoteLoading && (
+                  <View style={styles.checkingRow}>
+                    <ActivityIndicator size="small" color={theme.gold} />
+                    <Text style={styles.checkingText}>Checking live rate…</Text>
+                  </View>
+                )}
                 {sellQuote && (
                   <View style={styles.sellQuoteCard}>
                     <Text style={styles.sellQuoteText}>Amount to sell: {formatUsdt(sellQuote.amount)}</Text>
@@ -1822,67 +1728,16 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                 )}
                 {sellQuoteError && <Text style={styles.errorText}>{sellQuoteError}</Text>}
 
-                <Text style={styles.label}>Bank</Text>
                 <TouchableOpacity
-                  style={styles.bankSelect}
-                  onPress={() => setSellBankPickerVisible(true)}
-                  activeOpacity={0.7}
-                  disabled={sellBanksLoading}
+                  style={[styles.primaryButton, !canProceedSell && styles.primaryButtonDisabled]}
+                  onPress={handleProceedToSell}
+                  disabled={!canProceedSell}
                 >
-                  {sellBanksLoading ? (
-                    <ActivityIndicator size="small" color={theme.inkMuted} />
-                  ) : (
-                    <View style={styles.bankSelectRow}>
-                      {sellBank && <BankLogoIcon bank={sellBank} size={22} />}
-                      <Text style={sellBank ? styles.bankSelectText : styles.bankSelectPlaceholder}>
-                        {sellBank ? sellBank.name : 'Choose a bank'}
-                      </Text>
-                    </View>
-                  )}
+                  <Text style={styles.primaryButtonText}>Proceed to Sell</Text>
                 </TouchableOpacity>
-
-                <Text style={styles.label}>Account Number</Text>
-                <TextInput
-                  style={styles.input}
-                  value={sellAccountNumber}
-                  onChangeText={(t) => setSellAccountNumber(t.replace(/[^0-9]/g, '').slice(0, 10))}
-                  placeholder="10-digit account number"
-                  placeholderTextColor={theme.inkFaint}
-                  keyboardType="number-pad"
-                  maxLength={10}
-                />
-                {sellVerifyState === 'checking' && (
-                  <View style={styles.verifyRow}>
-                    <ActivityIndicator size="small" color={theme.inkMuted} />
-                    <Text style={styles.verifyCheckingText}>Verifying account…</Text>
-                  </View>
-                )}
-                {sellVerifyState === 'verified' && sellVerifiedName && (
-                  <View style={styles.verifiedCard}>
-                    <View style={styles.verifiedHeading}>
-                      <View style={styles.verifiedIcon}>
-                        <Ionicons name="checkmark" size={14} color="#FFFFFF" />
-                      </View>
-                      <Text style={styles.verifiedTitle}>Account verified</Text>
-                    </View>
-                    <Text style={styles.verifiedName}>{sellVerifiedName}</Text>
-                  </View>
-                )}
-                {sellVerifyState === 'failed' && (
-                  <Text style={styles.errorText}>{sellVerifyError || 'Could not verify this account.'}</Text>
-                )}
-                {sellVerifyState === 'idle' && (
-                  <Text style={styles.hintText}>Must be an account in your own name.</Text>
-                )}
-
-                <TouchableOpacity
-                  style={[styles.primaryButton, !canSell && styles.primaryButtonDisabled]}
-                  onPress={handleSell}
-                  disabled={!canSell}
-                >
-                  <Text style={styles.primaryButtonText}>Sell USDT</Text>
-                </TouchableOpacity>
-                <Text style={styles.hintText}>Paid straight to that bank account — your KaysPay wallet is not involved.</Text>
+                <Text style={styles.hintText}>
+                  {sellQuoteLoading ? 'Waiting for the live rate…' : 'Bank details are on the next screen.'}
+                </Text>
               </View>
             )}
 
@@ -2040,44 +1895,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
         />
       )}
 
-      <Modal visible={sellBankPickerVisible} animationType="slide" onRequestClose={() => setSellBankPickerVisible(false)}>
-        <SafeAreaView style={styles.container}>
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>Select Bank</Text>
-            <TouchableOpacity onPress={() => setSellBankPickerVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="close" size={22} color={theme.ink} />
-            </TouchableOpacity>
-          </View>
-          <TextInput
-            style={styles.pickerSearch}
-            value={sellBankSearch}
-            onChangeText={setSellBankSearch}
-            placeholder="Search bank..."
-            placeholderTextColor={theme.inkMuted}
-            autoFocus
-          />
-          <FlatList
-            data={sellBanks.filter((b) => b.name.toLowerCase().includes(sellBankSearch.trim().toLowerCase()))}
-            keyExtractor={(b) => b.code}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[styles.pickerRow, styles.pickerRowWithLogo]}
-                activeOpacity={0.7}
-                onPress={() => {
-                  setSellBank(item);
-                  setSellBankPickerVisible(false);
-                  setSellBankSearch('');
-                }}
-              >
-                <BankLogoIcon bank={item} size={28} />
-                <Text style={styles.pickerRowText}>{item.name}</Text>
-              </TouchableOpacity>
-            )}
-            ListEmptyComponent={<Text style={styles.pickerEmptyText}>No matching bank.</Text>}
-            keyboardShouldPersistTaps="handled"
-          />
-        </SafeAreaView>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -2455,6 +2272,14 @@ function createStyles(theme: AppTheme) {
   buyProgressSubLabel: { ...Typography.CAPTION, color: theme.inkFaint },
   sellBalanceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sellMaxText: { ...Typography.BODY_SMALL, color: theme.brand, fontWeight: '700' },
+  // Deliberately visible rather than just a caption swap — the live fee
+  // lookup used to update the numbers silently, which read as broken/laggy
+  // rather than as something actually happening.
+  checkingRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.S, marginTop: Spacing.S,
+    backgroundColor: theme.goldSoft, borderRadius: 10, paddingVertical: Spacing.S, paddingHorizontal: Spacing.M,
+  },
+  checkingText: { ...Typography.BODY_SMALL, color: theme.gold, fontWeight: '600' },
   sellQuoteCard: { marginTop: Spacing.S, padding: Spacing.M, borderRadius: 12, backgroundColor: theme.surfaceRaised },
   sellQuoteText: { ...Typography.BODY_SMALL, color: theme.inkMuted, marginBottom: 4 },
   sellQuoteTotal: { ...Typography.BODY, color: theme.ink, fontWeight: '700' },

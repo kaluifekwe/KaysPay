@@ -21,6 +21,7 @@ import TravelEsimScreen from '../screens/TravelEsimScreen';
 import WalletFundingScreen from '../screens/WalletFundingScreen';
 import TransferScreen from '../screens/TransferScreen';
 import CryptoScreen from '../screens/CryptoScreen';
+import CryptoSellBankScreen from '../screens/CryptoSellBankScreen';
 import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
 import ForeignNumbersScreen from '../screens/ForeignNumbersScreen';
 import DollarCardsScreen from '../screens/DollarCardsScreen';
@@ -64,6 +65,7 @@ function MainStackScreen() {
       <MainStack.Screen name="WalletFunding" component={WalletFundingScreen} />
       <MainStack.Screen name="Transfer" component={TransferScreen} />
       <MainStack.Screen name="Crypto" component={CryptoScreen} />
+      <MainStack.Screen name="CryptoSellBank" component={CryptoSellBankScreen} />
       <MainStack.Screen name="TransactionHistory" component={TransactionHistoryScreen} />
       <MainStack.Screen name="ForeignNumber" component={ForeignNumbersScreen} />
       <MainStack.Screen name="DollarCard" component={DollarCardsScreen} />
