@@ -13,6 +13,12 @@ interface TxResponse {
 
 const STATUSES = ['', 'pending', 'completed', 'failed', 'refunded'];
 
+// crypto_sell/crypto_withdraw/crypto_buy store the asset code (e.g. "USDT")
+// in recipient_phone, not an actual phone number -- never personal data, so
+// it's excluded from the recipient-number mask below regardless of the
+// toggle.
+const CRYPTO_TYPES = new Set(['crypto_buy', 'crypto_sell', 'crypto_withdraw']);
+
 // admin-transactions already reads and applies date_from/date_to server-side
 // (created_at gte/lte) — this was purely a missing UI, the backend was ready.
 // Same range-picker convention as DashboardPage, so "7 days" means the same
@@ -41,6 +47,7 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<TxRow | null>(null);
   const [namesHidden, toggleNamesHidden] = useHidden('transactions:names');
+  const [recipientsHidden, toggleRecipientsHidden] = useHidden('transactions:recipients');
   // Defaults to 'all' (no date restriction) rather than mirroring Dashboard's
   // 30-day default — this page is also used to look up a specific phone
   // number's full history, so the safer default is the one that matches
@@ -144,6 +151,13 @@ export default function TransactionsPage() {
         >
           {namesHidden ? '🙈 Names hidden' : '👁️ Hide customer names'}
         </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={toggleRecipientsHidden}
+        >
+          {recipientsHidden ? '🙈 Recipients hidden' : '👁️ Hide recipient numbers'}
+        </button>
       </div>
 
       {error && <div className="error-text">{error}</div>}
@@ -174,7 +188,9 @@ export default function TransactionsPage() {
                   <td>{r.type}</td>
                   <td>{r.type === 'wallet_fund'
                     ? formatFundingProvider(r.funding_provider)
-                    : <>{r.recipient_phone || '—'}{r.network ? ` (${r.network})` : ''}</>}</td>
+                    : <>{recipientsHidden && !CRYPTO_TYPES.has(r.type)
+                        ? (r.recipient_phone ? HIDDEN_MASK : '—')
+                        : (r.recipient_phone || '—')}{r.network ? ` (${r.network})` : ''}</>}</td>
                   <td>{formatTxAmount(r)}</td>
                   <td>{(() => {
                     const status = r.service_refunds?.length ? 'refunded' : r.status;
