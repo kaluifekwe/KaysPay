@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { adminClient, verifyCronSecret } from "../_shared/auth.ts";
 import { isResendConfigured, sendEmail } from "../_shared/resend-client.ts";
-import { welcomeEmail } from "../_shared/email-template.ts";
+import { kycReminderEmail, welcomeEmail } from "../_shared/email-template.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -11,9 +11,9 @@ function json(body: unknown, status = 200) {
   });
 }
 
-// Sent "from the founder" â€?a friendly From name on the verified sending
+// Sent "from the founder" ï¿½?a friendly From name on the verified sending
 // domain, with replies routed to a real inbox (support@ can't receive mail
-// yet, so replies go to the owner's Gmail for now â€?owner-approved 2026-07-23).
+// yet, so replies go to the owner's Gmail for now ï¿½?owner-approved 2026-07-23).
 const WELCOME_FROM = "Kalu Ifekwe <no-reply@kayspay.com.ng>";
 const WELCOME_REPLY_TO = "kaluifekwe6@gmail.com";
 
@@ -22,7 +22,7 @@ function firstNameOf(fullName: string | null): string {
   return fullName.trim().split(/\s+/)[0] || "";
 }
 
-// Cron-only (every 5 min, see migration 052). Gated by x-cron-secret â€?the
+// Cron-only (every 5 min, see migration 052). Gated by x-cron-secret ï¿½?the
 // anon key alone isn't real protection since it's bundled in the app.
 serve(async (req: Request) => {
   const cors = handleCors(req);
@@ -38,7 +38,7 @@ serve(async (req: Request) => {
 
   // Owner-editable WhatsApp support group (app_settings, migration 132).
   // Read once per run, not per email. A missing or invalid value simply
-  // omits the invite block rather than failing the send â€?the welcome email
+  // omits the invite block rather than failing the send ï¿½?the welcome email
   // matters more than the invite.
   const { data: groupSetting } = await supabase
     .from("app_settings")
@@ -67,5 +67,39 @@ serve(async (req: Request) => {
     }
   }
 
-  return json({ success: true, claimed: rows.length, sent, failed });
+  // Same run also handles the KYC-completion reminder -- transactional,
+  // same "about the customer's own incomplete signup" category as the
+  // welcome email above, folded into this function rather than a new one
+  // since the project is at its 100-function plan cap. Reuses this
+  // function's existing cron trigger (every 5 min); a failure here must
+  // never affect the welcome-email loop's own success/failure, so it's
+  // wrapped independently.
+  let kycClaimed = 0, kycSent = 0, kycFailed = 0;
+  try {
+    const { data: kycDue, error: kycError } = await supabase.rpc("claim_due_kyc_reminders", { p_limit: 50 });
+    if (!kycError) {
+      const kycRows: { user_id: string; email: string; full_name: string | null }[] = kycDue || [];
+      kycClaimed = kycRows.length;
+      for (const row of kycRows) {
+        const { subject, html, text } = kycReminderEmail(firstNameOf(row.full_name));
+        const result = await sendEmail(row.email, subject, html, { from: WELCOME_FROM, replyTo: WELCOME_REPLY_TO, text });
+        if (result.ok) {
+          kycSent++;
+        } else {
+          kycFailed++;
+          console.error("welcome-email: kyc-reminder send failed for", row.email, ":", result.error);
+          await supabase.rpc("unmark_kyc_reminder_sent", { p_user_id: row.user_id });
+        }
+      }
+    } else {
+      console.error("welcome-email: could not load pending kyc reminders:", kycError.message);
+    }
+  } catch (e) {
+    console.error("welcome-email: kyc-reminder loop threw:", e instanceof Error ? e.message : String(e));
+  }
+
+  return json({
+    success: true, claimed: rows.length, sent, failed,
+    kyc_reminders: { claimed: kycClaimed, sent: kycSent, failed: kycFailed },
+  });
 });

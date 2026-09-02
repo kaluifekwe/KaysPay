@@ -320,3 +320,46 @@ export function welcomeEmail(
 
   return { subject: "Welcome to KaysPay 🎉", html: shell(inner, "A note from the founder"), text };
 }
+
+const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.kayspay.app";
+
+/**
+ * Transactional, not marketing: about finishing THEIR OWN incomplete signup,
+ * same category as the welcome email above -- never gated on marketing
+ * consent (customer_marketing_preferences), sent once per account by the
+ * kyc-reminder-email cron. Deliberately does not lead with the cashback/
+ * discount line -- mentioned once, factually, as a reason to finish, not
+ * the headline -- keeping this honestly a service reminder, not a promo.
+ */
+export function kycReminderEmail(firstName: string): { subject: string; html: string; text: string } {
+  const name = firstName && firstName.trim() ? esc(firstName.trim()) : "there";
+  const plainName = firstName && firstName.trim() ? firstName.trim() : "there";
+
+  const inner = `
+    <tr><td style="padding:30px 28px 6px;">
+      <h1 style="margin:0 0 14px;font-size:21px;color:${INK};font-weight:800;">One step left, ${name}</h1>
+      <p style="margin:0 0 14px;font-size:15px;color:${INK};line-height:1.65;">You started setting up KaysPay, but your account isn't finished yet — you still need to verify your identity.</p>
+      <p style="margin:0 0 18px;font-size:15px;color:${INK};line-height:1.65;">It's free and takes under a minute: just your NIN or BVN, an 11-digit number. No documents, no photos. Once that's done, you can fund your wallet and start paying for airtime, data, electricity, TV and more — and every data purchase automatically comes with a discount plus cashback.</p>
+    </td></tr>
+    <tr><td style="padding:6px 28px 30px;">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td style="background:${GREEN};border-radius:10px;">
+          <a href="${PLAY_STORE_URL}" style="display:inline-block;padding:13px 22px;font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;">Open KaysPay to finish →</a>
+        </td>
+      </tr></table>
+      <p style="margin:16px 0 0;font-size:12px;color:${MUTED};line-height:1.5;">Or open this link on your phone: <a href="${PLAY_STORE_URL}" style="color:${ACCENT};text-decoration:none;">${PLAY_STORE_URL}</a></p>
+    </td></tr>`;
+
+  const text = textShell([
+    `One step left, ${plainName}`,
+    "",
+    "You started setting up KaysPay, but your account isn't finished yet -- you still need to verify your identity.",
+    "",
+    "It's free and takes under a minute: just your NIN or BVN, an 11-digit number. No documents, no photos. Once that's done, you can fund your wallet and start paying for airtime, data, electricity, TV and more -- and every data purchase automatically comes with a discount plus cashback.",
+    "",
+    "Open KaysPay to finish:",
+    PLAY_STORE_URL,
+  ]);
+
+  return { subject: `${plainName === "there" ? "Finish setting up" : `${plainName}, finish setting up`} your KaysPay account`, html: shell(inner, "You're one step from finishing your KaysPay setup"), text };
+}
