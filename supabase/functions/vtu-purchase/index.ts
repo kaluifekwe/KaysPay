@@ -40,6 +40,16 @@ import {
   verifyElectricityMeter,
   vtunaijaOutcome,
 } from "../_shared/vtunaija-client.ts";
+import { isResendConfigured, sendEmail } from "../_shared/resend-client.ts";
+
+const ALERT_EMAIL = Deno.env.get("SECURITY_ALERT_EMAIL") || "kaluifekwe6@gmail.com";
+
+// These two validation codes mean OUR systems weren't ready to serve the
+// purchase (a stale catalog, an availability check that itself failed) --
+// as opposed to the customer simply mistyping a phone/meter/amount. Worth an
+// email; ordinary bad input is not. record_monitoring_alert throttles this
+// to one email per fingerprint per 6 hours, so a run of these doesn't spam.
+const INFRA_FAILURE_CODES = new Set(["CATALOG_STALE", "AVAILABILITY_UNAVAILABLE"]);
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -561,6 +571,24 @@ serve(async (req: Request) => {
       });
     }
     const validationCode = String(code);
+    if (INFRA_FAILURE_CODES.has(validationCode)) {
+      const service = String(body?.service || "unknown");
+      const { data: shouldEmail } = await supabase.rpc("record_monitoring_alert", {
+        p_fingerprint: `vtu_purchase_${service}_${validationCode.toLowerCase()}`,
+        p_type: `VTU purchase failing before it could start: ${service} / ${validationCode}`,
+        p_severity: "warning",
+        p_details: { service, code: validationCode, network: String(body?.network || "") },
+      });
+      if (shouldEmail && isResendConfigured()) {
+        await sendEmail(
+          ALERT_EMAIL,
+          `[WARNING] KaysPay: ${service} purchases failing (${validationCode})`,
+          `<p>A customer's ${service} purchase failed before any transaction was created.</p>` +
+            `<p>Reason: ${validationCode}<br>Network: ${String(body?.network || "N/A")}</p>` +
+            `<p>Nothing was charged. This will keep failing silently for other customers until resolved.</p>`,
+        );
+      }
+    }
     return json({ success: false, code: validationCode, error: friendlyValidation(validationCode) }, 400);
   }
 
