@@ -128,6 +128,11 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
     [deleteIds, selectedIds, clearSelection],
   );
 
+  const allSelected = notifications.length > 0 && selectedIds.size === notifications.length;
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds(allSelected ? new Map() : new Map(notifications.map((n) => [n.id, n])));
+  }, [allSelected, notifications]);
+
   const renderNotification = ({ item }: { item: AppNotification }) => {
     const isSelected = selectedIds.has(item.id);
     const color = accentColor(theme, item);
@@ -194,13 +199,18 @@ export default function NotificationsScreen({ navigation }: { navigation: any })
               </TouchableOpacity>
               <Text style={styles.screenTitle}>{selectedIds.size} selected</Text>
             </View>
-            <TouchableOpacity
-              onPress={deleteSelected}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              style={styles.trashButton}
-            >
-              <Ionicons name="trash-outline" size={22} color={theme.down} />
-            </TouchableOpacity>
+            <View style={styles.headerRight}>
+              <TouchableOpacity onPress={toggleSelectAll} style={styles.markAllButton}>
+                <Text style={styles.markAllText}>{allSelected ? 'Deselect all' : 'Select all'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={deleteSelected}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={styles.trashButton}
+              >
+                <Ionicons name="trash-outline" size={22} color={theme.down} />
+              </TouchableOpacity>
+            </View>
           </>
         ) : (
           <>
@@ -290,6 +300,11 @@ function createStyles(theme: AppTheme) {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   screenTitle: {
     ...Typography.SCREEN_TITLE,

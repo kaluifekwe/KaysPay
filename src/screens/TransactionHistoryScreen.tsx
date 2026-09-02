@@ -18,6 +18,7 @@ import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { walletService } from '../services/wallet.service';
 import { formatNaira } from '../utils/formatCurrency';
+import { formatDateTimeShort } from '../utils/formatDateTime';
 import { Transaction } from '../types/app.types';
 import { useCachedData } from '../hooks/useCachedData';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
@@ -125,15 +126,11 @@ const groupTransactionsByDate = (transactions: TransactionItem[]): DateGroup[] =
     .map(([title, data]) => ({ title, data }));
 };
 
-const formatTimestamp = (timestamp: string): string => {
-  const date = new Date(timestamp);
-  const hours = date.getHours();
-  const minutes = date.getMinutes();
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  const formattedHours = hours % 12 || 12;
-  const formattedMinutes = minutes.toString().padStart(2, '0');
-  return `${formattedHours}:${formattedMinutes} ${ampm}`;
-};
+// Rows already live under a date-section header ("Today"/"Yesterday"/"This
+// Week"/"Earlier"), but within "This Week" or "Earlier" a bare time doesn't
+// say which day it was — the date is spelled out on every row so it's never
+// ambiguous regardless of which group it's in.
+const formatTimestamp = formatDateTimeShort;
 
 const TransactionHistoryScreen: React.FC = () => {
   useSensitiveScreenProtection();
