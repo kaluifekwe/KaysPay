@@ -9,6 +9,11 @@ export type AnalyticsEventType =
   | 'app_opened' | 'onboarding_started' | 'onboarding_slide_viewed' | 'onboarding_skipped'
   | 'registration_started' | 'registration_validation_failed' | 'registration_submitted'
   | 'account_created' | 'email_verification_started' | 'email_verification_failed' | 'email_verified'
+  // Fires when our own email provider hit its shared daily/monthly cap
+  // during signup, not anything about this specific user -- lets the app
+  // continue instead of stranding them at a gate with no code to enter (see
+  // send-email-otp's PROVIDER_LIMIT_REACHED). Distinct from a real failure.
+  | 'email_verification_deferred'
   // pin_setup_completed had no failed counterpart -- a PIN mismatch, or the
   // save itself failing after 4 retries, were both real observed outcomes
   // (the retry-exhausted case only ever hit console.warn) but neither was
@@ -42,7 +47,7 @@ export type AnalyticsEventType =
   | 'electricity_started' | 'electricity_failed'
   | 'tv_started' | 'tv_failed';
 
-type AnalyticsOutcome = 'view' | 'started' | 'completed' | 'failed' | 'skipped';
+type AnalyticsOutcome = 'view' | 'started' | 'completed' | 'failed' | 'skipped' | 'deferred';
 type MetadataKey = 'slide_index' | 'entry_point' | 'verification_method' | 'funding_method';
 
 interface QueuedEvent {

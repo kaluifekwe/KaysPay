@@ -17,6 +17,7 @@ const EVENTS = new Set([
   "app_opened", "onboarding_started", "onboarding_slide_viewed", "onboarding_skipped",
   "registration_started", "registration_validation_failed", "registration_submitted",
   "account_created", "email_verification_started", "email_verification_failed", "email_verified",
+  "email_verification_deferred",
   "pin_setup_completed", "pin_setup_failed", "biometric_offer_completed", "home_viewed", "kyc_viewed", "kyc_started", "kyc_failed",
   "kyc_completed", "funding_viewed", "funding_started", "funding_failed",
   "first_funding_completed", "first_purchase_completed",
@@ -38,7 +39,7 @@ const EVENTS = new Set([
   "electricity_started", "electricity_failed",
   "tv_started", "tv_failed",
 ]);
-const OUTCOMES = new Set(["view", "started", "completed", "failed", "skipped"]);
+const OUTCOMES = new Set(["view", "started", "completed", "failed", "skipped", "deferred"]);
 const PLATFORMS = new Set(["android", "ios", "web", "unknown"]);
 const NETWORKS = new Set(["wifi", "cellular", "offline", "unknown"]);
 const METADATA_KEYS = new Set(["slide_index", "entry_point", "verification_method", "funding_method"]);

@@ -106,6 +106,19 @@ export default function EmailCodeScreen(props: any) {
           setResendTimer(59);
           return;
         }
+        // Our own email provider hit its shared daily cap (see send-email-otp)
+        // -- not this user's fault, and this gate has no way out otherwise.
+        // Let them continue; AppNavigator re-shows this screen once the
+        // deferral window passes so they finish verifying later.
+        if (result.code === 'PROVIDER_LIMIT_REACHED') {
+          void analytics.track('email_verification_deferred', { outcome: 'deferred', metadata: { verification_method: 'email_otp' } });
+          Alert.alert(
+            'Verification delayed',
+            "We can't send a verification code right now, but you can continue using KaysPay. We'll ask you to verify your email again soon.",
+            [{ text: 'Continue', onPress: () => onVerified?.() }],
+          );
+          return;
+        }
         void analytics.track('email_verification_failed', { outcome: 'failed', failureCode: 'code_send_failed', metadata: { verification_method: 'email_otp' } });
         setInitError(safeErrorMessage(result.error, 'Could not send verification code.'));
         return;
@@ -198,6 +211,15 @@ export default function EmailCodeScreen(props: any) {
     try {
       const result = await emailVerificationService.sendCode();
       if (!result.success) {
+        if (result.code === 'PROVIDER_LIMIT_REACHED') {
+          void analytics.track('email_verification_deferred', { outcome: 'deferred', metadata: { verification_method: 'email_otp' } });
+          Alert.alert(
+            'Verification delayed',
+            "We can't send a verification code right now, but you can continue using KaysPay. We'll ask you to verify your email again soon.",
+            [{ text: 'Continue', onPress: () => onVerified?.() }],
+          );
+          return;
+        }
         Alert.alert('Error', safeErrorMessage(result.error, 'Failed to resend code. Please try again.'));
         return;
       }

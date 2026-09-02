@@ -69,6 +69,27 @@ serve(async (req: Request) => {
     // domain-not-verified / test-mode / bad-key rejection is invisible and
     // looks like a generic outage from the client's side.
     console.error("send-email-otp: Resend send failed:", sendResult.error);
+
+    // Our own shared Resend account hit its daily/monthly cap (real error
+    // type confirmed live 2026-09-03: daily_quota_exceeded /
+    // monthly_quota_exceeded) -- this is OUR provider running out of
+    // capacity, not anything about this user. The email-verify gate is
+    // mandatory with no way out, so failing hard here would strand a real
+    // signup with an account they can never use. Instead, let them continue
+    // (KYC, PIN, purchases -- none of those check email_otp_verified
+    // server-side) and flag when this happened so the app re-asks them to
+    // verify once capacity has likely recovered (see AppNavigator).
+    if (/quota_exceeded/.test(sendResult.error || "")) {
+      await supabase.auth.admin.updateUserById(user.id, {
+        user_metadata: { ...user.user_metadata, email_verification_deferred_at: new Date().toISOString() },
+      });
+      return json({
+        success: false,
+        code: "PROVIDER_LIMIT_REACHED",
+        error: "We can't send a code right now. You can continue without verifying -- we'll ask you again soon.",
+      });
+    }
+
     return json({ success: false, error: "Could not send the verification email. Please try again." }, 500);
   }
 

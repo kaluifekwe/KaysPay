@@ -82,6 +82,17 @@ function MainStackScreen() {
   );
 }
 
+// A session passes the email-verify gate if it's genuinely verified, or was
+// deferred (send-email-otp hit our shared Resend cap) within the last 12h --
+// long enough to span into Resend's daily reset. Past that window this
+// returns false again, so the gate re-shows and EmailCodeScreen retries.
+function passesEmailVerifyGate(metadata: Record<string, unknown> | undefined): boolean {
+  if (metadata?.email_otp_verified === true) return true;
+  const deferredAt = metadata?.email_verification_deferred_at;
+  if (typeof deferredAt !== 'string') return false;
+  return Date.now() - new Date(deferredAt).getTime() < 12 * 60 * 60 * 1000;
+}
+
 export default function AppNavigator() {
   const { theme } = useTheme();
   const styles = createStyles(theme);
@@ -133,7 +144,7 @@ export default function AppNavigator() {
       // Create Transaction PIN gate on every login) before the real check
       // catches up a moment later.
       const authed = !!session;
-      const verified = authed ? session.user.user_metadata?.email_otp_verified === true : false;
+      const verified = authed ? passesEmailVerifyGate(session.user.user_metadata) : false;
       let pin: boolean | null = null;
       if (authed) {
         try {
@@ -223,7 +234,7 @@ export default function AppNavigator() {
       setIsAuth(authed);
       if (authed) {
         setUserEmail(session.user.email || '');
-        setHasVerifiedEmail(session.user.user_metadata?.email_otp_verified === true);
+        setHasVerifiedEmail(passesEmailVerifyGate(session.user.user_metadata));
         // Own try/catch, deliberately separate from the session check above —
         // a failed PIN check must never be mistaken for "not signed in" and
         // log the user out.
