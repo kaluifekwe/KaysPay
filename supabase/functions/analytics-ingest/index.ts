@@ -17,7 +17,7 @@ const EVENTS = new Set([
   "app_opened", "onboarding_started", "onboarding_slide_viewed", "onboarding_skipped",
   "registration_started", "registration_validation_failed", "registration_submitted",
   "account_created", "email_verification_started", "email_verification_failed", "email_verified",
-  "pin_setup_completed", "biometric_offer_completed", "home_viewed", "kyc_started", "kyc_failed",
+  "pin_setup_completed", "biometric_offer_completed", "home_viewed", "kyc_viewed", "kyc_started", "kyc_failed",
   "kyc_completed", "funding_viewed", "funding_started", "funding_failed",
   "first_funding_completed", "first_purchase_completed",
   // Started/failed abandonment tracking for the 4 purchase flows that

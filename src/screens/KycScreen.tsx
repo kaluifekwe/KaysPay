@@ -48,6 +48,7 @@ export default function KycScreen({ navigation, route }: any) {
 
   useFocusEffect(
     useCallback(() => {
+      void analytics.track('kyc_viewed', { outcome: 'view' });
       loadStatus();
     }, []),
   );
