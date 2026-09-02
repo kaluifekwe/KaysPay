@@ -263,6 +263,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
 
     if (confirmPinString !== pinString) {
       setPinError('PINs do not match');
+      void analytics.track('pin_setup_failed', { outcome: 'failed', failureCode: 'pin_mismatch' });
       return;
     }
 
@@ -348,8 +349,12 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
       }
       if (!pinSaved) {
         // Surfaces the true reason in logs if it ever still fails, instead of
-        // silently dropping the user onto the PIN gate.
+        // silently dropping the user onto the PIN gate. Not a dead end for
+        // the customer -- the stash above means ensurePinSaved retries this
+        // after email verification -- but it's a real failed attempt worth
+        // recording; this step previously had zero failure signal at all.
         console.warn('Signup: PIN save failed after retries:', lastPinError);
+        void analytics.track('pin_setup_failed', { outcome: 'failed', failureCode: 'pin_save_failed' });
       } else if (newUserId) {
         void analytics.track('pin_setup_completed', { outcome: 'completed' });
         // Saved immediately — clear the stash now rather than leaving it on

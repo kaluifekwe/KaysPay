@@ -9,7 +9,11 @@ export type AnalyticsEventType =
   | 'app_opened' | 'onboarding_started' | 'onboarding_slide_viewed' | 'onboarding_skipped'
   | 'registration_started' | 'registration_validation_failed' | 'registration_submitted'
   | 'account_created' | 'email_verification_started' | 'email_verification_failed' | 'email_verified'
-  | 'pin_setup_completed' | 'biometric_offer_completed' | 'home_viewed'
+  // pin_setup_completed had no failed counterpart -- a PIN mismatch, or the
+  // save itself failing after 4 retries, were both real observed outcomes
+  // (the retry-exhausted case only ever hit console.warn) but neither was
+  // ever recorded, leaving this step's drop-off with zero failure signal.
+  | 'pin_setup_completed' | 'pin_setup_failed' | 'biometric_offer_completed' | 'home_viewed'
   // kyc_started only ever fired on a full 11-digit submission, so "Home
   // reached -> KYC started" couldn't tell "never opened the screen" apart
   // from "opened it and abandoned before finishing" -- kyc_viewed closes
