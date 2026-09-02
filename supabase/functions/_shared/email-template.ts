@@ -338,8 +338,8 @@ export function kycReminderEmail(firstName: string): { subject: string; html: st
   const inner = `
     <tr><td style="padding:30px 28px 6px;">
       <h1 style="margin:0 0 14px;font-size:21px;color:${INK};font-weight:800;">One step left, ${name}</h1>
-      <p style="margin:0 0 14px;font-size:15px;color:${INK};line-height:1.65;">You started setting up KaysPay, but your account isn't finished yet — you still need to verify your identity.</p>
-      <p style="margin:0 0 18px;font-size:15px;color:${INK};line-height:1.65;">It's free and takes under a minute — no documents, no photos. Open the app and we'll show you exactly what's needed. Once that's done, you can fund your wallet and start paying for airtime, data, electricity, TV and more — and every data purchase automatically comes with a discount plus cashback.</p>
+      <p style="margin:0 0 14px;font-size:15px;color:${INK};line-height:1.65;">You started setting up KaysPay, but your account isn't finished yet. You still need to verify your identity.</p>
+      <p style="margin:0 0 18px;font-size:15px;color:${INK};line-height:1.65;">It's free and takes under a minute. No documents, no photos. Open the app and we'll show you exactly what's needed. Once that's done, you can fund your wallet and start paying for airtime, data, electricity, TV and more. Every data purchase automatically comes with a discount plus cashback.</p>
     </td></tr>
     <tr><td style="padding:6px 28px 30px;">
       <table role="presentation" cellpadding="0" cellspacing="0"><tr>
@@ -353,9 +353,9 @@ export function kycReminderEmail(firstName: string): { subject: string; html: st
   const text = textShell([
     `One step left, ${plainName}`,
     "",
-    "You started setting up KaysPay, but your account isn't finished yet -- you still need to verify your identity.",
+    "You started setting up KaysPay, but your account isn't finished yet. You still need to verify your identity.",
     "",
-    "It's free and takes under a minute -- no documents, no photos. Open the app and we'll show you exactly what's needed. Once that's done, you can fund your wallet and start paying for airtime, data, electricity, TV and more -- and every data purchase automatically comes with a discount plus cashback.",
+    "It's free and takes under a minute. No documents, no photos. Open the app and we'll show you exactly what's needed. Once that's done, you can fund your wallet and start paying for airtime, data, electricity, TV and more. Every data purchase automatically comes with a discount plus cashback.",
     "",
     "Open KaysPay to finish:",
     PLAY_STORE_URL,
