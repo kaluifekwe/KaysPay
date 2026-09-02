@@ -27,6 +27,16 @@ const EVENTS = new Set([
   "foreign_number_started", "foreign_number_failed", "foreign_number_completed",
   "nin_services_started", "nin_services_failed", "nin_services_completed",
   "esim_started", "esim_failed", "esim_completed",
+  // Same "no completed" reasoning as crypto_buy: success is already visible
+  // via the transactions table + first_purchase_completed. What was missing
+  // was any trace of a purchase that failed BEFORE a transaction row ever
+  // existed (validation/catalog-staleness failures) -- see vtu-purchase's
+  // resolvePurchase, which returns success:false without ever calling
+  // debit_for_service.
+  "data_started", "data_failed",
+  "airtime_started", "airtime_failed",
+  "electricity_started", "electricity_failed",
+  "tv_started", "tv_failed",
 ]);
 const OUTCOMES = new Set(["view", "started", "completed", "failed", "skipped"]);
 const PLATFORMS = new Set(["android", "ios", "web", "unknown"]);

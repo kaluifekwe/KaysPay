@@ -23,7 +23,15 @@ export type AnalyticsEventType =
   | 'crypto_buy_started' | 'crypto_buy_failed'
   | 'foreign_number_started' | 'foreign_number_failed' | 'foreign_number_completed'
   | 'nin_services_started' | 'nin_services_failed' | 'nin_services_completed'
-  | 'esim_started' | 'esim_failed' | 'esim_completed';
+  | 'esim_started' | 'esim_failed' | 'esim_completed'
+  // Same "no completed" reasoning as crypto_buy above — success is already
+  // visible via the transactions table. What was missing was any trace of a
+  // purchase that failed BEFORE a transaction row ever existed (e.g. a
+  // stale data catalog), which is invisible everywhere else.
+  | 'data_started' | 'data_failed'
+  | 'airtime_started' | 'airtime_failed'
+  | 'electricity_started' | 'electricity_failed'
+  | 'tv_started' | 'tv_failed';
 
 type AnalyticsOutcome = 'view' | 'started' | 'completed' | 'failed' | 'skipped';
 type MetadataKey = 'slide_index' | 'entry_point' | 'verification_method' | 'funding_method';

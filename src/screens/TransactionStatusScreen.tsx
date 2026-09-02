@@ -10,6 +10,7 @@ import { vtuService, type NetworkProvider, type DataBundle, type ExamType, type 
 import { downloadPdf, sharePdf } from '../utils/pdf';
 import { buildElectricityReceiptHtml } from '../utils/receipts';
 import { analytics } from '../services/analytics.service';
+import type { AnalyticsEventType } from '../services/analytics.service';
 
 type TxStatus = 'processing' | 'success' | 'failed';
 
@@ -48,6 +49,10 @@ const POLL_INTERVAL_MS = 1500;
 const POLL_MAX_MS = 45000; // after this, reconcile + notifications take over
 
 type FullResult = VTUResult & { token?: string; pins?: string[]; serials?: string[]; units?: string };
+
+// exam is intentionally excluded -- its VTUnaija Exam ID routing already has
+// separate handling elsewhere and wasn't part of this incident.
+const TRACKED_KINDS = new Set(['data', 'airtime', 'electricity', 'tv']);
 
 async function runRequest(req: PurchaseRequest, key: string): Promise<FullResult> {
   switch (req.kind) {
@@ -118,13 +123,19 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
     void analytics.trackFirstPurchaseIfNeeded();
   }, [stopPolling]);
 
-  const settleFailed = useCallback((msg?: string) => {
+  const settleFailed = useCallback((msg?: string, failureCode?: string) => {
     if (settledRef.current || !mountedRef.current) return;
     settledRef.current = true;
     stopPolling();
     setStatus('failed');
     setNote(msg || 'This did not go through. Any charge has been refunded to your wallet.');
-  }, [stopPolling]);
+    if (p.request && TRACKED_KINDS.has(p.request.kind)) {
+      void analytics.track(`${p.request.kind}_failed` as AnalyticsEventType, {
+        outcome: 'failed',
+        failureCode: failureCode || 'unknown',
+      });
+    }
+  }, [stopPolling, p.request]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -145,6 +156,9 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (!p.request || ranRef.current) return;
     ranRef.current = true;
+    if (TRACKED_KINDS.has(p.request.kind)) {
+      void analytics.track(`${p.request.kind}_started` as AnalyticsEventType, { outcome: 'started' });
+    }
     runRequest(p.request, keyRef.current)
       .then((result) => {
         if (!mountedRef.current || settledRef.current) return;
@@ -177,7 +191,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
           // A definitive decline, or the request never placed an order (in
           // which case nothing was charged). Either way, safe to show failed;
           // the money layer is idempotent + reconciled regardless.
-          settleFailed(result.error);
+          settleFailed(result.error, result.code?.toLowerCase());
         }
       })
       .catch(() => {
@@ -220,7 +234,7 @@ export default function TransactionStatusScreen({ navigation, route }: Props) {
         if (s === 'completed') {
           settleSuccess(m);
         } else if (s === 'failed' || s === 'refunded') {
-          settleFailed();
+          settleFailed(undefined, 'provider_rejected');
         } else {
           // Still pending — roughly every 3s, ask the server to verify THIS
           // order with VTUAfrica now and settle it. Guarded so a slow verify
