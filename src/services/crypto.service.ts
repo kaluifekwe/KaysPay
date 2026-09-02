@@ -13,8 +13,8 @@ import { safeErrorMessage } from '../utils/errorMessages';
 // (the customer picks TRC20/ERC20/BEP20); every other asset here withdraws
 // over its own single native chain, so WITHDRAW_SINGLE_NETWORK_ASSETS
 // carries no network choice for the customer to make.
-export type CryptoAsset = 'USDT' | 'BTC';
-export const WITHDRAW_SINGLE_NETWORK_ASSETS: SwapAssetCode[] = ['BTC'];
+export type CryptoAsset = 'USDT' | 'BTC' | 'ETH' | 'SOL';
+export const WITHDRAW_SINGLE_NETWORK_ASSETS: SwapAssetCode[] = ['BTC', 'ETH', 'SOL'];
 export type CryptoNetwork = 'TRC20' | 'ERC20' | 'BEP20';
 
 // Coins Buy supports beyond USDT — kept in sync with the curated list in
@@ -61,8 +61,16 @@ const ADDRESS_PATTERNS: Record<CryptoNetwork, RegExp> = {
 // per asset instead of per network, since there's no network to choose.
 // BTC: legacy P2PKH (1...), P2SH (3...), native SegWit/Taproot bech32
 // (bc1...) — a stable protocol-level standard, matches the server exactly.
+// ETH: same 0x + 40 hex chars format as USDT's own ERC20 network above —
+// Quidax's own NetworkType has no separate "eth" value, native ETH withdraws
+// go out over the 'erc20' network (Ethereum mainnet IS the ERC20 network).
+// SOL: base58, no format-check beyond length (32-44 chars) -- a real
+// checksum needs Solana's own curve validation, out of scope for a client
+// regex; server-side Quidax still rejects a malformed address either way.
 const SINGLE_NETWORK_ADDRESS_PATTERNS: Partial<Record<CryptoAsset, RegExp>> = {
   BTC: /^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{25,90})$/,
+  ETH: /^0x[a-fA-F0-9]{40}$/,
+  SOL: /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
 };
 
 export function isValidCryptoAddress(asset: CryptoAsset, network: CryptoNetwork | '', address: string): boolean {

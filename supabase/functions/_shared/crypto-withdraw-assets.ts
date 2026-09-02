@@ -32,12 +32,28 @@ export const USDT_NETWORKS: Record<string, AssetNetworkConfig> = {
 };
 
 // Assets withdrawn over their own single native chain -- extended one at a
-// time (BTC first), each verified against Quidax before being added here.
+// time (BTC first, then ETH/SOL), each verified against Quidax before being
+// added here. Quidax's own NetworkType union (confirmed via its SDK docs) is
+// 'btc'|'bep20'|'erc20'|'trc20'|'doge'|'polygon'|'solana'|'none' -- there is
+// no separate 'eth' network value, since Ethereum mainnet IS the erc20
+// network; Solana's network value is the word 'solana', not 'sol'.
 export const SINGLE_NETWORK_ASSETS: Record<string, AssetNetworkConfig> = {
   BTC: {
     quidaxCurrency: "btc",
     quidaxNetwork: "btc",
     addressPattern: /^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{25,90})$/,
+  },
+  ETH: {
+    quidaxCurrency: "eth",
+    quidaxNetwork: "erc20",
+    addressPattern: /^0x[a-fA-F0-9]{40}$/,
+  },
+  SOL: {
+    quidaxCurrency: "sol",
+    quidaxNetwork: "solana",
+    // Base58 length check only -- a real checksum needs Solana's own curve
+    // validation. Quidax's own address validation is still the real backstop.
+    addressPattern: /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
   },
 };
 
@@ -76,12 +92,15 @@ export function resolveWithdrawTarget(asset: string, network: string): ResolvedW
 export const MAX_USDT_EQUIVALENT = 2000;
 // Absolute dust floor only, per asset — the real minimum is always the
 // live fee-based one computed by the caller (fee / MAX_FEE_SHARE); this
-// just guards against a degenerate near-zero fee response. USDT keeps its
-// original literal-5 floor unchanged; BTC's is priced in BTC, not USDT, so
-// reusing "5" would be nonsensical (five bitcoin).
+// just guards against a degenerate near-zero fee response. Each is a round,
+// conservative number in that asset's own units (same reasoning as BTC's
+// 0.0001) — not derived from a live price, since the live fee-based
+// minimum is almost always the binding constraint anyway.
 export const DUST_FLOOR: Record<string, number> = {
   USDT: 5,
   BTC: 0.0001,
+  ETH: 0.001,
+  SOL: 0.01,
 };
 
 /**
