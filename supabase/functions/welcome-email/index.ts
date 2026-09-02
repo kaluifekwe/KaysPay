@@ -134,7 +134,13 @@ serve(async (req: Request) => {
             lifecycleFailed++;
             console.error("welcome-email: lifecycle-reminder send failed for", row.email, ":", result.error);
             await supabase.rpc("release_lifecycle_reminder", { p_id: row.id });
-            if (/rate.?limit/i.test(result.error || "")) lifecycleThrottled = true;
+            // Resend's real error type for hitting the shared cap is
+            // "daily_quota_exceeded" / "monthly_quota_exceeded" (confirmed
+            // via a live probe 2026-09-03) -- "rate_limit_exceeded" covers
+            // its separate per-second API limit. Neither literally says
+            // "rate limit", so a bare /rate.?limit/i check here would have
+            // silently never triggered.
+            if (/quota_exceeded|rate_limit_exceeded/.test(result.error || "")) lifecycleThrottled = true;
           }
         }
       } else {
