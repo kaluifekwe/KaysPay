@@ -19,6 +19,16 @@ interface DataPlan {
   available: boolean;
 }
 
+interface VersionGate {
+  platform: string;
+  min_build_number: number;
+  min_version: string;
+  required: boolean;
+  message: string | null;
+  store_url: string;
+  updated_at: string;
+}
+
 interface PlanControl {
   provider: string;
   network: string;
@@ -49,6 +59,9 @@ export default function ServiceControlsPage() {
   const [services, setServices] = useState<ServiceControl[]>([]);
   const [plans, setPlans] = useState<DataPlan[]>([]);
   const [controls, setControls] = useState<PlanControl[]>([]);
+  const [versionGates, setVersionGates] = useState<VersionGate[]>([]);
+  const [gateDraft, setGateDraft] = useState<Record<string, { min_build_number: string; min_version: string; required: boolean; message: string; store_url: string }>>({});
+  const [gateBusy, setGateBusy] = useState<string | null>(null);
   const [network, setNetwork] = useState('mtn');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,17 +72,51 @@ export default function ServiceControlsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [serviceResult, planResult] = await Promise.all([
+      const [serviceResult, planResult, gateResult] = await Promise.all([
         callAdmin<{ services: ServiceControl[] }>('admin-service-controls'),
         callAdmin<{ plans: DataPlan[]; controls: PlanControl[] }>('admin-vtu-plan-controls'),
+        callAdmin<{ platforms: VersionGate[] }>('admin-app-version-gate'),
       ]);
       setServices(serviceResult.services);
       setPlans(planResult.plans);
       setControls(planResult.controls);
+      setVersionGates(gateResult.platforms);
+      setGateDraft(Object.fromEntries(gateResult.platforms.map((g) => [g.platform, {
+        min_build_number: String(g.min_build_number),
+        min_version: g.min_version,
+        required: g.required,
+        message: g.message || '',
+        store_url: g.store_url,
+      }])));
     } catch (e) {
       setError(e instanceof AdminApiError ? e.message : 'Could not load availability controls');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveVersionGate = async (platform: string) => {
+    const draft = gateDraft[platform];
+    if (!draft) return;
+    setError(null);
+    setGateBusy(platform);
+    try {
+      const result = await callAdmin<{ platform: VersionGate }>('admin-app-version-gate', {
+        method: 'POST',
+        body: {
+          platform,
+          min_build_number: Number(draft.min_build_number),
+          min_version: draft.min_version,
+          required: draft.required,
+          message: draft.message,
+          store_url: draft.store_url,
+        },
+      });
+      setVersionGates((current) => current.map((g) => g.platform === platform ? result.platform : g));
+    } catch (e) {
+      setError(e instanceof AdminApiError ? e.message : 'Could not update the version gate');
+    } finally {
+      setGateBusy(null);
     }
   };
 
@@ -223,6 +270,77 @@ export default function ServiceControlsPage() {
                     )}
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+
+          <h2 style={{ marginTop: 28 }}>App Update Gate</h2>
+          <p className="muted">
+            Same minimum-build check on every app launch. <strong>Recommended</strong> shows a dismissible "Update available"
+            nudge on Home; <strong>Required</strong> blocks the app entirely until they update. Raise the minimum build number
+            when you want to nudge people onto a newer release; flip Required on only for a build you can't let people stay on.
+          </p>
+          <div className="card">
+            <table>
+              <thead>
+                <tr><th>Platform</th><th>Min build</th><th>Min version label</th><th>Mode</th><th>Message</th><th>Store URL</th><th>Updated</th>{canToggle && <th />}</tr>
+              </thead>
+              <tbody>
+                {versionGates.map((gate) => {
+                  const draft = gateDraft[gate.platform];
+                  if (!draft) return null;
+                  return (
+                    <tr key={gate.platform}>
+                      <td>{gate.platform === 'android' ? 'Android' : 'iOS'}</td>
+                      <td>
+                        <input
+                          type="number"
+                          min={1}
+                          value={draft.min_build_number}
+                          disabled={!canToggle}
+                          onChange={(e) => setGateDraft((c) => ({ ...c, [gate.platform]: { ...draft, min_build_number: e.target.value } }))}
+                          style={{ width: 70 }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          value={draft.min_version}
+                          disabled={!canToggle}
+                          onChange={(e) => setGateDraft((c) => ({ ...c, [gate.platform]: { ...draft, min_version: e.target.value } }))}
+                          style={{ width: 80 }}
+                        />
+                      </td>
+                      <td>
+                        <select
+                          value={draft.required ? 'required' : 'recommended'}
+                          disabled={!canToggle}
+                          onChange={(e) => setGateDraft((c) => ({ ...c, [gate.platform]: { ...draft, required: e.target.value === 'required' } }))}
+                        >
+                          <option value="recommended">Recommended</option>
+                          <option value="required">Required</option>
+                        </select>
+                      </td>
+                      <td>
+                        <input
+                          value={draft.message}
+                          disabled={!canToggle}
+                          placeholder="What's new in this release"
+                          onChange={(e) => setGateDraft((c) => ({ ...c, [gate.platform]: { ...draft, message: e.target.value } }))}
+                          style={{ width: 220 }}
+                        />
+                      </td>
+                      <td className="muted" style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={gate.store_url}>{gate.store_url}</td>
+                      <td className="muted">{new Date(gate.updated_at).toLocaleString('en-GB')}</td>
+                      {canToggle && (
+                        <td>
+                          <button className="primary" disabled={gateBusy === gate.platform} onClick={() => void saveVersionGate(gate.platform)}>
+                            Save
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

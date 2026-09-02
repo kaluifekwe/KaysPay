@@ -4,6 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
 import { TransactionAuthProvider } from './src/components/TransactionAuthProvider';
 import { AppPrivacyGate } from './src/components/AppPrivacyGate';
+import { AppUpdateGate } from './src/components/AppUpdateGate';
 import { OtaUpdateController } from './src/components/OtaUpdateController';
 import { ThemeProvider, useTheme } from './src/components/ThemeProvider';
 import { loadAppSettings } from './src/services/appSettings.service';
@@ -27,12 +28,14 @@ export default function App() {
     <SafeAreaProvider>
       <ThemeProvider>
         <ThemedStatusBar />
-        <TransactionAuthProvider>
-          <OtaUpdateController />
-          <AppPrivacyGate>
-            <AppNavigator />
-          </AppPrivacyGate>
-        </TransactionAuthProvider>
+        <AppUpdateGate>
+          <TransactionAuthProvider>
+            <OtaUpdateController />
+            <AppPrivacyGate>
+              <AppNavigator />
+            </AppPrivacyGate>
+          </TransactionAuthProvider>
+        </AppUpdateGate>
       </ThemeProvider>
     </SafeAreaProvider>
   );

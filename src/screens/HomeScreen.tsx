@@ -33,6 +33,7 @@ import { withTimeout } from '../utils/network';
 import { useCachedData } from '../hooks/useCachedData';
 import type { Transaction } from '../types/app.types';
 import { analytics } from '../services/analytics.service';
+import { UpdateAvailableSheet } from '../components/UpdateAvailableSheet';
 
 interface HomeScreenProps {
   navigation: any;
@@ -368,6 +369,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={theme.brandDark} />
+      <UpdateAvailableSheet />
 
       <View style={styles.header}>
         <View style={styles.headerLeft}>
