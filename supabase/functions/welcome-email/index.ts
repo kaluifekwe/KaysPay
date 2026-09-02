@@ -2,7 +2,10 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { adminClient, verifyCronSecret } from "../_shared/auth.ts";
 import { isResendConfigured, sendEmail } from "../_shared/resend-client.ts";
-import { kycReminderEmail, welcomeEmail } from "../_shared/email-template.ts";
+import {
+  fundedNotPurchasedReminderEmail, kycReminderEmail, kycVerifiedNotFundedReminderEmail,
+  pinNotSetReminderEmail, welcomeEmail,
+} from "../_shared/email-template.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -98,8 +101,53 @@ serve(async (req: Request) => {
     console.error("welcome-email: kyc-reminder loop threw:", e instanceof Error ? e.message : String(e));
   }
 
+  // Generalized lifecycle reminders (migration 197) -- pin_not_set,
+  // kyc_completed_not_funded, funded_not_purchased. Owner-paused by default
+  // via app_settings; small per-stage batch (3 each = up to 9/tick) so a
+  // backlog can never eat a whole day's shared 100/day Resend budget in one
+  // run. Stops early the moment Resend itself signals a rate limit --
+  // reacting to the real API rather than tracking a local quota guess --
+  // and releases the rest of that tick's claims to retry next time.
+  let lifecycleClaimed = 0, lifecycleSent = 0, lifecycleFailed = 0, lifecycleThrottled = false;
+  try {
+    const { data: enabledSetting } = await supabase
+      .from("app_settings").select("value").eq("key", "lifecycle_reminders_enabled").maybeSingle();
+    if (enabledSetting?.value === "true") {
+      const { data: lifecycleDue, error: lifecycleError } = await supabase.rpc("claim_due_lifecycle_reminders", { p_limit_per_stage: 3 });
+      if (!lifecycleError) {
+        const lifecycleRows: { id: string; user_id: string; email: string; full_name: string | null; stage: string; attempt_number: number }[] = lifecycleDue || [];
+        lifecycleClaimed = lifecycleRows.length;
+        for (const row of lifecycleRows) {
+          if (lifecycleThrottled) {
+            await supabase.rpc("release_lifecycle_reminder", { p_id: row.id });
+            continue;
+          }
+          const template = row.stage === "pin_not_set" ? pinNotSetReminderEmail
+            : row.stage === "kyc_completed_not_funded" ? kycVerifiedNotFundedReminderEmail
+            : fundedNotPurchasedReminderEmail;
+          const { subject, html, text } = template(firstNameOf(row.full_name));
+          const result = await sendEmail(row.email, subject, html, { from: WELCOME_FROM, replyTo: WELCOME_REPLY_TO, text });
+          if (result.ok) {
+            lifecycleSent++;
+            if (result.id) await supabase.rpc("mark_lifecycle_reminder_sent", { p_id: row.id, p_provider_message_id: result.id });
+          } else {
+            lifecycleFailed++;
+            console.error("welcome-email: lifecycle-reminder send failed for", row.email, ":", result.error);
+            await supabase.rpc("release_lifecycle_reminder", { p_id: row.id });
+            if (/rate.?limit/i.test(result.error || "")) lifecycleThrottled = true;
+          }
+        }
+      } else {
+        console.error("welcome-email: could not load pending lifecycle reminders:", lifecycleError.message);
+      }
+    }
+  } catch (e) {
+    console.error("welcome-email: lifecycle-reminder loop threw:", e instanceof Error ? e.message : String(e));
+  }
+
   return json({
     success: true, claimed: rows.length, sent, failed,
     kyc_reminders: { claimed: kycClaimed, sent: kycSent, failed: kycFailed },
+    lifecycle_reminders: { claimed: lifecycleClaimed, sent: lifecycleSent, failed: lifecycleFailed, throttled: lifecycleThrottled },
   });
 });

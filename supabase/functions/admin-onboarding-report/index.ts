@@ -53,11 +53,16 @@ serve(async (req) => {
   });
   if (error) return json({ error: "Could not load onboarding report" }, 500);
 
+  // Lifecycle reminders (migration 197) aren't cohort-scoped -- they're a
+  // live, all-time count of who's stuck right now -- so this call ignores
+  // the date-range filters above and is merged into the same response.
+  const { data: lifecycleReport } = await db.rpc("admin_lifecycle_reminder_report");
+
   const { error: auditError } = await db.from("admin_actions").insert({
     admin_user_id: admin.userId, action_type: "onboarding_report_viewed",
     target_type: "analytics", metadata: { start: start.toISOString(), end: end.toISOString(), platform, app_version: appVersion, country, network, source },
   });
   if (auditError) return json({ error: "Report loaded but access audit failed" }, 500);
-  return json({ success: true, report: data });
+  return json({ success: true, report: { ...(data as object), lifecycle_reminders: lifecycleReport ?? null } });
 });
 

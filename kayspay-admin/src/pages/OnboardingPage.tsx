@@ -5,6 +5,13 @@ interface FunnelStage { key: string; count: number; }
 type FaultCategory = 'app_error' | 'provider_rejected' | 'provider_unavailable' | 'customer_input' | 'unknown' | 'unclassified';
 interface FailureRow { event_type: string; failure_code: string | null; affected_installations: number; attempts: number; fault_category: FaultCategory; }
 interface BreakdownRow { value: string; installations: number; }
+type LifecycleStage = 'pin_not_set' | 'kyc_completed_not_funded' | 'funded_not_purchased';
+interface LifecycleSentStats { sent: number; opened: number; clicked: number; failed: number; resolved: number; }
+interface LifecycleReminderReport {
+  enabled: boolean;
+  stuck_now: Record<LifecycleStage, number>;
+  sent_stats: Partial<Record<LifecycleStage, LifecycleSentStats>>;
+}
 interface OnboardingReport {
   cohort: { start: string; end: string; installations: number };
   conversion: Record<string, number | null>;
@@ -13,6 +20,7 @@ interface OnboardingReport {
   stuck: Record<string, number>;
   failures: FailureRow[];
   breakdowns: Record<'platform' | 'app_version' | 'country' | 'network', BreakdownRow[]>;
+  lifecycle_reminders: LifecycleReminderReport | null;
 }
 
 interface Filters {
@@ -35,6 +43,11 @@ const STUCK_LABELS: Record<string, string> = {
   kyc_completed_not_funded: 'KYC completed, not funded',
   funding_started_not_completed: 'Funding started, not completed',
   funded_not_purchased: 'Funded, no first purchase',
+};
+const LIFECYCLE_STAGE_LABELS: Record<LifecycleStage, string> = {
+  pin_not_set: 'Verified, PIN not set',
+  kyc_completed_not_funded: 'KYC verified, wallet not funded',
+  funded_not_purchased: 'Funded, no purchase yet',
 };
 const TIMING_LABELS: Record<string, string> = {
   activation_to_account: 'App open → account', account_to_verification: 'Account → verification',
@@ -80,6 +93,7 @@ export default function OnboardingPage() {
   const [report, setReport] = useState<OnboardingReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [togglingReminders, setTogglingReminders] = useState(false);
 
   const load = useCallback(async (requested: Filters) => {
     if (!requested.start || !requested.end || requested.start > requested.end) {
@@ -102,6 +116,19 @@ export default function OnboardingPage() {
   }, []);
 
   useEffect(() => { void load(filters); }, []);
+
+  const toggleLifecycleReminders = useCallback(async (nextEnabled: boolean) => {
+    setTogglingReminders(true); setError(null);
+    try {
+      await callAdmin('admin-app-settings', {
+        method: 'POST',
+        body: { key: 'lifecycle_reminders_enabled', value: nextEnabled ? 'true' : 'false' },
+      });
+      await load(filters);
+    } catch (toggleError) {
+      setError(toggleError instanceof AdminApiError ? toggleError.message : 'Could not update lifecycle reminders.');
+    } finally { setTogglingReminders(false); }
+  }, [filters, load]);
 
   const stageRows = useMemo(() => {
     if (!report) return [];
@@ -185,6 +212,33 @@ export default function OnboardingPage() {
           {Object.entries(STUCK_LABELS).map(([key, label]) => <div className="stuck-row" key={key}><span>{label}</span><strong className={(report.stuck[key] || 0) > 0 ? 'warning-number' : ''}>{(report.stuck[key] || 0).toLocaleString()}</strong></div>)}
         </div><p className="muted stuck-note">These are analytical counts, not marketing eligibility. Consent checks will be added in the campaign phase.</p></div>
       </div>
+
+      {report.lifecycle_reminders && <div className="card">
+        <div className="row between section-heading">
+          <div><h3>Lifecycle reminders</h3><p className="muted">Automated emails for customers stuck at PIN setup, funding, or first purchase. Up to 2 attempts per stage, then it stops for good.</p></div>
+          <button
+            className={report.lifecycle_reminders.enabled ? 'secondary' : 'primary'}
+            disabled={togglingReminders}
+            onClick={() => void toggleLifecycleReminders(!report.lifecycle_reminders!.enabled)}
+          >
+            {togglingReminders ? 'Saving…' : report.lifecycle_reminders.enabled ? 'Pause reminders' : 'Enable reminders'}
+          </button>
+        </div>
+        <table><thead><tr><th>Stage</th><th>Stuck right now</th><th>Sent</th><th>Opened</th><th>Clicked</th><th>Resolved after send</th></tr></thead><tbody>
+          {(Object.keys(LIFECYCLE_STAGE_LABELS) as LifecycleStage[]).map((stage) => {
+            const stats = report.lifecycle_reminders!.sent_stats[stage];
+            return <tr key={stage}>
+              <td>{LIFECYCLE_STAGE_LABELS[stage]}</td>
+              <td><strong className={report.lifecycle_reminders!.stuck_now[stage] > 0 ? 'warning-number' : ''}>{(report.lifecycle_reminders!.stuck_now[stage] || 0).toLocaleString()}</strong></td>
+              <td>{(stats?.sent || 0).toLocaleString()}</td>
+              <td>{(stats?.opened || 0).toLocaleString()}</td>
+              <td>{(stats?.clicked || 0).toLocaleString()}</td>
+              <td>{(stats?.resolved || 0).toLocaleString()}</td>
+            </tr>;
+          })}
+        </tbody></table>
+        {!report.lifecycle_reminders.enabled && <p className="muted" style={{ marginTop: 12 }}>Paused — no reminders are being sent. Enable to start sending to customers currently stuck.</p>}
+      </div>}
 
       <div className="card table-scroll"><h3>Top failure reasons</h3>
         {report.failures.length === 0 ? <p className="muted">No failed onboarding events in this cohort.</p> : <>

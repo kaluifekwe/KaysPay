@@ -14,11 +14,11 @@ function json(body: unknown, status = 200) {
   });
 }
 
-const VALID_KEYS = ["support_whatsapp_number", "support_whatsapp_group_url"];
+const VALID_KEYS = ["support_whatsapp_number", "support_whatsapp_group_url", "lifecycle_reminders_enabled"];
 
 /**
  * Normalises a WhatsApp number to the digits-only international form
- * wa.me needs â€?strips +, spaces, dashes and brackets, so the owner can
+ * wa.me needs ï¿½?strips +, spaces, dashes and brackets, so the owner can
  * paste "+234 906 844 6111" or "234-906-844-6111" and it just works.
  * A local 0-prefixed Nigerian number (0906...) is converted to 234906...
  * since wa.me will not resolve a national-format number.
@@ -37,7 +37,7 @@ function normaliseWhatsAppNumber(raw: string): string | null {
 
 /**
  * Accepts only a real chat.whatsapp.com invite, and strips WhatsApp's
- * copy-source tracking params (?s=cl&p=a&ilr=4) â€?the invite resolves from
+ * copy-source tracking params (?s=cl&p=a&ilr=4) ï¿½?the invite resolves from
  * the code in the path alone, and a bare URL avoids &-escaping problems
  * when it is dropped into email HTML.
  *
@@ -120,6 +120,11 @@ serve(async (req) => {
         }, 400);
       }
       value = normalised;
+    } else if (key === "lifecycle_reminders_enabled") {
+      if (rawValue !== "true" && rawValue !== "false") {
+        return json({ error: "Value must be true or false" }, 400);
+      }
+      value = rawValue;
     } else {
       if (!rawValue) return json({ error: "A value is required" }, 400);
       value = rawValue;

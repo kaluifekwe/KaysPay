@@ -363,3 +363,109 @@ export function kycReminderEmail(firstName: string): { subject: string; html: st
 
   return { subject: `${plainName === "there" ? "Finish setting up" : `${plainName}, finish setting up`} your KaysPay account`, html: shell(inner, "You're one step from finishing your KaysPay setup"), text };
 }
+
+/**
+ * Lifecycle reminders (migration 197) -- same transactional category as
+ * kycReminderEmail above: about the customer's OWN incomplete setup, never
+ * gated on marketing consent. One function per stuck stage. Kept dash-free
+ * (owner 2026-09-03) and, per the same guidance, no need to name specific
+ * requirements the app itself will show.
+ */
+export function pinNotSetReminderEmail(firstName: string): { subject: string; html: string; text: string } {
+  const name = firstName && firstName.trim() ? esc(firstName.trim()) : "there";
+  const plainName = firstName && firstName.trim() ? firstName.trim() : "there";
+
+  const inner = `
+    <tr><td style="padding:30px 28px 6px;">
+      <h1 style="margin:0 0 14px;font-size:21px;color:${INK};font-weight:800;">One step left, ${name}</h1>
+      <p style="margin:0 0 14px;font-size:15px;color:${INK};line-height:1.65;">Your email is verified, but you haven't set your transaction PIN yet. It's the last step before your account is ready.</p>
+      <p style="margin:0 0 18px;font-size:15px;color:${INK};line-height:1.65;">It takes under a minute and keeps your wallet secure. Once it's set, you can fund your wallet and start paying for airtime, data, electricity, TV and more.</p>
+    </td></tr>
+    <tr><td style="padding:6px 28px 30px;">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td style="background:${GREEN};border-radius:10px;">
+          <a href="${PLAY_STORE_URL}" style="display:inline-block;padding:13px 22px;font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;">Open KaysPay to finish →</a>
+        </td>
+      </tr></table>
+      <p style="margin:16px 0 0;font-size:12px;color:${MUTED};line-height:1.5;">Or open this link on your phone: <a href="${PLAY_STORE_URL}" style="color:${ACCENT};text-decoration:none;">${PLAY_STORE_URL}</a></p>
+    </td></tr>`;
+
+  const text = textShell([
+    `One step left, ${plainName}`,
+    "",
+    "Your email is verified, but you haven't set your transaction PIN yet. It's the last step before your account is ready.",
+    "",
+    "It takes under a minute and keeps your wallet secure. Once it's set, you can fund your wallet and start paying for airtime, data, electricity, TV and more.",
+    "",
+    "Open KaysPay to finish:",
+    PLAY_STORE_URL,
+  ]);
+
+  return { subject: `${plainName === "there" ? "Set your PIN to finish setting up" : `${plainName}, set your PIN to finish setting up`} KaysPay`, html: shell(inner, "One quick step left to secure your account"), text };
+}
+
+export function kycVerifiedNotFundedReminderEmail(firstName: string): { subject: string; html: string; text: string } {
+  const name = firstName && firstName.trim() ? esc(firstName.trim()) : "there";
+  const plainName = firstName && firstName.trim() ? firstName.trim() : "there";
+
+  const inner = `
+    <tr><td style="padding:30px 28px 6px;">
+      <h1 style="margin:0 0 14px;font-size:21px;color:${INK};font-weight:800;">You're verified, ${name}</h1>
+      <p style="margin:0 0 14px;font-size:15px;color:${INK};line-height:1.65;">Your identity has been verified. The only thing left is funding your wallet.</p>
+      <p style="margin:0 0 18px;font-size:15px;color:${INK};line-height:1.65;">Once you do, you can pay for airtime, data, electricity, TV and more right from the app. Every data purchase automatically comes with a discount plus cashback.</p>
+    </td></tr>
+    <tr><td style="padding:6px 28px 30px;">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td style="background:${GREEN};border-radius:10px;">
+          <a href="${PLAY_STORE_URL}" style="display:inline-block;padding:13px 22px;font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;">Fund your wallet →</a>
+        </td>
+      </tr></table>
+      <p style="margin:16px 0 0;font-size:12px;color:${MUTED};line-height:1.5;">Or open this link on your phone: <a href="${PLAY_STORE_URL}" style="color:${ACCENT};text-decoration:none;">${PLAY_STORE_URL}</a></p>
+    </td></tr>`;
+
+  const text = textShell([
+    `You're verified, ${plainName}`,
+    "",
+    "Your identity has been verified. The only thing left is funding your wallet.",
+    "",
+    "Once you do, you can pay for airtime, data, electricity, TV and more right from the app. Every data purchase automatically comes with a discount plus cashback.",
+    "",
+    "Open KaysPay to fund your wallet:",
+    PLAY_STORE_URL,
+  ]);
+
+  return { subject: `${plainName === "there" ? "You're verified" : `${plainName}, you're verified`}. Fund your wallet to get started`, html: shell(inner, "You're verified. Just fund your wallet to get started"), text };
+}
+
+export function fundedNotPurchasedReminderEmail(firstName: string): { subject: string; html: string; text: string } {
+  const name = firstName && firstName.trim() ? esc(firstName.trim()) : "there";
+  const plainName = firstName && firstName.trim() ? firstName.trim() : "there";
+
+  const inner = `
+    <tr><td style="padding:30px 28px 6px;">
+      <h1 style="margin:0 0 14px;font-size:21px;color:${INK};font-weight:800;">Your wallet is ready, ${name}</h1>
+      <p style="margin:0 0 14px;font-size:15px;color:${INK};line-height:1.65;">You've funded your wallet, but haven't made a purchase yet.</p>
+      <p style="margin:0 0 18px;font-size:15px;color:${INK};line-height:1.65;">Buy airtime, data, pay bills and more right from the app. Every data purchase automatically comes with a discount plus cashback.</p>
+    </td></tr>
+    <tr><td style="padding:6px 28px 30px;">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td style="background:${GREEN};border-radius:10px;">
+          <a href="${PLAY_STORE_URL}" style="display:inline-block;padding:13px 22px;font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;">Open KaysPay →</a>
+        </td>
+      </tr></table>
+      <p style="margin:16px 0 0;font-size:12px;color:${MUTED};line-height:1.5;">Or open this link on your phone: <a href="${PLAY_STORE_URL}" style="color:${ACCENT};text-decoration:none;">${PLAY_STORE_URL}</a></p>
+    </td></tr>`;
+
+  const text = textShell([
+    `Your wallet is ready, ${plainName}`,
+    "",
+    "You've funded your wallet, but haven't made a purchase yet.",
+    "",
+    "Buy airtime, data, pay bills and more right from the app. Every data purchase automatically comes with a discount plus cashback.",
+    "",
+    "Open KaysPay:",
+    PLAY_STORE_URL,
+  ]);
+
+  return { subject: `${plainName === "there" ? "Your wallet is funded" : `${plainName}, your wallet is funded`}. Make your first purchase`, html: shell(inner, "Your wallet is funded. Time for your first purchase"), text };
+}
