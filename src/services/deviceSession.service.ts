@@ -4,12 +4,24 @@ import { Platform } from 'react-native';
 import { supabase } from '../lib/supabase';
 
 const DEVICE_ID_KEY = 'kayspay_device_id';
+// Cached in-memory once resolved, and shared across concurrent callers, so
+// two register() calls in the same app session (e.g. an auth-state refresh
+// re-firing the registration effect) can never race the check-then-write
+// below and mint two different IDs for the same physical device — seen in
+// production as a real device tripping two "new device signed in" security
+// alerts three minutes apart (2026-09-03).
+let cachedDeviceId: Promise<string> | null = null;
 async function deviceId(): Promise<string> {
-  const existing = await SecureStore.getItemAsync(DEVICE_ID_KEY);
-  if (existing) return existing;
-  const created = `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-  await SecureStore.setItemAsync(DEVICE_ID_KEY, created, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
-  return created;
+  if (!cachedDeviceId) {
+    cachedDeviceId = (async () => {
+      const existing = await SecureStore.getItemAsync(DEVICE_ID_KEY);
+      if (existing) return existing;
+      const created = `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+      await SecureStore.setItemAsync(DEVICE_ID_KEY, created, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
+      return created;
+    })();
+  }
+  return cachedDeviceId;
 }
 async function invoke(body: Record<string, unknown>) {
   const { data, error } = await supabase.functions.invoke('device-sessions', { body });
