@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { authService } from '../services/auth.service';
 import { AppTheme } from '../constants/theme';
+import { safeErrorMessage } from '../utils/errorMessages';
 import { useTheme } from '../components/ThemeProvider';
 
 interface Props {
@@ -54,7 +55,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
       // on to the code screen and let the user enter whatever code they get.
       navigation.navigate('ResetPassword', { email: email.trim().toLowerCase() });
     } catch (error: any) {
-      Alert.alert('Something went wrong', error.message || 'Please try again.');
+      Alert.alert('Something went wrong', safeErrorMessage(error, 'Please try again.'));
     } finally {
       setLoading(false);
     }

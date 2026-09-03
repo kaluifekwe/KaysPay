@@ -19,6 +19,7 @@ import { supabase } from '../lib/supabase';
 import { withTimeout } from '../utils/network';
 import { kycService } from '../services/kyc.service';
 import { authService } from '../services/auth.service';
+import { safeErrorMessage } from '../utils/errorMessages';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 import { AppTheme } from '../constants/theme';
@@ -101,7 +102,7 @@ export default function EditProfileScreen({ navigation }: any) {
       Alert.alert('Saved', 'Your profile has been updated.');
       navigation.goBack();
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Could not save your changes. Please try again.');
+      Alert.alert('Error', safeErrorMessage(error, 'Could not save your changes. Please try again.'));
     } finally {
       setSaving(false);
     }

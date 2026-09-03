@@ -75,8 +75,8 @@ export const virtualAccountService = {
         return { success: false, error: data?.error || 'Could not set up your account' };
       }
       return { success: true, account: data.account };
-    } catch (e: any) {
-      return { success: false, error: e?.message || 'Network error' };
+    } catch (e: unknown) {
+      return { success: false, error: safeErrorMessage(e, 'Network error') };
     }
   },
 

@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppTheme } from '../constants/theme';
+import { safeErrorMessage } from '../utils/errorMessages';
 import { useTheme } from '../components/ThemeProvider';
 import { authService } from '../services/auth.service';
 
@@ -118,7 +119,7 @@ export default function OTPVerifyScreen({ navigation, route }: OTPVerifyScreenPr
       // detects the new session and swaps straight to the mandatory PIN
       // setup gate on its own (see RequirePinNavigator).
     } catch (error: any) {
-      Alert.alert('Verification Failed', error.message || 'Invalid code. Please try again.');
+      Alert.alert('Verification Failed', safeErrorMessage(error, 'Invalid code. Please try again.'));
       setOtp(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } finally {
@@ -140,7 +141,7 @@ export default function OTPVerifyScreen({ navigation, route }: OTPVerifyScreenPr
       setResendTimer(59);
       Alert.alert('Code Sent', 'A new verification code has been sent to your phone.');
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to resend code. Please try again.');
+      Alert.alert('Error', safeErrorMessage(error, 'Failed to resend code. Please try again.'));
     }
   };
 

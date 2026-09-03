@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppTheme } from '../constants/theme';
+import { safeErrorMessage } from '../utils/errorMessages';
 import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -93,7 +94,7 @@ export default function PINSetupScreen({ navigation }: PINSetupScreenProps) {
 
       navigation.replace('BiometricSetup', { pin: pinString });
     } catch (error: any) {
-      Alert.alert('Error', error.message || Strings.ERROR_GENERIC);
+      Alert.alert('Error', safeErrorMessage(error, Strings.ERROR_GENERIC));
       setPin(['', '', '', '']);
       setConfirmPin(['', '', '', '']);
       setIsConfirming(false);

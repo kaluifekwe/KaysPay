@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { authService } from '../services/auth.service';
 import { AppTheme } from '../constants/theme';
+import { safeErrorMessage } from '../utils/errorMessages';
 import { useTheme } from '../components/ThemeProvider';
 import { passwordValidationError } from '../utils/password';
 
@@ -95,7 +96,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
       // detects the new session and routes to Main (or the mandatory PIN
       // setup gate, if this account somehow doesn't have one yet) on its own.
     } catch (error: any) {
-      Alert.alert('Login Failed', error.message || 'Something went wrong. Please try again.');
+      Alert.alert('Login Failed', safeErrorMessage(error, 'Something went wrong. Please try again.'));
     } finally {
       setLoading(false);
     }

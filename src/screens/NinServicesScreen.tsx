@@ -19,6 +19,7 @@ import { File } from 'expo-file-system';
 import qrcode from 'qrcode-generator';
 import { Colors } from '../constants/colors';
 import { AppTheme } from '../constants/theme';
+import { safeErrorMessage } from '../utils/errorMessages';
 import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -881,7 +882,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
         Platform.OS === 'android' ? 'PDF saved to the folder you selected.' : 'Choose "Save to Files" to store it on your device.',
       );
     } catch (e) {
-      Alert.alert('Error', (e as Error).message || 'Could not save the PDF. Please try again.');
+      Alert.alert('Error', safeErrorMessage(e, 'Could not save the PDF. Please try again.'));
     } finally {
       setGeneratingBvnPdf(false);
     }
@@ -895,7 +896,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
       const tierName = bvnSlipTiers.find((t) => t.id === selectedBvnTier)?.name || 'BVN Slip';
       await sharePdf(html, `Share your ${tierName}`);
     } catch (e) {
-      Alert.alert('Error', (e as Error).message || 'Could not generate the PDF. Please try again.');
+      Alert.alert('Error', safeErrorMessage(e, 'Could not generate the PDF. Please try again.'));
     } finally {
       setGeneratingBvnPdf(false);
     }
@@ -979,7 +980,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
         Platform.OS === 'android' ? 'PDF saved to the folder you selected.' : 'Choose "Save to Files" to store it on your device.',
       );
     } catch (e) {
-      Alert.alert('Error', (e as Error).message || 'Could not save the PDF. Please try again.');
+      Alert.alert('Error', safeErrorMessage(e, 'Could not save the PDF. Please try again.'));
     } finally {
       setGeneratingPdf(false);
     }
@@ -993,7 +994,7 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
       const tierName = slipTiers.find((t) => t.id === selectedTier)?.name || 'NIN Slip';
       await sharePdf(html, `Share your ${tierName}`);
     } catch (e) {
-      Alert.alert('Error', (e as Error).message || 'Could not generate the PDF. Please try again.');
+      Alert.alert('Error', safeErrorMessage(e, 'Could not generate the PDF. Please try again.'));
     } finally {
       setGeneratingPdf(false);
     }

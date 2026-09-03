@@ -18,6 +18,7 @@ import { authService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
 import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password';
 import { validateNigerianPhone } from '../utils/detectNetwork';
+import { safeErrorMessage } from '../utils/errorMessages';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
 import { analytics } from '../services/analytics.service';
@@ -363,7 +364,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
       // own (see RequireEmailVerifyNavigator).
     } catch (error: any) {
       void analytics.track('registration_validation_failed', { outcome: 'failed', failureCode: 'signup_unavailable' });
-      Alert.alert('Sign Up Failed', error.message || 'Something went wrong. Please try again.');
+      Alert.alert('Sign Up Failed', safeErrorMessage(error, 'Something went wrong. Please try again.'));
     } finally {
       setSubmitting(false);
     }

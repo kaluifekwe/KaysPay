@@ -17,6 +17,7 @@ import { Spacing } from '../constants/spacing';
 import { Strings } from '../constants/strings';
 import { validateNigerianPhone } from '../utils/detectNetwork';
 import { authService } from '../services/auth.service';
+import { safeErrorMessage } from '../utils/errorMessages';
 
 
 interface PhoneInputScreenProps {
@@ -55,7 +56,7 @@ export default function PhoneInputScreen({ navigation }: PhoneInputScreenProps) 
 
       navigation.navigate('OTPVerify', { phone: formattedPhone });
     } catch (error: any) {
-      Alert.alert('Error', error.message || Strings.ERROR_GENERIC);
+      Alert.alert('Error', safeErrorMessage(error, Strings.ERROR_GENERIC));
     } finally {
       setLoading(false);
     }

@@ -16,6 +16,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { AppTheme } from '../constants/theme';
+import { safeErrorMessage } from '../utils/errorMessages';
 import { useTheme } from '../components/ThemeProvider';
 import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
@@ -294,7 +295,7 @@ export default function ElectricityPayScreen(props: any) {
         Platform.OS === 'android' ? 'Receipt saved to the folder you selected.' : 'Choose "Save to Files" to store it on your device.',
       );
     } catch (e) {
-      Alert.alert('Error', (e as Error).message || 'Could not save the receipt. Please try again.');
+      Alert.alert('Error', safeErrorMessage(e, 'Could not save the receipt. Please try again.'));
     } finally {
       setGeneratingPdf(false);
     }
@@ -305,7 +306,7 @@ export default function ElectricityPayScreen(props: any) {
     try {
       await sharePdf(buildReceiptHtml(), 'Share your electricity receipt');
     } catch (e) {
-      Alert.alert('Error', (e as Error).message || 'Could not generate the receipt. Please try again.');
+      Alert.alert('Error', safeErrorMessage(e, 'Could not generate the receipt. Please try again.'));
     } finally {
       setGeneratingPdf(false);
     }

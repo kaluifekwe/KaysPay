@@ -16,6 +16,7 @@ import { authService } from '../services/auth.service';
 import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 import { AppTheme } from '../constants/theme';
+import { safeErrorMessage } from '../utils/errorMessages';
 import { useTheme } from '../components/ThemeProvider';
 
 // Same advisory strength signal as signup (RegistrationScreen): rewards length
@@ -85,7 +86,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
         [{ text: 'Log in', onPress: () => navigation.navigate('Login') }],
       );
     } catch (e: any) {
-      setError(e.message || 'Something went wrong. Please try again.');
+      setError(safeErrorMessage(e, 'Something went wrong. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -102,7 +103,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
       }
       Alert.alert('Code sent', `We've sent a new code to ${email}.`);
     } catch (e: any) {
-      setError(e.message || 'Could not resend the code.');
+      setError(safeErrorMessage(e, 'Could not resend the code.'));
     } finally {
       setResending(false);
     }
