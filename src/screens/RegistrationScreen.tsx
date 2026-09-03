@@ -17,16 +17,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { authService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
 import { MIN_PASSWORD_LENGTH, passwordValidationError } from '../utils/password';
+import { validateNigerianPhone } from '../utils/detectNetwork';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
 import { analytics } from '../services/analytics.service';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
-
-const NIGERIAN_PREFIXES = [
-  '0703', '0706', '0802', '0803', '0805', '0806', '0807', '0808', '0809', '0810',
-  '0811', '0812', '0813', '0814', '0815', '0816', '0817', '0818', '0902', '0903',
-  '0905', '0906', '0907', '0908', '0909', '0915',
-];
 
 const NETWORK_CONFIG: Record<string, { name: string; bg: string; color: string }> = {
   MTN: { name: 'MTN', bg: '#FFF9E6', color: '#B8860B' },
@@ -193,21 +188,21 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
       return;
     }
     const cleanPhone = value.replace(/\s/g, '');
-    if (cleanPhone.length < 7 || cleanPhone.length > 15) {
-      setPhoneError('Please enter a valid phone number');
+    // Reject anything that isn't a real 11-digit, 0-prefixed Nigerian number
+    // with a recognized carrier prefix -- this used to only gate the network
+    // badge, not validity, so e.g. a 10-digit number typed without the
+    // leading 0 sailed through as "valid" and later got a bare "+" slapped
+    // on it at submission, saving something like "+9044931977" -- not a
+    // real, dialable number. Matches PhoneInputScreen's validateNigerianPhone.
+    if (!validateNigerianPhone(cleanPhone)) {
+      setPhoneError('Please enter a valid 11-digit Nigerian number (e.g., 08031234567)');
       setPhoneValid(false);
       setDetectedNetwork(null);
       return;
     }
-    let isNigerianPrefix = false;
-    if (cleanPhone.startsWith('0') && cleanPhone.length === 11) {
-      isNigerianPrefix = NIGERIAN_PREFIXES.includes(cleanPhone.substring(0, 4));
-    } else if (!cleanPhone.startsWith('0') && cleanPhone.length === 10) {
-      isNigerianPrefix = NIGERIAN_PREFIXES.includes('0' + cleanPhone.substring(0, 3));
-    }
     setPhoneError('');
     setPhoneValid(true);
-    setDetectedNetwork(isNigerianPrefix ? detectNetwork(cleanPhone) : null);
+    setDetectedNetwork(detectNetwork(cleanPhone));
   };
 
   const isStep1Valid = fullNameValid && emailValid && phoneValid;
@@ -272,13 +267,13 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
       Animated.timing(buttonScale, { toValue: 1, duration: 100, useNativeDriver: true }),
     ]).start();
 
+    // isStep1Valid already required validateNigerianPhone to pass before this
+    // screen could be reached, so phone is always exactly 11 digits starting
+    // with 0 here -- no fallback branch, which used to blindly prepend "+"
+    // to whatever didn't match and could save a non-dialable number.
     let formattedPhone = phone.trim();
-    if (formattedPhone) {
-      if (formattedPhone.startsWith('0') && formattedPhone.length === 11) {
-        formattedPhone = '+234' + formattedPhone.substring(1);
-      } else if (!formattedPhone.startsWith('+')) {
-        formattedPhone = '+' + formattedPhone;
-      }
+    if (formattedPhone.startsWith('0') && formattedPhone.length === 11) {
+      formattedPhone = '+234' + formattedPhone.substring(1);
     }
 
     setSubmitting(true);
