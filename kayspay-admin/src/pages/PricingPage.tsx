@@ -629,7 +629,7 @@ export default function PricingPage() {
             {errors.bracket && <div className="error-text">{errors.bracket}</div>}
 
             <table>
-              <thead><tr><th>Price from</th><th>Price to</th><th>Type</th><th>Target</th><th>Min gross (₦)</th><th>Min net (₦)</th>{canEdit && <th />}</tr></thead>
+              <thead><tr><th>Price from</th><th>Price to</th><th>Type</th><th>Target</th><th>Min gross (₦)</th><th>Min net (₦)</th><th>Updated</th>{canEdit && <th />}</tr></thead>
               <tbody>
                 {markupBrackets.map((bracket) => {
                   const key = `bracket:${bracket.id}`;
@@ -647,6 +647,7 @@ export default function PricingPage() {
                       <td><input className="mono" style={{ width: 70, textAlign: 'right' }} disabled={!canEdit} value={draft.value} onChange={(e) => setDraftField(key, bracket, 'value', e.target.value)} /></td>
                       <td><input className="mono" style={{ width: 80, textAlign: 'right' }} disabled={!canEdit} value={draft.minMarkup} onChange={(e) => setDraftField(key, bracket, 'minMarkup', e.target.value)} /></td>
                       <td><input className="mono" style={{ width: 80, textAlign: 'right' }} disabled={!canEdit} value={draft.minNet} onChange={(e) => setDraftField(key, bracket, 'minNet', e.target.value)} /></td>
+                      <td className="muted">{new Date(bracket.updated_at).toLocaleString('en-GB')}</td>
                       {canEdit && (
                         <td style={{ display: 'flex', gap: 6 }}>
                           <button className="primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === key} onClick={() => void saveBracket(bracket.id)}>Save</button>
@@ -669,6 +670,7 @@ export default function PricingPage() {
                     <td><input className="mono" style={{ width: 70, textAlign: 'right' }} placeholder="0" value={draftFor('bracket:new').value} onChange={(e) => setDraftField('bracket:new', undefined, 'value', e.target.value)} /></td>
                     <td><input className="mono" style={{ width: 80, textAlign: 'right' }} placeholder="0" value={draftFor('bracket:new').minMarkup} onChange={(e) => setDraftField('bracket:new', undefined, 'minMarkup', e.target.value)} /></td>
                     <td><input className="mono" style={{ width: 80, textAlign: 'right' }} placeholder="0" value={draftFor('bracket:new').minNet} onChange={(e) => setDraftField('bracket:new', undefined, 'minNet', e.target.value)} /></td>
+                    <td className="muted">—</td>
                     <td>
                       <button className="primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === 'bracket:new'} onClick={() => void saveBracket(null)}>Add bracket</button>
                     </td>
@@ -710,7 +712,7 @@ export default function PricingPage() {
                   </p>
                   <table>
                     <thead>
-                      <tr><th>Plan</th><th>Pricing check</th><th>Provider Price</th><th>Auto Price</th><th>Validity add-on</th><th>Discount / Cashback</th><th title="Markup minus discount minus cashback">You Keep</th><th>Your Manual Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr>
+                      <tr><th>Plan</th><th>Pricing check</th><th>Provider Price</th><th>Auto Price</th><th>Validity add-on</th><th>Discount / Cashback</th><th title="Markup minus discount minus cashback">You Keep</th><th>Your Manual Markup</th><th>Override updated</th><th>Customer Pays</th>{canEdit && <th />}</tr>
                     </thead>
                     <tbody>
                       {networkPlans.map((plan) => {
@@ -755,6 +757,7 @@ export default function PricingPage() {
                                 onChange={(event) => setPlanInputs((current) => ({ ...current, [key]: event.target.value }))}
                               />
                             </td>
+                            <td className="mono muted">{override ? new Date(override.updated_at).toLocaleString('en-GB') : '—'}</td>
                             <td className="mono">{customerPaysKobo === null ? '—' : formatNaira(customerPaysKobo)}</td>
                             {canEdit && (
                               <td>
@@ -786,7 +789,7 @@ export default function PricingPage() {
             {cabletvPlans.filter((plan) => plan.provider === cabletvProvider).length === 0 ? <p className="muted">No synced bouquets for this provider.</p> : (
               <table>
                 <thead>
-                  <tr><th>Bouquet</th><th>Status</th><th>Provider Price</th><th>Your Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr>
+                  <tr><th>Bouquet</th><th>Status</th><th>Provider Price</th><th>Your Markup</th><th>Override updated</th><th>Customer Pays</th>{canEdit && <th />}</tr>
                 </thead>
                 <tbody>
                   {cabletvPlans.filter((plan) => plan.provider === cabletvProvider).map((plan) => {
@@ -813,6 +816,7 @@ export default function PricingPage() {
                             onChange={(event) => setCabletvInputs((current) => ({ ...current, [key]: event.target.value }))}
                           />
                         </td>
+                        <td className="mono muted">{override ? new Date(override.updated_at).toLocaleString('en-GB') : '—'}</td>
                         <td className="mono">{customerPaysKobo === null ? '—' : formatNaira(customerPaysKobo)}</td>
                         {canEdit && (
                           <td>
@@ -834,7 +838,7 @@ export default function PricingPage() {
             <p className="muted">Provider Cost is what Prembly/CheckMyNINBVN actually bill you — set manually, since it isn't fetched automatically.</p>
             {errors.service_price && <div className="error-text">{errors.service_price}</div>}
             <table>
-              <thead><tr><th>Service</th><th>Provider Cost</th><th>Your Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr></thead>
+              <thead><tr><th>Service</th><th>Provider Cost</th><th>Your Markup</th><th>Updated</th><th>Customer Pays</th>{canEdit && <th />}</tr></thead>
               <tbody>
                 {SERVICE_ORDER.map((serviceKey) => {
                   const row = serviceRow(serviceKey);
@@ -871,6 +875,7 @@ export default function PricingPage() {
                           onChange={(event) => setServiceMarkupInputs((current) => ({ ...current, [serviceKey]: event.target.value }))}
                         />
                       </td>
+                      <td className="mono muted">{row ? new Date(row.updated_at).toLocaleString('en-GB') : '—'}</td>
                       <td className="mono">{customerPaysKobo === null ? '—' : formatNaira(customerPaysKobo)}</td>
                       {canEdit && (
                         <td>
@@ -893,7 +898,7 @@ export default function PricingPage() {
             </p>
             {errors.exam_pin && <div className="error-text">{errors.exam_pin}</div>}
             <table>
-              <thead><tr><th>Exam</th><th>Status</th><th>Provider Price</th><th>Your Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr></thead>
+              <thead><tr><th>Exam</th><th>Status</th><th>Provider Price</th><th>Your Markup</th><th>Override updated</th><th>Customer Pays</th>{canEdit && <th />}</tr></thead>
               <tbody>
                 {examPlans.map((exam) => {
                   const key = `exam:${exam.id}`;
@@ -920,6 +925,7 @@ export default function PricingPage() {
                           onChange={(event) => setExamInputs((current) => ({ ...current, [exam.id]: event.target.value }))}
                         />
                       </td>
+                      <td className="mono muted">{override ? new Date(override.updated_at).toLocaleString('en-GB') : '—'}</td>
                       <td className="mono">{customerPaysKobo === null ? '—' : formatNaira(customerPaysKobo)}</td>
                       {canEdit && (
                         <td>
@@ -955,6 +961,9 @@ export default function PricingPage() {
                 </button>
               )}
             </div>
+            <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+              {electricityFee ? `Updated ${new Date(electricityFee.updated_at).toLocaleString('en-GB')}` : 'Never set'}
+            </p>
           </div>
         </>
       )}

@@ -110,7 +110,7 @@ export default function AdminsPage() {
       <div className="card">
         {loading ? <p className="muted">Loading…</p> : (
           <table>
-            <thead><tr><th>Email</th><th>Role</th><th>Status</th><th /></tr></thead>
+            <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Added</th><th /></tr></thead>
             <tbody>
               {admins.map((a) => (
                 <tr key={a.user_id}>
@@ -126,6 +126,7 @@ export default function AdminsPage() {
                     </select>
                   </td>
                   <td><span className={`badge ${a.disabled_at ? 'disabled' : 'enabled'}`}>{a.disabled_at ? 'Disabled' : 'Active'}</span></td>
+                  <td className="muted">{new Date(a.created_at).toLocaleDateString('en-GB')}</td>
                   <td>
                     {a.disabled_at ? (
                       <button className="secondary" disabled={busy === a.user_id} onClick={() => act(a.user_id, 'enable')}>Re-enable</button>

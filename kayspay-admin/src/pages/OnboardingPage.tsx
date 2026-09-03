@@ -3,7 +3,7 @@ import { AdminApiError, callAdmin } from '../lib/adminApi';
 
 interface FunnelStage { key: string; count: number; }
 type FaultCategory = 'app_error' | 'provider_rejected' | 'provider_unavailable' | 'customer_input' | 'unknown' | 'unclassified';
-interface FailureRow { event_type: string; failure_code: string | null; affected_installations: number; attempts: number; fault_category: FaultCategory; }
+interface FailureRow { event_type: string; failure_code: string | null; affected_installations: number; attempts: number; fault_category: FaultCategory; first_occurred_at: string; last_occurred_at: string; }
 interface BreakdownRow { value: string; installations: number; }
 type LifecycleStage = 'pin_not_set' | 'kyc_not_started' | 'kyc_completed_not_funded' | 'funded_not_purchased';
 interface LifecycleSentStats { sent: number; opened: number; clicked: number; failed: number; resolved: number; }
@@ -95,6 +95,21 @@ function duration(value: number | null | undefined): string {
 }
 function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleString('en-GB') : '—';
+}
+// "Today, 14:32" / "Yesterday, 09:10" / falls back to a full date beyond
+// that — an aggregate count on its own can't tell you whether something is
+// actively happening right now or was a one-off weeks ago.
+function relativeDate(value: string | null): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  const now = new Date();
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const dayDiff = Math.round((startOfDay(now) - startOfDay(date)) / 86400000);
+  const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  if (dayDiff === 0) return `Today, ${time}`;
+  if (dayDiff === 1) return `Yesterday, ${time}`;
+  if (dayDiff > 1 && dayDiff < 7) return `${dayDiff} days ago, ${time}`;
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + `, ${time}`;
 }
 function humanize(value: string): string {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -322,8 +337,8 @@ export default function OnboardingPage() {
             <span key={cat} className={`badge ${FAULT_BADGE_CLASS[cat]}`}>{FAULT_LABELS[cat]}: {faultTotals[cat].toLocaleString()}</span>
           ))}
         </div>
-        <table><thead><tr><th>Journey area</th><th>Failure code</th><th>Whose fault</th><th>Affected installations</th><th>Attempts</th></tr></thead><tbody>
-          {report.failures.map((failure, index) => <tr key={`${failure.event_type}:${failure.failure_code}:${index}`}><td>{humanize(failure.event_type)}</td><td><span className="badge failed">{failure.failure_code ? humanize(failure.failure_code) : 'Unknown'}</span></td><td><span className={`badge ${FAULT_BADGE_CLASS[failure.fault_category]}`}>{FAULT_LABELS[failure.fault_category]}</span></td><td>{failure.affected_installations.toLocaleString()}</td><td>{failure.attempts.toLocaleString()}</td></tr>)}
+        <table><thead><tr><th>Journey area</th><th>Failure code</th><th>Whose fault</th><th>Affected installations</th><th>Attempts</th><th>Last seen</th><th>First seen</th></tr></thead><tbody>
+          {report.failures.map((failure, index) => <tr key={`${failure.event_type}:${failure.failure_code}:${index}`}><td>{humanize(failure.event_type)}</td><td><span className="badge failed">{failure.failure_code ? humanize(failure.failure_code) : 'Unknown'}</span></td><td><span className={`badge ${FAULT_BADGE_CLASS[failure.fault_category]}`}>{FAULT_LABELS[failure.fault_category]}</span></td><td>{failure.affected_installations.toLocaleString()}</td><td>{failure.attempts.toLocaleString()}</td><td>{relativeDate(failure.last_occurred_at)}</td><td className="muted">{formatDate(failure.first_occurred_at)}</td></tr>)}
         </tbody></table>
         </>}
       </div>
