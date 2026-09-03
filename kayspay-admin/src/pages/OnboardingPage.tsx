@@ -49,6 +49,18 @@ const LIFECYCLE_STAGE_LABELS: Record<LifecycleStage, string> = {
   kyc_completed_not_funded: 'KYC verified, wallet not funded',
   funded_not_purchased: 'Funded, no purchase yet',
 };
+// Three of the seven "stuck" stages have a real-data equivalent computed
+// straight from user_pins/user_kyc/transactions (see admin_lifecycle_reminder_report,
+// migration 197) rather than the client-analytics table this funnel otherwise
+// runs on — that table has a confirmed linkage gap for real accounts
+// (investigated 2026-09-02), so wherever a real number exists it replaces
+// the analytics estimate instead of sitting next to it as a second,
+// disagreeing number.
+const STUCK_TO_LIFECYCLE_STAGE: Partial<Record<string, LifecycleStage>> = {
+  verified_pin_incomplete: 'pin_not_set',
+  kyc_completed_not_funded: 'kyc_completed_not_funded',
+  funded_not_purchased: 'funded_not_purchased',
+};
 const TIMING_LABELS: Record<string, string> = {
   activation_to_account: 'App open → account', account_to_verification: 'Account → verification',
   verification_to_home: 'Verification → home', kyc_to_funding: 'KYC → funding',
@@ -209,13 +221,21 @@ export default function OnboardingPage() {
           {Object.entries(TIMING_LABELS).map(([key, label]) => <div className="timing-row" key={key}><span>{label}</span><span><strong>{duration(report.timing[`${key}_median_seconds`])}</strong><small>P75 {duration(report.timing[`${key}_p75_seconds`])}</small></span></div>)}
         </div></div>
         <div className="card"><h3>Customers currently stuck</h3><div className="stuck-list">
-          {Object.entries(STUCK_LABELS).map(([key, label]) => <div className="stuck-row" key={key}><span>{label}</span><strong className={(report.stuck[key] || 0) > 0 ? 'warning-number' : ''}>{(report.stuck[key] || 0).toLocaleString()}</strong></div>)}
-        </div><p className="muted stuck-note">These are analytical counts, not marketing eligibility. Consent checks will be added in the campaign phase.</p></div>
+          {Object.entries(STUCK_LABELS).map(([key, label]) => {
+            const lifecycleStage = STUCK_TO_LIFECYCLE_STAGE[key];
+            const hasRealCount = lifecycleStage && report.lifecycle_reminders;
+            const count = hasRealCount ? report.lifecycle_reminders!.stuck_now[lifecycleStage] : (report.stuck[key] || 0);
+            return <div className="stuck-row" key={key}>
+              <span>{label} {hasRealCount ? <span className="badge completed" title="Computed from real KYC/wallet/transaction records">Verified</span> : <span className="badge pending" title="Estimated from app analytics events — may undercount">Est.</span>}</span>
+              <strong className={count > 0 ? 'warning-number' : ''}>{count.toLocaleString()}</strong>
+            </div>;
+          })}
+        </div><p className="muted stuck-note">"Verified" counts come straight from account records (KYC, wallet, transactions). "Est." counts come from app analytics events, which can undercount real accounts — see the Lifecycle reminders card below for how those are acted on.</p></div>
       </div>
 
       {report.lifecycle_reminders && <div className="card">
         <div className="row between section-heading">
-          <div><h3>Lifecycle reminders</h3><p className="muted">Automated emails for customers stuck at PIN setup, funding, or first purchase. Up to 2 attempts per stage, then it stops for good.</p></div>
+          <div><h3>Lifecycle reminders</h3><p className="muted">Automated emails for the three "Verified" stages above (PIN setup, funding, first purchase). Up to 2 attempts per stage, then it stops for good.</p></div>
           <button
             className={report.lifecycle_reminders.enabled ? 'secondary' : 'primary'}
             disabled={togglingReminders}
@@ -224,12 +244,11 @@ export default function OnboardingPage() {
             {togglingReminders ? 'Saving…' : report.lifecycle_reminders.enabled ? 'Pause reminders' : 'Enable reminders'}
           </button>
         </div>
-        <table><thead><tr><th>Stage</th><th>Stuck right now</th><th>Sent</th><th>Opened</th><th>Clicked</th><th>Resolved after send</th></tr></thead><tbody>
+        <table><thead><tr><th>Stage</th><th>Sent</th><th>Opened</th><th>Clicked</th><th>Resolved after send</th></tr></thead><tbody>
           {(Object.keys(LIFECYCLE_STAGE_LABELS) as LifecycleStage[]).map((stage) => {
             const stats = report.lifecycle_reminders!.sent_stats[stage];
             return <tr key={stage}>
               <td>{LIFECYCLE_STAGE_LABELS[stage]}</td>
-              <td><strong className={report.lifecycle_reminders!.stuck_now[stage] > 0 ? 'warning-number' : ''}>{(report.lifecycle_reminders!.stuck_now[stage] || 0).toLocaleString()}</strong></td>
               <td>{(stats?.sent || 0).toLocaleString()}</td>
               <td>{(stats?.opened || 0).toLocaleString()}</td>
               <td>{(stats?.clicked || 0).toLocaleString()}</td>
