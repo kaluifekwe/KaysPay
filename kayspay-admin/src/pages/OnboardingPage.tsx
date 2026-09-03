@@ -7,10 +7,16 @@ interface FailureRow { event_type: string; failure_code: string | null; affected
 interface BreakdownRow { value: string; installations: number; }
 type LifecycleStage = 'pin_not_set' | 'kyc_completed_not_funded' | 'funded_not_purchased';
 interface LifecycleSentStats { sent: number; opened: number; clicked: number; failed: number; resolved: number; }
+interface FollowupCandidate {
+  user_id: string; email: string; full_name: string | null; stage: LifecycleStage;
+  last_sent_at: string | null; last_opened_at: string | null; last_clicked_at: string | null;
+  manual_sends_count: number;
+}
 interface LifecycleReminderReport {
   enabled: boolean;
   stuck_now: Record<LifecycleStage, number>;
   sent_stats: Partial<Record<LifecycleStage, LifecycleSentStats>>;
+  followup_candidates: FollowupCandidate[];
 }
 interface OnboardingReport {
   cohort: { start: string; end: string; installations: number };
@@ -85,6 +91,9 @@ function duration(value: number | null | undefined): string {
   if (value < 86400) return `${(value / 3600).toFixed(value < 7200 ? 1 : 0)} hr`;
   return `${(value / 86400).toFixed(1)} days`;
 }
+function formatDate(value: string | null): string {
+  return value ? new Date(value).toLocaleString('en-GB') : '—';
+}
 function humanize(value: string): string {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
@@ -106,6 +115,8 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [togglingReminders, setTogglingReminders] = useState(false);
+  const [sendingFollowup, setSendingFollowup] = useState<string | null>(null);
+  const [followupResult, setFollowupResult] = useState<{ key: string; message: string; ok: boolean } | null>(null);
 
   const load = useCallback(async (requested: Filters) => {
     if (!requested.start || !requested.end || requested.start > requested.end) {
@@ -140,6 +151,20 @@ export default function OnboardingPage() {
     } catch (toggleError) {
       setError(toggleError instanceof AdminApiError ? toggleError.message : 'Could not update lifecycle reminders.');
     } finally { setTogglingReminders(false); }
+  }, [filters, load]);
+
+  const sendFollowup = useCallback(async (userId: string, stage: LifecycleStage) => {
+    const key = `${userId}:${stage}`;
+    setSendingFollowup(key); setFollowupResult(null);
+    try {
+      const response = await callAdmin<{ attempt_number: number }>('admin-onboarding-report', {
+        method: 'POST', body: { action: 'send_followup', user_id: userId, stage },
+      });
+      setFollowupResult({ key, ok: true, message: `Sent (attempt #${response.attempt_number}).` });
+      await load(filters);
+    } catch (sendError) {
+      setFollowupResult({ key, ok: false, message: sendError instanceof AdminApiError ? sendError.message : 'Could not send follow-up.' });
+    } finally { setSendingFollowup(null); }
   }, [filters, load]);
 
   const stageRows = useMemo(() => {
@@ -257,6 +282,35 @@ export default function OnboardingPage() {
           })}
         </tbody></table>
         {!report.lifecycle_reminders.enabled && <p className="muted" style={{ marginTop: 12 }}>Paused — no reminders are being sent. Enable to start sending to customers currently stuck.</p>}
+      </div>}
+
+      {report.lifecycle_reminders && <div className="card table-scroll">
+        <h3>Needs manual follow-up</h3>
+        <p className="muted">Both automatic reminders were sent, they're still genuinely stuck, and haven't been contacted since. Send a follow-up yourself — no automatic cap applies here.</p>
+        {report.lifecycle_reminders.followup_candidates.length === 0 ? <p className="muted" style={{ marginTop: 12 }}>Nobody currently needs a manual follow-up.</p> : <table style={{ marginTop: 12 }}>
+          <thead><tr><th>Customer</th><th>Stage</th><th>Last sent</th><th>Opened</th><th>Clicked</th><th>Manual sends so far</th><th></th></tr></thead>
+          <tbody>
+            {report.lifecycle_reminders.followup_candidates.map((candidate) => {
+              const key = `${candidate.user_id}:${candidate.stage}`;
+              const isSending = sendingFollowup === key;
+              const result = followupResult?.key === key ? followupResult : null;
+              return <tr key={key}>
+                <td>{candidate.full_name || '(no name)'}<br /><span className="muted">{candidate.email}</span></td>
+                <td>{LIFECYCLE_STAGE_LABELS[candidate.stage]}</td>
+                <td className="muted">{formatDate(candidate.last_sent_at)}</td>
+                <td>{candidate.last_opened_at ? <span className="badge completed">Yes</span> : <span className="badge pending">No</span>}</td>
+                <td>{candidate.last_clicked_at ? <span className="badge completed">Yes</span> : <span className="badge pending">No</span>}</td>
+                <td>{candidate.manual_sends_count}</td>
+                <td>
+                  <button className="secondary" disabled={isSending} onClick={() => void sendFollowup(candidate.user_id, candidate.stage)}>
+                    {isSending ? 'Sending…' : 'Send follow-up now'}
+                  </button>
+                  {result && <div className={result.ok ? 'muted' : 'error-text'} style={{ marginTop: 4, fontSize: 11.5 }}>{result.message}</div>}
+                </td>
+              </tr>;
+            })}
+          </tbody>
+        </table>}
       </div>}
 
       <div className="card table-scroll"><h3>Top failure reasons</h3>
