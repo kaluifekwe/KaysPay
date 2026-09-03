@@ -17,6 +17,12 @@ interface DataPlan {
   computed_discount_kobo: number | null;
   computed_cashback_kobo: number | null;
   computed_price_kobo: number | null;
+  normalized_data_mb: number | null;
+  validity_days: number | null;
+  validity_adjustment_kobo: number;
+  requires_pricing_review: boolean;
+  pricing_review_reason: string | null;
+  pricing_engine_version: number;
 }
 
 interface MarkupBracket {
@@ -25,6 +31,8 @@ interface MarkupBracket {
   max_price_kobo: number;
   markup_type: 'flat' | 'percent';
   markup_value: number;
+  min_markup_kobo: number;
+  min_net_margin_kobo: number;
   updated_at: string;
 }
 
@@ -130,9 +138,11 @@ interface BracketDraft {
   max: string;
   type: 'flat' | 'percent';
   value: string;
+  minMarkup: string;
+  minNet: string;
 }
 
-const EMPTY_BRACKET_DRAFT: BracketDraft = { min: '', max: '', type: 'flat', value: '' };
+const EMPTY_BRACKET_DRAFT: BracketDraft = { min: '', max: '', type: 'percent', value: '', minMarkup: '', minNet: '' };
 
 function bracketToDraft(bracket: MarkupBracket): BracketDraft {
   return {
@@ -142,6 +152,8 @@ function bracketToDraft(bracket: MarkupBracket): BracketDraft {
     value: bracket.markup_type === 'flat'
       ? (bracket.markup_value / 100).toFixed(2)
       : (bracket.markup_value / 100).toFixed(2),
+    minMarkup: (bracket.min_markup_kobo / 100).toFixed(2),
+    minNet: (bracket.min_net_margin_kobo / 100).toFixed(2),
   };
 }
 
@@ -160,7 +172,22 @@ export default function PricingPage() {
   const [engineConfig, setEngineConfig] = useState<PricingEngineConfig | null>(null);
   const [network, setNetwork] = useState('mtn');
   const [cabletvProvider, setCabletvProvider] = useState('gotv');
-  const [error, setError] = useState<string | null>(null);
+  // Keyed by section (matching the `busy` key convention already used
+  // below) rather than one shared string — a validation error used to only
+  // ever render at the very top of this long, multi-section page, so an
+  // error from a section far down (e.g. the electricity fee card) was
+  // invisible to anyone scrolled past it. It looked exactly like the save
+  // silently did nothing.
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const setSectionError = (section: string, message: string) =>
+    setErrors((current) => ({ ...current, [section]: message }));
+  const clearSectionError = (section: string) =>
+    setErrors((current) => {
+      if (!(section in current)) return current;
+      const next = { ...current };
+      delete next[section];
+      return next;
+    });
   const [loading, setLoading] = useState(true);
   const [planInputs, setPlanInputs] = useState<Record<string, string>>({});
   const [serviceCostInputs, setServiceCostInputs] = useState<Record<string, string>>({});
@@ -200,11 +227,11 @@ export default function PricingPage() {
 
   const load = async () => {
     setLoading(true);
-    setError(null);
+    clearSectionError('page');
     try {
       applyPricingData(await fetchPricingData());
     } catch (e) {
-      setError(e instanceof AdminApiError ? e.message : 'Could not load pricing');
+      setSectionError('page', e instanceof AdminApiError ? e.message : 'Could not load pricing');
     } finally {
       setLoading(false);
     }
@@ -219,7 +246,7 @@ export default function PricingPage() {
   const savePlanPrice = async (planId: string) => {
     const key = `plan:${network}:${planId}`;
     const text = planInputs[key];
-    setError(null);
+    clearSectionError('data_plan');
     setBusy(key);
     try {
       // Blank input clears back to the provider's own price — never
@@ -231,7 +258,7 @@ export default function PricingPage() {
       }
       const markupKobo = nairaTextToMarkupKobo(text);
       if (markupKobo === null) {
-        setError('Enter a valid markup (0 or more), or leave it blank to use the provider price.');
+        setSectionError('data_plan', 'Enter a valid markup (0 or more), or leave it blank to use the provider price.');
         return;
       }
       // Refetch right before computing the final price — the provider's own
@@ -242,7 +269,7 @@ export default function PricingPage() {
       applyPricingData(fresh);
       const plan = fresh.plans.find((item) => item.id === planId && item.network === network);
       if (!plan) {
-        setError('Could not find this plan — try reloading the page.');
+        setSectionError('data_plan', 'Could not find this plan — try reloading the page.');
         return;
       }
       // The stored override is always the final price the customer pays —
@@ -254,7 +281,7 @@ export default function PricingPage() {
         { provider: 'vtunaija', network, plan_id: planId, price_kobo: priceKobo, updated_at: new Date().toISOString() },
       ]);
     } catch (e) {
-      setError(e instanceof AdminApiError ? e.message : 'Could not save the price');
+      setSectionError('data_plan', e instanceof AdminApiError ? e.message : 'Could not save the price');
     } finally {
       setBusy(null);
     }
@@ -263,19 +290,19 @@ export default function PricingPage() {
   const serviceRow = (serviceKey: string) => servicePricing.find((item) => item.service_key === serviceKey);
 
   const saveServicePrice = async (serviceKey: string) => {
-    setError(null);
+    clearSectionError('service_price');
     const row = serviceRow(serviceKey);
     const costText = serviceCostInputs[serviceKey] ?? (row ? (row.provider_cost_kobo / 100).toFixed(2) : '0');
     const markupText = serviceMarkupInputs[serviceKey] ?? (row ? ((row.price_kobo - row.provider_cost_kobo) / 100).toFixed(2) : '');
     const costKobo = nairaTextToMarkupKobo(costText);
     const markupKobo = nairaTextToMarkupKobo(markupText);
     if (costKobo === null || markupKobo === null) {
-      setError('Enter a valid provider cost and markup (0 or more).');
+      setSectionError('service_price', 'Enter a valid provider cost and markup (0 or more).');
       return;
     }
     const priceKobo = costKobo + markupKobo;
     if (priceKobo <= 0) {
-      setError('The final price customers pay must be more than ₦0.');
+      setSectionError('service_price', 'The final price customers pay must be more than ₦0.');
       return;
     }
     setBusy(`service:${serviceKey}`);
@@ -289,7 +316,7 @@ export default function PricingPage() {
         { service_key: serviceKey, price_kobo: priceKobo, provider_cost_kobo: costKobo, updated_at: new Date().toISOString() },
       ]);
     } catch (e) {
-      setError(e instanceof AdminApiError ? e.message : 'Could not save the price');
+      setSectionError('service_price', e instanceof AdminApiError ? e.message : 'Could not save the price');
     } finally {
       setBusy(null);
     }
@@ -301,7 +328,7 @@ export default function PricingPage() {
   const saveCabletvPrice = async (planId: string) => {
     const key = `cabletv:${cabletvProvider}:${planId}`;
     const text = cabletvInputs[key];
-    setError(null);
+    clearSectionError('cable_tv');
     setBusy(key);
     try {
       if (text === undefined || text.trim() === '') {
@@ -311,7 +338,7 @@ export default function PricingPage() {
       }
       const markupKobo = nairaTextToMarkupKobo(text);
       if (markupKobo === null) {
-        setError('Enter a valid markup (0 or more), or leave it blank to use the provider price.');
+        setSectionError('cable_tv', 'Enter a valid markup (0 or more), or leave it blank to use the provider price.');
         return;
       }
       // See savePlanPrice — refetch so the markup is added to the provider's
@@ -320,7 +347,7 @@ export default function PricingPage() {
       applyPricingData(fresh);
       const plan = fresh.cabletv_plans.find((item) => item.provider === cabletvProvider && item.cabletv_plan_id === planId);
       if (!plan) {
-        setError('Could not find this bouquet — try reloading the page.');
+        setSectionError('cable_tv', 'Could not find this bouquet — try reloading the page.');
         return;
       }
       const priceKobo = plan.reseller_kobo + markupKobo;
@@ -330,7 +357,7 @@ export default function PricingPage() {
         { provider: cabletvProvider, plan_id: planId, price_kobo: priceKobo, updated_at: new Date().toISOString() },
       ]);
     } catch (e) {
-      setError(e instanceof AdminApiError ? e.message : 'Could not save the price');
+      setSectionError('cable_tv', e instanceof AdminApiError ? e.message : 'Could not save the price');
     } finally {
       setBusy(null);
     }
@@ -341,7 +368,7 @@ export default function PricingPage() {
   const saveExamPrice = async (examId: string) => {
     const key = `exam:${examId}`;
     const text = examInputs[examId];
-    setError(null);
+    clearSectionError('exam_pin');
     setBusy(key);
     try {
       if (text === undefined || text.trim() === '') {
@@ -351,7 +378,7 @@ export default function PricingPage() {
       }
       const markupKobo = nairaTextToMarkupKobo(text);
       if (markupKobo === null) {
-        setError('Enter a valid markup (0 or more), or leave it blank to use the provider price.');
+        setSectionError('exam_pin', 'Enter a valid markup (0 or more), or leave it blank to use the provider price.');
         return;
       }
       // See savePlanPrice — refetch so the markup is added to the provider's
@@ -362,7 +389,7 @@ export default function PricingPage() {
       applyPricingData(fresh);
       const exam = fresh.exam_plans.find((item) => item.id === examId);
       if (!exam) {
-        setError('Could not find this exam — try reloading the page.');
+        setSectionError('exam_pin', 'Could not find this exam — try reloading the page.');
         return;
       }
       const priceKobo = exam.customer_kobo + markupKobo;
@@ -372,18 +399,22 @@ export default function PricingPage() {
         { exam_id: examId, price_kobo: priceKobo, updated_at: new Date().toISOString() },
       ]);
     } catch (e) {
-      setError(e instanceof AdminApiError ? e.message : 'Could not save the price');
+      setSectionError('exam_pin', e instanceof AdminApiError ? e.message : 'Could not save the price');
     } finally {
       setBusy(null);
     }
   };
 
   const saveElectricityFee = async () => {
-    setError(null);
-    const text = electricityFeeInput ?? (electricityFee ? (electricityFee.fee_kobo / 100).toFixed(2) : '0');
+    clearSectionError('electricity_fee');
+    const rawText = electricityFeeInput ?? (electricityFee ? (electricityFee.fee_kobo / 100).toFixed(2) : '0');
+    // The label says "Set to 0 to disable" -- clearing the box to blank is
+    // the obvious way someone tries to remove the fee, so treat that the
+    // same as typing 0 rather than rejecting it as invalid.
+    const text = rawText.trim() === '' ? '0' : rawText;
     const feeKobo = nairaTextToMarkupKobo(text);
     if (feeKobo === null) {
-      setError('Enter a valid fee (0 or more).');
+      setSectionError('electricity_fee', 'Enter a valid fee (0 or more).');
       return;
     }
     setBusy('electricity_fee');
@@ -392,7 +423,7 @@ export default function PricingPage() {
       setElectricityFee({ fee_kobo: feeKobo, updated_at: new Date().toISOString() });
       setElectricityFeeInput(undefined);
     } catch (e) {
-      setError(e instanceof AdminApiError ? e.message : 'Could not save the fee');
+      setSectionError('electricity_fee', e instanceof AdminApiError ? e.message : 'Could not save the fee');
     } finally {
       setBusy(null);
     }
@@ -409,13 +440,16 @@ export default function PricingPage() {
     const key = bracketId === null ? 'bracket:new' : `bracket:${bracketId}`;
     const bracket = markupBrackets.find((item) => item.id === bracketId);
     const draft = draftFor(key, bracket);
-    setError(null);
+    clearSectionError('bracket');
 
     const minKobo = nairaTextToMarkupKobo(draft.min);
     const maxKobo = nairaTextToMarkupKobo(draft.max);
     const value = draft.type === 'flat' ? nairaTextToMarkupKobo(draft.value) : percentTextToBasisPoints(draft.value);
-    if (minKobo === null || maxKobo === null || maxKobo <= minKobo || value === null || value <= 0) {
-      setError('Enter a valid price range and a markup greater than zero.');
+    const minMarkupKobo = nairaTextToMarkupKobo(draft.minMarkup);
+    const minNetMarginKobo = nairaTextToMarkupKobo(draft.minNet);
+    if (minKobo === null || maxKobo === null || maxKobo <= minKobo || value === null || value <= 0 ||
+        minMarkupKobo === null || minNetMarginKobo === null || minNetMarginKobo > minMarkupKobo) {
+      setSectionError('bracket', 'Enter a valid range, target markup, and a minimum net margin no higher than the gross floor.');
       return;
     }
 
@@ -426,16 +460,18 @@ export default function PricingPage() {
         body: {
           target: 'data_markup_bracket', bracket_id: bracketId,
           min_price_kobo: minKobo, max_price_kobo: maxKobo, markup_type: draft.type, markup_value: value,
+          min_markup_kobo: minMarkupKobo, min_net_margin_kobo: minNetMarginKobo,
         },
       });
       const saved: MarkupBracket = {
         id: bracketId ?? result.bracket_id, min_price_kobo: minKobo, max_price_kobo: maxKobo,
         markup_type: draft.type, markup_value: value, updated_at: new Date().toISOString(),
+        min_markup_kobo: minMarkupKobo, min_net_margin_kobo: minNetMarginKobo,
       };
       setMarkupBrackets((current) => [...current.filter((item) => item.id !== saved.id), saved].sort((a, b) => a.min_price_kobo - b.min_price_kobo));
       setBracketDrafts((current) => { const next = { ...current }; delete next[key]; return next; });
     } catch (e) {
-      setError(e instanceof AdminApiError ? e.message : 'Could not save the bracket');
+      setSectionError('bracket', e instanceof AdminApiError ? e.message : 'Could not save the bracket');
     } finally {
       setBusy(null);
     }
@@ -443,13 +479,13 @@ export default function PricingPage() {
 
   const deleteBracket = async (bracketId: number) => {
     const key = `bracket:${bracketId}`;
-    setError(null);
+    clearSectionError('bracket');
     setBusy(key);
     try {
       await callAdmin('admin-pricing-controls', { method: 'POST', body: { target: 'data_markup_bracket', bracket_id: bracketId, clear: true } });
       setMarkupBrackets((current) => current.filter((item) => item.id !== bracketId));
     } catch (e) {
-      setError(e instanceof AdminApiError ? e.message : 'Could not delete the bracket');
+      setSectionError('bracket', e instanceof AdminApiError ? e.message : 'Could not delete the bracket');
     } finally {
       setBusy(null);
     }
@@ -477,30 +513,30 @@ export default function PricingPage() {
   const saveEngineConfig = async () => {
     const draft = resolvedConfigDraft();
     if (!draft) return;
-    setError(null);
+    clearSectionError('engine_config');
     const maxAdjust = Number(draft.max_adjust);
     const priceWindow = Number(draft.price_window);
     const floorKobo = nairaTextToMarkupKobo(draft.floor);
     const discountPercent = Number(draft.discount);
     const cashbackPercent = Number(draft.cashback);
     if (!Number.isFinite(maxAdjust) || maxAdjust < 0 || maxAdjust > 100) {
-      setError('Max adjust must be between 0 and 100.');
+      setSectionError('engine_config', 'Max adjust must be between 0 and 100.');
       return;
     }
     if (!Number.isFinite(priceWindow) || priceWindow <= 0 || priceWindow > 50) {
-      setError('Price window must be between 0 and 50.');
+      setSectionError('engine_config', 'Price window must be between 0 and 50.');
       return;
     }
     if (floorKobo === null) {
-      setError('Enter a valid markup floor.');
+      setSectionError('engine_config', 'Enter a valid markup floor.');
       return;
     }
     if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
-      setError('Discount % of markup must be between 0 and 100.');
+      setSectionError('engine_config', 'Discount % of markup must be between 0 and 100.');
       return;
     }
     if (!Number.isFinite(cashbackPercent) || cashbackPercent < 0 || cashbackPercent > 100) {
-      setError('Cashback % of markup must be between 0 and 100.');
+      setSectionError('engine_config', 'Cashback % of markup must be between 0 and 100.');
       return;
     }
     setBusy('engine_config');
@@ -523,7 +559,7 @@ export default function PricingPage() {
       });
       setConfigDraft(undefined);
     } catch (e) {
-      setError(e instanceof AdminApiError ? e.message : 'Could not save the settings');
+      setSectionError('engine_config', e instanceof AdminApiError ? e.message : 'Could not save the settings');
     } finally {
       setBusy(null);
     }
@@ -536,15 +572,16 @@ export default function PricingPage() {
         Data plans and cable TV: enter a markup to add on top of the provider's price — leave it blank to charge the provider's price with no markup. NIN &amp; BVN: enter what the provider bills you plus your markup. Electricity: a flat fee added to whatever amount the customer tops up. Changes apply to the very next purchase.
       </p>
       {!canEdit && <p className="muted">You have view-only access. Only super admins can change prices.</p>}
-      {error && <div className="error-text">{error}</div>}
+      {errors.page && <div className="error-text">{errors.page}</div>}
 
       {loading ? <p className="muted">Loading…</p> : (
         <>
           <div className="card">
             <h3>Automatic Data Markup Engine</h3>
             <p className="muted">
-              Runs on every catalogue sync (every 5 minutes), across mtn, glo, 9mobile and airtel at once — a new plan the provider adds gets priced automatically, no manual entry needed. A manual markup set below in Data Plan Pricing still overrides this for that one plan. Value-density lowers markup on the best-value plan among similarly-priced siblings and raises it on the weaker one.
+              Runs on every catalogue sync across all networks. Each band charges the greater of its percentage target or minimum gross markup, while the net floor protects what remains after cashback. Manual pricing below remains an explicit per-plan override.
             </p>
+            {errors.engine_config && <div className="error-text">{errors.engine_config}</div>}
             {engineConfig && (() => {
               const draft = resolvedConfigDraft()!;
               return (
@@ -557,41 +594,10 @@ export default function PricingPage() {
                       />
                       Engine enabled
                     </label>
-                    <label className="checkbox-row">
-                      <input
-                        type="checkbox" checked={draft.value_density_enabled} disabled={!canEdit}
-                        onChange={(event) => setConfigField('value_density_enabled', event.target.checked)}
-                      />
-                      Value-density adjustment
-                    </label>
                   </div>
                   <div className="engine-config-grid">
                     <label>
-                      Max adjust %
-                      <input
-                        className="mono" disabled={!canEdit}
-                        value={draft.max_adjust}
-                        onChange={(event) => setConfigField('max_adjust', event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Sibling price window %
-                      <input
-                        className="mono" disabled={!canEdit}
-                        value={draft.price_window}
-                        onChange={(event) => setConfigField('price_window', event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Markup floor (₦)
-                      <input
-                        className="mono" disabled={!canEdit}
-                        value={draft.floor}
-                        onChange={(event) => setConfigField('floor', event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Discount % of markup
+                      Universal discount % of markup
                       <input
                         className="mono" disabled={!canEdit}
                         value={draft.discount}
@@ -618,11 +624,12 @@ export default function PricingPage() {
               );
             })()}
             <p className="muted" style={{ marginTop: -4, marginBottom: 16 }}>
-              Discount is applied to the real charged price shown below. Cashback is computed and shown for your visibility only — there's no customer-facing cashback balance yet, so it is not shown to customers or promised anywhere in the app.
+              The universal discount is deducted immediately from KaysPay's markup for every automatically priced plan. Cashback is credited separately after a successful purchase. Both are included when protecting the minimum retained margin.
             </p>
+            {errors.bracket && <div className="error-text">{errors.bracket}</div>}
 
             <table>
-              <thead><tr><th>Price from</th><th>Price to</th><th>Type</th><th>Value</th>{canEdit && <th />}</tr></thead>
+              <thead><tr><th>Price from</th><th>Price to</th><th>Type</th><th>Target</th><th>Min gross (₦)</th><th>Min net (₦)</th>{canEdit && <th />}</tr></thead>
               <tbody>
                 {markupBrackets.map((bracket) => {
                   const key = `bracket:${bracket.id}`;
@@ -638,6 +645,8 @@ export default function PricingPage() {
                         </select>
                       </td>
                       <td><input className="mono" style={{ width: 70, textAlign: 'right' }} disabled={!canEdit} value={draft.value} onChange={(e) => setDraftField(key, bracket, 'value', e.target.value)} /></td>
+                      <td><input className="mono" style={{ width: 80, textAlign: 'right' }} disabled={!canEdit} value={draft.minMarkup} onChange={(e) => setDraftField(key, bracket, 'minMarkup', e.target.value)} /></td>
+                      <td><input className="mono" style={{ width: 80, textAlign: 'right' }} disabled={!canEdit} value={draft.minNet} onChange={(e) => setDraftField(key, bracket, 'minNet', e.target.value)} /></td>
                       {canEdit && (
                         <td style={{ display: 'flex', gap: 6 }}>
                           <button className="primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === key} onClick={() => void saveBracket(bracket.id)}>Save</button>
@@ -658,6 +667,8 @@ export default function PricingPage() {
                       </select>
                     </td>
                     <td><input className="mono" style={{ width: 70, textAlign: 'right' }} placeholder="0" value={draftFor('bracket:new').value} onChange={(e) => setDraftField('bracket:new', undefined, 'value', e.target.value)} /></td>
+                    <td><input className="mono" style={{ width: 80, textAlign: 'right' }} placeholder="0" value={draftFor('bracket:new').minMarkup} onChange={(e) => setDraftField('bracket:new', undefined, 'minMarkup', e.target.value)} /></td>
+                    <td><input className="mono" style={{ width: 80, textAlign: 'right' }} placeholder="0" value={draftFor('bracket:new').minNet} onChange={(e) => setDraftField('bracket:new', undefined, 'minNet', e.target.value)} /></td>
                     <td>
                       <button className="primary" style={{ padding: '6px 12px', fontSize: 12 }} disabled={busy === 'bracket:new'} onClick={() => void saveBracket(null)}>Add bracket</button>
                     </td>
@@ -670,6 +681,7 @@ export default function PricingPage() {
           <div className="card">
             <h3>Data Plan Pricing</h3>
             <p className="muted">Showing available and unavailable plans — pricing works independently of availability, set on the Service Controls page.</p>
+            {errors.data_plan && <div className="error-text">{errors.data_plan}</div>}
             <div className="row" style={{ marginBottom: 12 }}>
               <label htmlFor="pricing-network">Network</label>
               <select id="pricing-network" value={network} onChange={(event) => setNetwork(event.target.value)}>
@@ -681,9 +693,7 @@ export default function PricingPage() {
               // cost — discount/cashback are engine-only concepts, they don't
               // apply once an admin has hand-set a final price. Auto-priced:
               // keep is markup minus discount minus cashback — the true net
-              // margin AS IF cashback were already being paid out (it isn't
-              // credited to anyone yet), so this is the honest full-rollout
-              // number, not what's actually pocketed today.
+              // margin after the cashback ledger credit.
               const keepFor = (plan: DataPlan): number | null => {
                 const override = overrideFor(plan.id);
                 if (override) return override.price_kobo - plan.reseller_kobo;
@@ -700,7 +710,7 @@ export default function PricingPage() {
                   </p>
                   <table>
                     <thead>
-                      <tr><th>Plan</th><th>Status</th><th>Provider Price</th><th>Auto Price</th><th title="Admin visibility only — not shown to customers yet">Discount / Cashback</th><th title="Markup minus discount minus cashback — net margin as if cashback were already being paid out">You Keep</th><th>Your Manual Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr>
+                      <tr><th>Plan</th><th>Pricing check</th><th>Provider Price</th><th>Auto Price</th><th>Validity add-on</th><th>Discount / Cashback</th><th title="Markup minus discount minus cashback">You Keep</th><th>Your Manual Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr>
                     </thead>
                     <tbody>
                       {networkPlans.map((plan) => {
@@ -722,10 +732,15 @@ export default function PricingPage() {
                         const keepKobo = keepFor(plan);
                         return (
                           <tr key={plan.id}>
-                            <td>{plan.name} · {plan.validity}</td>
-                            <td><span className={`badge ${plan.available ? 'enabled' : 'disabled'}`}>{plan.available ? 'Available' : 'Unavailable'}</span></td>
+                            <td>{plan.name} · {plan.validity}<div className="muted" style={{ fontSize: 11 }}>{plan.family_name}</div></td>
+                            <td title={plan.pricing_review_reason ?? undefined}>
+                              <span className={`badge ${plan.requires_pricing_review ? 'disabled' : 'enabled'}`}>
+                                {plan.requires_pricing_review ? 'Review' : 'Balanced'}
+                              </span>
+                            </td>
                             <td className="mono muted">{formatNaira(plan.reseller_kobo)}</td>
                             <td className="mono muted">{plan.computed_price_kobo === null ? '—' : formatNaira(plan.computed_price_kobo)}</td>
+                            <td className="mono muted">{formatNaira(plan.validity_adjustment_kobo)}</td>
                             <td className="mono muted">
                               {plan.computed_discount_kobo === null ? '—' : `${formatNaira(plan.computed_discount_kobo)} / ${formatNaira(plan.computed_cashback_kobo ?? 0)}`}
                             </td>
@@ -761,6 +776,7 @@ export default function PricingPage() {
           <div className="card">
             <h3>Cable TV Pricing</h3>
             <p className="muted">GOTV, DSTV, and Startimes bouquets — same markup model as data plans.</p>
+            {errors.cable_tv && <div className="error-text">{errors.cable_tv}</div>}
             <div className="row" style={{ marginBottom: 12 }}>
               <label htmlFor="pricing-cabletv-provider">Provider</label>
               <select id="pricing-cabletv-provider" value={cabletvProvider} onChange={(event) => setCabletvProvider(event.target.value)}>
@@ -816,6 +832,7 @@ export default function PricingPage() {
           <div className="card">
             <h3>NIN &amp; BVN Service Pricing</h3>
             <p className="muted">Provider Cost is what Prembly/CheckMyNINBVN actually bill you — set manually, since it isn't fetched automatically.</p>
+            {errors.service_price && <div className="error-text">{errors.service_price}</div>}
             <table>
               <thead><tr><th>Service</th><th>Provider Cost</th><th>Your Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr></thead>
               <tbody>
@@ -874,6 +891,7 @@ export default function PricingPage() {
             <p className="muted">
               Provider Price is synced from VTUnaija every 15 minutes and re-syncs regardless of any markup set here — your markup is stored separately and re-applied automatically on top of whatever the provider is currently charging.
             </p>
+            {errors.exam_pin && <div className="error-text">{errors.exam_pin}</div>}
             <table>
               <thead><tr><th>Exam</th><th>Status</th><th>Provider Price</th><th>Your Markup</th><th>Customer Pays</th>{canEdit && <th />}</tr></thead>
               <tbody>
@@ -920,8 +938,9 @@ export default function PricingPage() {
           <div className="card">
             <h3>Electricity Convenience Fee</h3>
             <p className="muted">
-              A flat fee added to whatever amount the customer tops up (e.g. they enter ₦5,000, you charge them ₦5,000 + this fee — the DISCO still only credits the ₦5,000). Applies to all DISCOs. Set to 0 to disable.
+              A flat fee added to whatever amount the customer tops up (e.g. they enter ₦5,000, you charge them ₦5,000 + this fee — the DISCO still only credits the ₦5,000). Applies to all DISCOs. Set to 0 (or leave blank) to disable.
             </p>
+            {errors.electricity_fee && <div className="error-text">{errors.electricity_fee}</div>}
             <div className="row" style={{ gap: 8, alignItems: 'center' }}>
               <input
                 className="mono"
