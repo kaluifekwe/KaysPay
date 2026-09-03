@@ -42,7 +42,11 @@ const EVENTS = new Set([
 const OUTCOMES = new Set(["view", "started", "completed", "failed", "skipped", "deferred"]);
 const PLATFORMS = new Set(["android", "ios", "web", "unknown"]);
 const NETWORKS = new Set(["wifi", "cellular", "offline", "unknown"]);
-const METADATA_KEYS = new Set(["slide_index", "entry_point", "verification_method", "funding_method"]);
+const METADATA_KEYS = new Set(["slide_index", "entry_point", "verification_method", "funding_method", "error_detail"]);
+// error_detail carries a client-visible error message ("Could not send the
+// verification email."), never a raw provider error -- those stay
+// server-side. Needs spaces/punctuation the other enum-like keys never do.
+const SAFE_ERROR_DETAIL = /^[A-Za-z0-9 .,!'?-]{1,64}$/;
 
 type InputEvent = {
   event_id?: unknown; session_id?: unknown; event_type?: unknown; outcome?: unknown;
@@ -69,7 +73,10 @@ function safeMetadata(value: unknown): Record<string, string | number | boolean>
   const result: Record<string, string | number | boolean> = {};
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
     if (!METADATA_KEYS.has(key) || !["string", "number", "boolean"].includes(typeof item)) return null;
-    if (typeof item === "string" && (item.length > 64 || !SAFE_SOURCE.test(item))) return null;
+    if (typeof item === "string") {
+      const pattern = key === "error_detail" ? SAFE_ERROR_DETAIL : SAFE_SOURCE;
+      if (item.length > 64 || !pattern.test(item)) return null;
+    }
     if (typeof item === "number" && (!Number.isInteger(item) || Math.abs(item) > 1000)) return null;
     result[key] = item as string | number | boolean;
   }

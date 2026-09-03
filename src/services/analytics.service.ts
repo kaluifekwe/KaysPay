@@ -48,7 +48,13 @@ export type AnalyticsEventType =
   | 'tv_started' | 'tv_failed';
 
 type AnalyticsOutcome = 'view' | 'started' | 'completed' | 'failed' | 'skipped' | 'deferred';
-type MetadataKey = 'slide_index' | 'entry_point' | 'verification_method' | 'funding_method';
+// error_detail: the client-visible error message text for a failure event --
+// still the sanitized, user-facing string (e.g. "Could not send the
+// verification email."), never the raw provider error, which stays
+// server-side. Lets a coarse failure_code bucket like "code_send_failed" be
+// told apart from "too many attempts today" or "network error" after the
+// fact, instead of every cause looking identical on the dashboard.
+type MetadataKey = 'slide_index' | 'entry_point' | 'verification_method' | 'funding_method' | 'error_detail';
 
 interface QueuedEvent {
   event_id: string;
