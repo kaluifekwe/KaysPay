@@ -70,39 +70,16 @@ serve(async (req: Request) => {
     }
   }
 
-  // Same run also handles the KYC-completion reminder -- transactional,
-  // same "about the customer's own incomplete signup" category as the
-  // welcome email above, folded into this function rather than a new one
-  // since the project is at its 100-function plan cap. Reuses this
-  // function's existing cron trigger (every 5 min); a failure here must
-  // never affect the welcome-email loop's own success/failure, so it's
-  // wrapped independently.
-  let kycClaimed = 0, kycSent = 0, kycFailed = 0;
-  try {
-    const { data: kycDue, error: kycError } = await supabase.rpc("claim_due_kyc_reminders", { p_limit: 50 });
-    if (!kycError) {
-      const kycRows: { user_id: string; email: string; full_name: string | null }[] = kycDue || [];
-      kycClaimed = kycRows.length;
-      for (const row of kycRows) {
-        const { subject, html, text } = kycReminderEmail(firstNameOf(row.full_name));
-        const result = await sendEmail(row.email, subject, html, { from: WELCOME_FROM, replyTo: WELCOME_REPLY_TO, text });
-        if (result.ok) {
-          kycSent++;
-        } else {
-          kycFailed++;
-          console.error("welcome-email: kyc-reminder send failed for", row.email, ":", result.error);
-          await supabase.rpc("unmark_kyc_reminder_sent", { p_user_id: row.user_id });
-        }
-      }
-    } else {
-      console.error("welcome-email: could not load pending kyc reminders:", kycError.message);
-    }
-  } catch (e) {
-    console.error("welcome-email: kyc-reminder loop threw:", e instanceof Error ? e.message : String(e));
-  }
-
-  // Generalized lifecycle reminders (migration 197) -- pin_not_set,
-  // kyc_completed_not_funded, funded_not_purchased. Owner-paused by default
+  // Generalized lifecycle reminders (migration 197, consolidated 2026-09-03
+  // per migration 205) -- pin_not_set, kyc_not_started,
+  // kyc_completed_not_funded, funded_not_purchased. The old one-shot
+  // claim_due_kyc_reminders path (migration 195) is retired: it overlapped
+  // with pin_not_set (fired even for accounts with no PIN yet) and gave the
+  // same population a weaker experience than this system -- no retry, no
+  // tracking, no manual follow-up. claim_due_kyc_reminders/
+  // unmark_kyc_reminder_sent and kyc_reminder_sent_at are left in the
+  // database, just no longer called, so the record of who the old system
+  // already emailed isn't lost. Owner-paused by default
   // via app_settings; small per-stage batch (3 each = up to 9/tick) so a
   // backlog can never eat a whole day's shared 100/day Resend budget in one
   // run. Stops early the moment Resend itself signals a rate limit --
@@ -123,6 +100,7 @@ serve(async (req: Request) => {
             continue;
           }
           const template = row.stage === "pin_not_set" ? pinNotSetReminderEmail
+            : row.stage === "kyc_not_started" ? kycReminderEmail
             : row.stage === "kyc_completed_not_funded" ? kycVerifiedNotFundedReminderEmail
             : fundedNotPurchasedReminderEmail;
           const { subject, html, text } = template(firstNameOf(row.full_name));
@@ -153,7 +131,6 @@ serve(async (req: Request) => {
 
   return json({
     success: true, claimed: rows.length, sent, failed,
-    kyc_reminders: { claimed: kycClaimed, sent: kycSent, failed: kycFailed },
     lifecycle_reminders: { claimed: lifecycleClaimed, sent: lifecycleSent, failed: lifecycleFailed, throttled: lifecycleThrottled },
   });
 });

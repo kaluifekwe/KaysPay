@@ -3,11 +3,11 @@ import { adminClient, readJsonBody, RequestBodyError } from "../_shared/auth.ts"
 import { AdminAuthError, requireAdmin } from "../_shared/admin-auth.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { isResendConfigured, sendEmail } from "../_shared/resend-client.ts";
-import { fundedNotPurchasedReminderEmail, kycVerifiedNotFundedReminderEmail, pinNotSetReminderEmail } from "../_shared/email-template.ts";
+import { fundedNotPurchasedReminderEmail, kycReminderEmail, kycVerifiedNotFundedReminderEmail, pinNotSetReminderEmail } from "../_shared/email-template.ts";
 
 const WELCOME_FROM = "Kalu Ifekwe <no-reply@kayspay.com.ng>";
 const WELCOME_REPLY_TO = "kaluifekwe6@gmail.com";
-const LIFECYCLE_STAGES = new Set(["pin_not_set", "kyc_completed_not_funded", "funded_not_purchased"]);
+const LIFECYCLE_STAGES = new Set(["pin_not_set", "kyc_not_started", "kyc_completed_not_funded", "funded_not_purchased"]);
 
 function firstNameOf(fullName: string | null): string {
   if (!fullName) return "";
@@ -15,6 +15,7 @@ function firstNameOf(fullName: string | null): string {
 }
 function templateFor(stage: string) {
   if (stage === "pin_not_set") return pinNotSetReminderEmail;
+  if (stage === "kyc_not_started") return kycReminderEmail;
   if (stage === "kyc_completed_not_funded") return kycVerifiedNotFundedReminderEmail;
   return fundedNotPurchasedReminderEmail;
 }

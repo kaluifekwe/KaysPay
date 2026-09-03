@@ -5,7 +5,7 @@ interface FunnelStage { key: string; count: number; }
 type FaultCategory = 'app_error' | 'provider_rejected' | 'provider_unavailable' | 'customer_input' | 'unknown' | 'unclassified';
 interface FailureRow { event_type: string; failure_code: string | null; affected_installations: number; attempts: number; fault_category: FaultCategory; }
 interface BreakdownRow { value: string; installations: number; }
-type LifecycleStage = 'pin_not_set' | 'kyc_completed_not_funded' | 'funded_not_purchased';
+type LifecycleStage = 'pin_not_set' | 'kyc_not_started' | 'kyc_completed_not_funded' | 'funded_not_purchased';
 interface LifecycleSentStats { sent: number; opened: number; clicked: number; failed: number; resolved: number; }
 interface FollowupCandidate {
   user_id: string; email: string; full_name: string | null; stage: LifecycleStage;
@@ -52,18 +52,20 @@ const STUCK_LABELS: Record<string, string> = {
 };
 const LIFECYCLE_STAGE_LABELS: Record<LifecycleStage, string> = {
   pin_not_set: 'Verified, PIN not set',
+  kyc_not_started: 'PIN set, KYC not verified',
   kyc_completed_not_funded: 'KYC verified, wallet not funded',
   funded_not_purchased: 'Funded, no purchase yet',
 };
-// Three of the seven "stuck" stages have a real-data equivalent computed
+// Four of the seven "stuck" stages have a real-data equivalent computed
 // straight from user_pins/user_kyc/transactions (see admin_lifecycle_reminder_report,
-// migration 197) rather than the client-analytics table this funnel otherwise
-// runs on — that table has a confirmed linkage gap for real accounts
-// (investigated 2026-09-02), so wherever a real number exists it replaces
-// the analytics estimate instead of sitting next to it as a second,
-// disagreeing number.
+// migration 197, consolidated with kyc_not_started in migration 205) rather
+// than the client-analytics table this funnel otherwise runs on — that
+// table has a confirmed linkage gap for real accounts (investigated
+// 2026-09-02), so wherever a real number exists it replaces the analytics
+// estimate instead of sitting next to it as a second, disagreeing number.
 const STUCK_TO_LIFECYCLE_STAGE: Partial<Record<string, LifecycleStage>> = {
   verified_pin_incomplete: 'pin_not_set',
+  home_kyc_not_started: 'kyc_not_started',
   kyc_completed_not_funded: 'kyc_completed_not_funded',
   funded_not_purchased: 'funded_not_purchased',
 };
@@ -260,7 +262,7 @@ export default function OnboardingPage() {
 
       {report.lifecycle_reminders && <div className="card">
         <div className="row between section-heading">
-          <div><h3>Lifecycle reminders</h3><p className="muted">Automated emails for the three "Verified" stages above (PIN setup, funding, first purchase). Up to 2 attempts per stage, then it stops for good.</p></div>
+          <div><h3>Lifecycle reminders</h3><p className="muted">Automated emails for the four "Verified" stages above (PIN setup, starting KYC, funding, first purchase). Up to 2 attempts per stage, then it stops for good.</p></div>
           <button
             className={report.lifecycle_reminders.enabled ? 'secondary' : 'primary'}
             disabled={togglingReminders}
