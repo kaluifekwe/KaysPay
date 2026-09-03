@@ -489,14 +489,31 @@ export function fundedNotPurchasedReminderEmail(firstName: string): { subject: s
  * number of real customers actually affected. Deliberately doesn't name the
  * provider or dwell on what broke.
  */
-export function serviceRestoredEmail(firstName: string): { subject: string; html: string; text: string } {
+/** "₦220", "₦220 and ₦300", or "₦220, ₦300 and ₦150" for 3+. */
+function joinNairaAmounts(amountsNgn: number[]): string {
+  const formatted = amountsNgn.map((n) => `₦${n.toLocaleString("en-NG")}`);
+  if (formatted.length === 1) return formatted[0];
+  return `${formatted.slice(0, -1).join(", ")} and ${formatted[formatted.length - 1]}`;
+}
+
+export function serviceRestoredEmail(
+  firstName: string,
+  refundedAmountsNgn?: number[],
+): { subject: string; html: string; text: string } {
   const name = firstName && firstName.trim() ? esc(firstName.trim()) : "there";
   const plainName = firstName && firstName.trim() ? firstName.trim() : "there";
+  const plural = !!refundedAmountsNgn && refundedAmountsNgn.length > 1;
+  const openingLine = refundedAmountsNgn && refundedAmountsNgn.length
+    ? `${plural ? "A couple of purchases" : "A purchase"} you tried earlier didn't go through due to a brief network delay. Your ${esc(joinNairaAmounts(refundedAmountsNgn))} ${plural ? "have" : "has"} been refunded immediately and ${plural ? "are" : "is"} already back in your wallet.`
+    : "A purchase you tried earlier didn't go through due to a brief network delay. Your money was refunded immediately and is already back in your wallet.";
+  const openingLineText = refundedAmountsNgn && refundedAmountsNgn.length
+    ? `${plural ? "A couple of purchases" : "A purchase"} you tried earlier didn't go through due to a brief network delay. Your ${joinNairaAmounts(refundedAmountsNgn)} ${plural ? "have" : "has"} been refunded immediately and ${plural ? "are" : "is"} already back in your wallet.`
+    : "A purchase you tried earlier didn't go through due to a brief network delay. Your money was refunded immediately and is already back in your wallet.";
 
   const inner = `
     <tr><td style="padding:30px 28px 6px;">
-      <h1 style="margin:0 0 14px;font-size:21px;color:${INK};font-weight:800;">You're all set, ${name}</h1>
-      <p style="margin:0 0 14px;font-size:15px;color:${INK};line-height:1.65;">A purchase you tried earlier didn't go through because of a brief network hiccup on our end. Your money was refunded immediately and is already back in your wallet.</p>
+      <h1 style="margin:0 0 14px;font-size:21px;color:${INK};font-weight:800;">Your refund is confirmed, ${name}</h1>
+      <p style="margin:0 0 14px;font-size:15px;color:${INK};line-height:1.65;">${openingLine}</p>
       <p style="margin:0 0 18px;font-size:15px;color:${INK};line-height:1.65;">Everything is working normally now. You can go ahead and complete your purchase.</p>
     </td></tr>
     <tr><td style="padding:6px 28px 30px;">
@@ -509,9 +526,9 @@ export function serviceRestoredEmail(firstName: string): { subject: string; html
     </td></tr>`;
 
   const text = textShell([
-    `You're all set, ${plainName}`,
+    `Your refund is confirmed, ${plainName}`,
     "",
-    "A purchase you tried earlier didn't go through because of a brief network hiccup on our end. Your money was refunded immediately and is already back in your wallet.",
+    openingLineText,
     "",
     "Everything is working normally now. You can go ahead and complete your purchase.",
     "",
@@ -519,5 +536,5 @@ export function serviceRestoredEmail(firstName: string): { subject: string; html
     PLAY_STORE_URL,
   ]);
 
-  return { subject: "You're all set — try again", html: shell(inner, "Your refund is confirmed and everything is working again"), text };
+  return { subject: "Your refund is confirmed — try again", html: shell(inner, "Your refund is confirmed and everything is working again"), text };
 }
