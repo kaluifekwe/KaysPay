@@ -3,6 +3,7 @@ import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { getAuthUser, adminClient } from "../_shared/auth.ts";
 import { isResendConfigured, sendEmail } from "../_shared/resend-client.ts";
 import { otpEmail } from "../_shared/email-template.ts";
+import { redactSecrets } from "../_shared/redact.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -68,7 +69,7 @@ serve(async (req: Request) => {
     // Surface the real Resend error in the function logs �?otherwise a
     // domain-not-verified / test-mode / bad-key rejection is invisible and
     // looks like a generic outage from the client's side.
-    console.error("send-email-otp: Resend send failed:", sendResult.error);
+    console.error("send-email-otp: Resend send failed:", redactSecrets(sendResult.error));
 
     // Our own shared Resend account hit its daily/monthly cap (real error
     // type confirmed live 2026-09-03: daily_quota_exceeded /

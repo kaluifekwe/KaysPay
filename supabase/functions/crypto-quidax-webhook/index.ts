@@ -10,7 +10,7 @@ import { notifyCryptoBuyCompleted } from "../_shared/crypto-buy-settle.ts";
 // credit the user's Naira wallet), and withdrawals. Deposit on-hold/failed/
 // rejected variants are logged rather than acted on, since Quidax's own
 // compliance layer can hold a deposit and there is nothing to reconcile
-// until that resolves. Buy does NOT settle here â€?it runs on Quidax's Ramp
+// until that resolves. Buy does NOT settle here ï¿½?it runs on Quidax's Ramp
 // product, which signs its webhooks differently and has its own dashboard
 // URL, so it lives in crypto-ramp-webhook.
 function json(body: unknown, status = 200) {
@@ -25,7 +25,7 @@ serve(async (req: Request) => {
   if (cors) return cors;
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  // Signature is computed over the RAW body â€?must read as text before any
+  // Signature is computed over the RAW body ï¿½?must read as text before any
   // JSON parsing, or the signature will never match.
   const rawBody = await req.text();
   const signatureHeader = req.headers.get("quidax-signature");
@@ -52,7 +52,7 @@ serve(async (req: Request) => {
     const amount = Number(data?.amount);
     const depositId = String(data?.id || "");
     if (!quidaxUserId || !asset || !Number.isFinite(amount) || amount <= 0 || !depositId) {
-      console.error("crypto-quidax-webhook: malformed deposit.successful payload", JSON.stringify(payload).slice(0, 300));
+      console.error("crypto-quidax-webhook: malformed deposit.successful payload", JSON.stringify({ quidaxUserId, asset, amount, depositId }));
       return json({ received: true });
     }
 
@@ -110,7 +110,9 @@ serve(async (req: Request) => {
   }
 
   if (["deposit.on_hold", "deposit_failed_aml", "deposit.rejected"].includes(event)) {
-    console.warn(`crypto-quidax-webhook: ${event}`, JSON.stringify(data).slice(0, 500));
+    console.warn(`crypto-quidax-webhook: ${event}`, JSON.stringify({
+      depositId: data?.id, currency: data?.currency, amount: data?.amount, reason: data?.reason,
+    }));
     return json({ received: true });
   }
 
@@ -125,7 +127,7 @@ serve(async (req: Request) => {
     const received = Number(data?.received_amount);
     const toCurrency = String(data?.to_currency || "").toUpperCase();
     if (!swapId || !Number.isFinite(received) || received <= 0) {
-      console.error("crypto-quidax-webhook: unexpected swap_transaction.complete", JSON.stringify(payload).slice(0, 300));
+      console.error("crypto-quidax-webhook: unexpected swap_transaction.complete", JSON.stringify({ swapId: data?.swap_quotation?.id || data?.id, received: data?.received_amount, toCurrency: data?.to_currency }));
       return json({ received: true });
     }
 
@@ -155,7 +157,7 @@ serve(async (req: Request) => {
     }
 
     if (toCurrency !== "NGN") {
-      console.error("crypto-quidax-webhook: swap_transaction.complete matched neither a buy nor a sell", JSON.stringify(payload).slice(0, 300));
+      console.error("crypto-quidax-webhook: swap_transaction.complete matched neither a buy nor a sell", JSON.stringify({ swapId, received, toCurrency }));
       return json({ received: true });
     }
 
@@ -183,7 +185,7 @@ serve(async (req: Request) => {
       const { data: buyTxId } = await supabase.rpc("fail_crypto_buy_swap", { p_swap_id: swapId, p_reason: "swap_failed" });
       if (buyTxId) {
         // Same "settled as USDT instead of the requested coin" case as the
-        // confirm_failed path in crypto-buy-settle.ts â€?leg 1's USDT already
+        // confirm_failed path in crypto-buy-settle.ts ï¿½?leg 1's USDT already
         // landed, so this still deserves the completion notification.
         const { data: buyTx } = await supabase
           .from("transactions")
@@ -211,7 +213,7 @@ serve(async (req: Request) => {
   if (event === "withdraw.successful" || event === "withdraw.rejected") {
     const reference = String(data?.reference || "");
     if (!reference) {
-      console.error("crypto-quidax-webhook: withdraw event with no reference", JSON.stringify(payload).slice(0, 300));
+      console.error("crypto-quidax-webhook: withdraw event with no reference", JSON.stringify({ event, currency: data?.currency, amount: data?.amount }));
       return json({ received: true });
     }
     const { error } = await supabase.rpc("settle_crypto_withdrawal", {
@@ -231,6 +233,6 @@ serve(async (req: Request) => {
   // webhooks are signed with x-ramp-signature and delivered to their own
   // dashboard URL, so they are handled in crypto-ramp-webhook, not here.
 
-  // Any other event type â€?acknowledge so Quidax doesn't keep retrying.
+  // Any other event type ï¿½?acknowledge so Quidax doesn't keep retrying.
   return json({ received: true });
 });

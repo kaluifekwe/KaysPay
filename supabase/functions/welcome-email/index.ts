@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import { adminClient, verifyCronSecret } from "../_shared/auth.ts";
 import { isResendConfigured, sendEmail } from "../_shared/resend-client.ts";
+import { redactSecrets } from "../_shared/redact.ts";
 import {
   fundedNotPurchasedReminderEmail, kycReminderEmail, kycVerifiedNotFundedReminderEmail,
   pinNotSetReminderEmail, welcomeEmail,
@@ -62,8 +63,10 @@ serve(async (req: Request) => {
     } else {
       failed++;
       // Surface the real Resend error so a domain/test-mode/key problem is
-      // visible in the logs instead of just an incrementing failure count.
-      console.error("welcome-email: Resend send failed for", row.email, ":", result.error);
+      // visible in the logs instead of just an incrementing failure count --
+      // by user_id, not email: Resend's own error text can echo the
+      // recipient address back, so it's passed through redactSecrets too.
+      console.error("welcome-email: Resend send failed for user", row.user_id, ":", redactSecrets(result.error));
       // Release the claim so this user is retried on the next run instead of
       // being silently skipped forever.
       await supabase.rpc("unmark_welcome_sent", { p_user_id: row.user_id });
@@ -110,7 +113,7 @@ serve(async (req: Request) => {
             if (result.id) await supabase.rpc("mark_lifecycle_reminder_sent", { p_id: row.id, p_provider_message_id: result.id });
           } else {
             lifecycleFailed++;
-            console.error("welcome-email: lifecycle-reminder send failed for", row.email, ":", result.error);
+            console.error("welcome-email: lifecycle-reminder send failed for user", row.user_id, ":", redactSecrets(result.error));
             await supabase.rpc("release_lifecycle_reminder", { p_id: row.id });
             // Resend's real error type for hitting the shared cap is
             // "daily_quota_exceeded" / "monthly_quota_exceeded" (confirmed

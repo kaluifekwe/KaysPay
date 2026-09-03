@@ -26,5 +26,9 @@ export function redactSecrets(input: unknown): string {
     /(\b(?:pin|password|newPassword|nin|bvn|auth_token|access_token|refresh_token)\b["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
     "$1***",
   );
+  // Email addresses in free text -- the key:value pass above only catches
+  // "email: x@y.com"; a provider's own prose (e.g. a validation error that
+  // echoes the address back) needs this separate, unanchored pass.
+  s = s.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[redacted-email]");
   return s;
 }
