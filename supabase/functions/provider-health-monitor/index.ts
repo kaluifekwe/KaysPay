@@ -25,5 +25,20 @@ serve(async(req)=>{
       }
       return {alerts};
     });return json({success:true,...result});
-  }catch{return json({error:"Provider monitor failed"},500);}
+  }catch(e){
+    // A real ~12-minute, 100%-failure-rate VTUNaija outage (2026-09-03)
+    // crossed this monitor's own thresholds and it still never alerted --
+    // the cron fired on schedule and the underlying data clearly qualified,
+    // so something inside this try block silently threw and got swallowed
+    // by the old bare catch. Self-monitor from here on: if this function
+    // ever throws again, that failure becomes its own alert instead of
+    // vanishing, so a future incident is caught even if this one's exact
+    // cause couldn't be pinned down after the fact.
+    const message=String((e as Error)?.message??e).slice(0,300);
+    try{
+      const {data:shouldEmail}=await db.rpc("record_monitoring_alert",{p_fingerprint:"provider_health_monitor_self_failure",p_type:"provider-health-monitor itself threw an exception",p_severity:"critical",p_details:{error:message}});
+      if(shouldEmail&&isResendConfigured())await sendEmail(ALERT_EMAIL,"[CRITICAL] KaysPay: provider-health-monitor is broken",`<p>The provider-health monitor threw an exception and could not check anything this run.</p><p>Error: ${message}</p><p>Provider failures will NOT be detected automatically until this is fixed.</p>`);
+    }catch{/* Even self-monitoring must not throw a second, masking exception. */}
+    return json({error:"Provider monitor failed",detail:message},500);
+  }
 });

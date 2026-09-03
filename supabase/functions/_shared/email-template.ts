@@ -469,3 +469,43 @@ export function fundedNotPurchasedReminderEmail(firstName: string): { subject: s
 
   return { subject: `${plainName === "there" ? "Your wallet is funded" : `${plainName}, your wallet is funded`}. Make your first purchase`, html: shell(inner, "Your wallet is funded. Time for your first purchase"), text };
 }
+
+/**
+ * One-off, incident-specific notice for a customer whose purchase failed
+ * during a real outage (2026-09-03) and has since been resolved. Not part
+ * of the automated reminder system -- sent manually, once, to the small
+ * number of real customers actually affected. Deliberately doesn't name the
+ * provider or dwell on what broke.
+ */
+export function serviceRestoredEmail(firstName: string): { subject: string; html: string; text: string } {
+  const name = firstName && firstName.trim() ? esc(firstName.trim()) : "there";
+  const plainName = firstName && firstName.trim() ? firstName.trim() : "there";
+
+  const inner = `
+    <tr><td style="padding:30px 28px 6px;">
+      <h1 style="margin:0 0 14px;font-size:21px;color:${INK};font-weight:800;">You're all set, ${name}</h1>
+      <p style="margin:0 0 14px;font-size:15px;color:${INK};line-height:1.65;">A purchase you tried earlier didn't go through because of a brief network hiccup on our end. Your money was refunded immediately and is already back in your wallet.</p>
+      <p style="margin:0 0 18px;font-size:15px;color:${INK};line-height:1.65;">Everything is working normally now. You can go ahead and complete your purchase.</p>
+    </td></tr>
+    <tr><td style="padding:6px 28px 30px;">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td style="background:${GREEN};border-radius:10px;">
+          <a href="${PLAY_STORE_URL}" style="display:inline-block;padding:13px 22px;font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;">Open KaysPay →</a>
+        </td>
+      </tr></table>
+      <p style="margin:16px 0 0;font-size:12px;color:${MUTED};line-height:1.5;">Or open this link on your phone: <a href="${PLAY_STORE_URL}" style="color:${ACCENT};text-decoration:none;">${PLAY_STORE_URL}</a></p>
+    </td></tr>`;
+
+  const text = textShell([
+    `You're all set, ${plainName}`,
+    "",
+    "A purchase you tried earlier didn't go through because of a brief network hiccup on our end. Your money was refunded immediately and is already back in your wallet.",
+    "",
+    "Everything is working normally now. You can go ahead and complete your purchase.",
+    "",
+    "Open KaysPay:",
+    PLAY_STORE_URL,
+  ]);
+
+  return { subject: "You're all set — try again", html: shell(inner, "Your refund is confirmed and everything is working again"), text };
+}
