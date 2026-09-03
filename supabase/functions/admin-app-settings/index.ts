@@ -36,10 +36,13 @@ function normaliseWhatsAppNumber(raw: string): string | null {
 }
 
 /**
- * Accepts only a real chat.whatsapp.com invite, and strips WhatsApp's
- * copy-source tracking params (?s=cl&p=a&ilr=4) �?the invite resolves from
- * the code in the path alone, and a bare URL avoids &-escaping problems
- * when it is dropped into email HTML.
+ * Accepts a real WhatsApp *group* invite (chat.whatsapp.com) or a real
+ * WhatsApp *channel* link (whatsapp.com/channel/...) -- two different
+ * WhatsApp products (channels are one-way broadcast, groups are two-way
+ * chat), both valid destinations for this setting. Strips WhatsApp's
+ * copy-source tracking params (?s=cl&p=a&ilr=4) -- the invite resolves
+ * from the code/id in the path alone, and a bare URL avoids &-escaping
+ * problems when it is dropped into email HTML.
  *
  * The host check is a security boundary, not just tidiness: this URL is
  * embedded in an email sent to every new user, so an arbitrary link pasted
@@ -54,10 +57,17 @@ function normaliseWhatsAppGroupUrl(raw: string): string | null {
     return null;
   }
   if (url.protocol !== "https:") return null;
-  if (url.hostname !== "chat.whatsapp.com") return null;
-  const code = url.pathname.replace(/^\/+/, "");
-  if (!/^[A-Za-z0-9]{6,}$/.test(code)) return null;
-  return `https://chat.whatsapp.com/${code}`;
+  if (url.hostname === "chat.whatsapp.com") {
+    const code = url.pathname.replace(/^\/+/, "");
+    if (!/^[A-Za-z0-9]{6,}$/.test(code)) return null;
+    return `https://chat.whatsapp.com/${code}`;
+  }
+  if (url.hostname === "whatsapp.com" || url.hostname === "www.whatsapp.com") {
+    const match = url.pathname.replace(/^\/+/, "").match(/^channel\/([A-Za-z0-9]{10,})$/);
+    if (!match) return null;
+    return `https://whatsapp.com/channel/${match[1]}`;
+  }
+  return null;
 }
 
 serve(async (req) => {
@@ -116,7 +126,7 @@ serve(async (req) => {
       const normalised = normaliseWhatsAppGroupUrl(rawValue);
       if (!normalised) {
         return json({
-          error: "Enter a valid WhatsApp group invite link, e.g. https://chat.whatsapp.com/AbC123.",
+          error: "Enter a valid WhatsApp group invite (https://chat.whatsapp.com/AbC123) or channel link (https://whatsapp.com/channel/0029Vb...).",
         }, 400);
       }
       value = normalised;

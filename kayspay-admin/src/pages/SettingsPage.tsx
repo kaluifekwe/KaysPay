@@ -10,14 +10,14 @@ interface AppSetting {
 
 const LABELS: Record<string, string> = {
   support_whatsapp_number: 'Support WhatsApp number',
-  support_whatsapp_group_url: 'WhatsApp group invite link',
+  support_whatsapp_group_url: 'WhatsApp group or channel link',
 };
 
 const HINTS: Record<string, string> = {
   support_whatsapp_number:
     'International format, no + or spaces — e.g. 2349068446111. A local 0906… number is converted automatically. Used by the Support tab, Contact Support in More and Profile, and the delete-account message.',
   support_whatsapp_group_url:
-    'Must be a chat.whatsapp.com invite link. WhatsApp’s tracking params (?s=cl…) are stripped automatically. Shown in the founder welcome email new users receive ~10 minutes after signing up.',
+    'A group invite (https://chat.whatsapp.com/AbC123) or a channel link (https://whatsapp.com/channel/0029Vb...). WhatsApp’s tracking params (?s=cl…) are stripped automatically. The welcome email wording adapts automatically to whichever you use. Shown to new users ~10 minutes after signing up.',
 };
 
 export default function SettingsPage() {

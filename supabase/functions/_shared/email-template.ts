@@ -204,17 +204,21 @@ const WHATSAPP_PANEL_LINE = "#bfe8cf";
 const WHATSAPP_EYEBROW = "#0b7a3b";
 
 /**
- * Only a real WhatsApp group invite is ever rendered. This email goes to
- * every new user, so a mistyped or malicious value in the admin-editable
- * setting must never become a link we vouch for — anything that isn't a
- * chat.whatsapp.com invite is dropped and the block is omitted entirely
- * rather than shipping a broken or untrustworthy button.
+ * Only a real WhatsApp group invite or channel link is ever rendered. This
+ * email goes to every new user, so a mistyped or malicious value in the
+ * admin-editable setting must never become a link we vouch for — anything
+ * that isn't a chat.whatsapp.com invite or a whatsapp.com/channel/ link is
+ * dropped and the block is omitted entirely rather than shipping a broken
+ * or untrustworthy button. Groups and channels are different WhatsApp
+ * products (channels are one-way broadcast, groups are two-way chat), so
+ * the caller needs to know which one it got to word the block correctly.
  */
-function safeWhatsAppGroupUrl(url: string | null | undefined): string | null {
+function safeWhatsAppCommunityLink(url: string | null | undefined): { url: string; kind: "group" | "channel" } | null {
   const trimmed = String(url ?? "").trim();
   if (!trimmed) return null;
-  if (!/^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]/.test(trimmed)) return null;
-  return trimmed;
+  if (/^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]/.test(trimmed)) return { url: trimmed, kind: "group" };
+  if (/^https:\/\/(www\.)?whatsapp\.com\/channel\/[A-Za-z0-9]{10,}$/.test(trimmed)) return { url: trimmed, kind: "channel" };
+  return null;
 }
 
 /** Founder welcome, sent ~10 minutes after signup by the welcome-email cron. */
@@ -224,7 +228,8 @@ export function welcomeEmail(
 ): { subject: string; html: string; text: string } {
   const name = firstName && firstName.trim() ? esc(firstName.trim()) : "there";
   const plainName = firstName && firstName.trim() ? firstName.trim() : "there";
-  const groupUrl = safeWhatsAppGroupUrl(whatsappGroupUrl);
+  const community = safeWhatsAppCommunityLink(whatsappGroupUrl);
+  const communityWord = community?.kind === "channel" ? "channel" : "group";
   const steps = WELCOME_STEPS.map(
     ([t, d], i) => `
     <tr><td style="padding:0 0 16px;">
@@ -242,21 +247,28 @@ export function welcomeEmail(
 
   // Sits between the numbered steps and "reply to this email", so the two
   // support channels read as a pair: the community first, then the direct
-  // line to the founder. Omitted entirely when no valid group URL is set.
-  const whatsappBlock = groupUrl
+  // line to the founder. Omitted entirely when no valid group/channel URL
+  // is set. Description text deliberately differs by kind -- a WhatsApp
+  // channel is one-way broadcast (no replies, no seeing other members), so
+  // promising "tell us what to build next" or "meet other people" there
+  // would be a real, factual overpromise, not just a wording nitpick.
+  const whatsappDescription = communityWord === "channel"
+    ? "Get updates on new features and announcements straight from us. It's the fastest way to stay in the loop."
+    : "Get quick help when you need it, hear about new features first, and tell us what to build next. It's the fastest way to reach us, and to meet other people using KaysPay.";
+  const whatsappBlock = community
     ? `
     <tr><td style="padding:6px 28px 4px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${WHATSAPP_PANEL_BG};border:1px solid ${WHATSAPP_PANEL_LINE};border-radius:12px;">
         <tr><td style="padding:18px 18px 16px;">
           <div style="font-size:11px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;color:${WHATSAPP_EYEBROW};margin-bottom:7px;">WhatsApp community</div>
-          <div style="font-size:16px;font-weight:800;color:${INK};margin-bottom:6px;">Join our WhatsApp group</div>
-          <div style="font-size:14px;color:${MUTED};line-height:1.55;margin-bottom:14px;">Get quick help when you need it, hear about new features first, and tell us what to build next. It's the fastest way to reach us, and to meet other people using KaysPay.</div>
+          <div style="font-size:16px;font-weight:800;color:${INK};margin-bottom:6px;">Join our WhatsApp ${communityWord}</div>
+          <div style="font-size:14px;color:${MUTED};line-height:1.55;margin-bottom:14px;">${whatsappDescription}</div>
           <table role="presentation" cellpadding="0" cellspacing="0"><tr>
             <td style="background:${WHATSAPP_GREEN};border-radius:10px;">
-              <a href="${esc(groupUrl)}" style="display:inline-block;padding:12px 20px;font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;">Join the WhatsApp group →</a>
+              <a href="${esc(community.url)}" style="display:inline-block;padding:12px 20px;font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;">Join the WhatsApp ${communityWord} →</a>
             </td>
           </tr></table>
-          <div style="font-size:12px;color:${MUTED};line-height:1.5;margin-top:12px;">Or open this link: <a href="${esc(groupUrl)}" style="color:${ACCENT};text-decoration:none;">${esc(groupUrl)}</a></div>
+          <div style="font-size:12px;color:${MUTED};line-height:1.5;margin-top:12px;">Or open this link: <a href="${esc(community.url)}" style="color:${ACCENT};text-decoration:none;">${esc(community.url)}</a></div>
         </td></tr>
       </table>
     </td></tr>`
@@ -274,7 +286,7 @@ export function welcomeEmail(
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${steps}</table>
     </td></tr>
     ${whatsappBlock}
-    <tr><td style="padding:${groupUrl ? "14px" : "8px"} 28px 4px;">
+    <tr><td style="padding:${community ? "14px" : "8px"} 28px 4px;">
       <p style="margin:0 0 14px;font-size:15px;color:${INK};line-height:1.65;">If you ever have a question, an issue, or even just an idea, reply to this email. It comes straight to my team and me, and we read every one.</p>
       <p style="margin:0 0 4px;font-size:15px;color:${INK};line-height:1.65;">Thanks for trusting us with the little things that matter every day. We're only just getting started.</p>
     </td></tr>
@@ -302,12 +314,12 @@ export function welcomeEmail(
     ...WELCOME_STEPS.map(([t, d], i) => `${i + 1}. ${t} — ${d.replace(/&amp;/g, "&")}`),
     // Gmail/Yahoo score HTML-only mail worse for spam, so the text part has
     // to carry the invite too — not just the HTML.
-    ...(groupUrl
+    ...(community
       ? [
         "",
-        "JOIN OUR WHATSAPP GROUP",
-        "Get quick help when you need it, hear about new features first, and tell us what to build next.",
-        groupUrl,
+        `JOIN OUR WHATSAPP ${communityWord.toUpperCase()}`,
+        whatsappDescription,
+        community.url,
       ]
       : []),
     "",
