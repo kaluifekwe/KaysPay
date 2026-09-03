@@ -16,6 +16,7 @@ import { AppTheme } from '../constants/theme';
 import { useTheme } from './ThemeProvider';
 import { virtualAccountService, VirtualAccount, VirtualAccountProvider } from '../services/virtualAccount.service';
 import { analytics } from '../services/analytics.service';
+import { errorDetailFor } from '../utils/errorMessages';
 
 interface ProviderFundingBlockProps {
   provider: VirtualAccountProvider;
@@ -92,7 +93,7 @@ export default function ProviderFundingBlock({
     if (res.success && res.account) {
       onCreated(res.account);
     } else {
-      void analytics.track('funding_failed', { outcome: 'failed', failureCode: 'virtual_account_unavailable', metadata: { funding_method: provider } });
+      void analytics.track('funding_failed', { outcome: 'failed', failureCode: 'virtual_account_unavailable', metadata: { funding_method: provider, error_detail: errorDetailFor(res.error) } });
       Alert.alert('Bank Transfer', res.error || 'Could not set up your account number.');
     }
   };
@@ -104,7 +105,7 @@ export default function ProviderFundingBlock({
     const result = await virtualAccountService.requeryPaystack();
     setRequeryLoading(false);
     if (!result.success) {
-      void analytics.track('funding_failed', { outcome: 'failed', failureCode: 'transfer_not_confirmed', metadata: { funding_method: provider } });
+      void analytics.track('funding_failed', { outcome: 'failed', failureCode: 'transfer_not_confirmed', metadata: { funding_method: provider, error_detail: errorDetailFor(result.error) } });
       onPaystackCheckFailed?.();
     }
     Alert.alert(

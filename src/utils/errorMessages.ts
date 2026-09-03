@@ -25,3 +25,16 @@ export function safeErrorMessage(error: unknown, fallback: string = GENERIC_FAIL
   if (!text) return fallback;
   return looksTechnical(text) ? fallback : text;
 }
+
+/**
+ * Reduces an already-safe, on-screen failure message to the narrow charset
+ * analytics-ingest accepts for the `error_detail` metadata key, so a real
+ * failure reason (not a raw provider error — this must only ever be given
+ * text that already passed safeErrorMessage or an equivalent allowlisted
+ * message) reaches the admin dashboard instead of just a generic bucket.
+ */
+export function errorDetailFor(message: string | undefined | null): string | undefined {
+  if (!message) return undefined;
+  const cleaned = message.replace(/[^A-Za-z0-9 .,!'?-]/g, '').trim().slice(0, 64);
+  return cleaned || undefined;
+}

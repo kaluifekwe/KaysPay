@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { emailVerificationService } from '../services/emailVerification.service';
 import { authService } from '../services/auth.service';
-import { safeErrorMessage } from '../utils/errorMessages';
+import { safeErrorMessage, errorDetailFor } from '../utils/errorMessages';
 import { storageHelpers } from '../lib/mmkv';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
@@ -24,22 +24,6 @@ const RESEND_COOLDOWN_MS = 60 * 1000;
 
 function lastSentStorageKey(email: string): string {
   return `email_otp_last_sent_at:${email.trim().toLowerCase()}`;
-}
-
-// A coarse failure_code bucket ("code_send_failed") looks identical on the
-// dashboard whether the real cause was a network blip, a genuine send
-// failure, or the customer just hitting their own daily attempt limit --
-// this real error, whatever it was, made all three indistinguishable and
-// had to be inferred from Resend's own logs instead of just read off the
-// event. error_detail carries the same message already shown to the user
-// (never a raw provider error, which stays server-side) so the next
-// occurrence is actually diagnosable. Matches analytics-ingest's
-// SAFE_ERROR_DETAIL pattern -- stripped rather than dropped, so a message
-// with an unexpected character still gets logged, just trimmed.
-function errorDetailFor(message: string | undefined | null): string | undefined {
-  if (!message) return undefined;
-  const cleaned = message.replace(/[^A-Za-z0-9 .,!'?-]/g, '').trim().slice(0, 64);
-  return cleaned || undefined;
 }
 
 export default function EmailCodeScreen(props: any) {
