@@ -20,19 +20,12 @@ import { virtualAccountService, VirtualAccount, VirtualAccountProvider } from '.
 import { kycService } from '../services/kyc.service';
 import ProviderFundingBlock from '../components/ProviderFundingBlock';
 import { supabase } from '../lib/supabase';
-import { storageHelpers, StorageKeys } from '../lib/mmkv';
 import { useCachedData } from '../hooks/useCachedData';
 import { Ionicons } from '@expo/vector-icons';
 import { analytics } from '../services/analytics.service';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
 
 const QUICK_AMOUNTS = [500, 1000, 2000, 5000, 10000, 20000];
-
-// How recently someone must have opened the Crypto screen for this screen to
-// assume they came here meaning to fund up for a crypto purchase. Long enough
-// to cover reading the Buy screen and navigating back via Home, short enough
-// that a later, unrelated top-up doesn't inherit the nudge.
-const CRYPTO_INTENT_WINDOW_MS = 10 * 60 * 1000;
 
 // Bank-transfer funding runs on Flutterwave Fixed Virtual Accounts, offered
 // alongside Paystack. Re-enabled 2026-07-26 after fixing the auth blocker
@@ -77,17 +70,6 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   // Re-checked on every focus so returning from KYC unlocks this immediately.
   const [kycVerified, setKycVerified] = useState<boolean | null>(null);
   const [verifiedNin, setVerifiedNin] = useState<string | undefined>();
-  // Crypto is paid by direct bank transfer, never from this wallet — but
-  // people still come here first expecting to fund up for it. Only nudge
-  // someone who was actually just on the Crypto screen, so the majority
-  // topping up for airtime/data never see a crypto message at all.
-  const [fromCrypto, setFromCrypto] = useState(false);
-  useEffect(() => {
-    void storageHelpers.getNumber(StorageKeys.CRYPTO_SCREEN_LAST_VISIT).then((lastVisit) => {
-      if (!lastVisit) return;
-      setFromCrypto(Date.now() - lastVisit < CRYPTO_INTENT_WINDOW_MS);
-    });
-  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -294,34 +276,33 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               For airtime, data, bills and transfers. Crypto is paid by direct bank transfer.
             </Text>
 
-            {fromCrypto && (
-              <View style={styles.cryptoNudge}>
-                <View style={styles.cryptoNudgeCopy}>
-                  {/* The point used to sit mid-sentence in a grey-toned line
-                      and got skimmed. Someone here to buy crypto would fund
-                      this wallet, wait, and find the money was never used for
-                      it. The heading now states the action first, the body
-                      says plainly that funding here will not pay for crypto,
-                      and the way out is a real button rather than a text
-                      link. */}
-                  <View style={styles.cryptoNudgeHeading}>
-                    <Ionicons name="arrow-forward-circle-outline" size={18} color={theme.gold} />
-                    <Text style={styles.cryptoNudgeTitle}>Buying crypto? Skip this step</Text>
-                  </View>
-                  <Text style={styles.cryptoNudgeText}>
-                    You pay for crypto by bank transfer to an account we show you — not from this
-                    wallet. Funding here won't be used for it.
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => navigation.navigate('Crypto')}
-                    activeOpacity={0.85}
-                    style={styles.cryptoNudgeButton}
-                  >
-                    <Text style={styles.cryptoNudgeButtonText}>Take me back to Crypto</Text>
-                  </TouchableOpacity>
+            <View style={styles.cryptoNudge}>
+              <View style={styles.cryptoNudgeCopy}>
+                {/* The point used to sit mid-sentence in a grey-toned line
+                    and got skimmed. Someone here to buy crypto would fund
+                    this wallet, wait, and find the money was never used for
+                    it. The heading now states the action first, the body
+                    says plainly that funding here will not pay for crypto,
+                    and the way out is a real button rather than a text
+                    link. Shown to everyone now (owner decision, 2026-09-04),
+                    not just people who just visited the Crypto screen. */}
+                <View style={styles.cryptoNudgeHeading}>
+                  <Ionicons name="arrow-forward-circle-outline" size={18} color={theme.gold} />
+                  <Text style={styles.cryptoNudgeTitle}>Buying crypto? Skip this step</Text>
                 </View>
+                <Text style={styles.cryptoNudgeText}>
+                  You pay for crypto by bank transfer to an account we show you — not from this
+                  wallet. Funding here won't be used for it.
+                </Text>
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('Crypto')}
+                  activeOpacity={0.85}
+                  style={styles.cryptoNudgeButton}
+                >
+                  <Text style={styles.cryptoNudgeButtonText}>Take me back to Crypto</Text>
+                </TouchableOpacity>
               </View>
-            )}
+            </View>
 
             {BANK_TRANSFER_FUNDING_ENABLED && (
               <>

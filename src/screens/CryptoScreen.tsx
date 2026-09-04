@@ -439,13 +439,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   }, []);
 
   useEffect(() => {
-    // Marks that this customer was just looking at Crypto, so Fund Wallet
-    // can show its "you don't need to fund for crypto" nudge only to people
-    // who might actually be about to make that mistake.
-    void storageHelpers.setNumber(StorageKeys.CRYPTO_SCREEN_LAST_VISIT, Date.now());
-  }, []);
-
-  useEffect(() => {
     // Paints the screen with the last known numbers instantly (a fast local
     // read) while the real live fetch below runs in parallel — the live
     // result always wins once it lands, this is purely to avoid a blank
