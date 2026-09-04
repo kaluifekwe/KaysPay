@@ -1835,7 +1835,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                       placeholderTextColor={theme.inkFaint}
                       autoCapitalize="none"
                       autoCorrect={false}
-                      autoFocus
                     />
                     {/* Format/checksum validation only — the strongest real
                         check possible. There is no registry to confirm a
@@ -1889,7 +1888,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                       placeholder={wdAsset === 'USDT' ? 'e.g. 20' : 'e.g. 0.001'}
                       placeholderTextColor={theme.inkFaint}
                       keyboardType="decimal-pad"
-                      autoFocus
                     />
                     {wdBalance != null && numericWdAmount > wdBalance && (
                       <Text style={styles.errorText}>Insufficient {wdAsset} balance.</Text>
