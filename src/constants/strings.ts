@@ -3,16 +3,6 @@ export const Strings = {
   APP_NAME: "KaysPay",
   APP_TAGLINE: "Nigeria's all-in-one VTU & payment app",
 
-  // Onboarding
-  ONBOARDING_SLIDE_1_TITLE: "Pay for Everything",
-  ONBOARDING_SLIDE_1_DESC: "Buy airtime, data, pay bills, and more from one simple app.",
-  ONBOARDING_SLIDE_2_TITLE: "Instant & Secure",
-  ONBOARDING_SLIDE_2_DESC: "Lightning-fast transactions with bank-level security.",
-  ONBOARDING_SLIDE_3_TITLE: "Smart Features",
-  ONBOARDING_SLIDE_3_DESC: "Bulk recharge, schedules, and virtual dollar cards.",
-  ONBOARDING_GET_STARTED: "Get Started",
-  ONBOARDING_SKIP: "Skip",
-
   // Auth
   PHONE_INPUT_TITLE: "Enter Your Phone Number",
   PHONE_INPUT_SUBTITLE: "We'll send you a 6-digit verification code",
@@ -101,7 +91,6 @@ export const Strings = {
   BUTTON_CONFIRM: "Confirm & Pay",
   BUTTON_CANCEL: "Cancel",
   BUTTON_BACK: "Back",
-  BUTTON_NEXT: "Next",
   BUTTON_DONE: "Done",
   BUTTON_RETRY: "Retry",
   BUTTON_CLOSE: "Close",

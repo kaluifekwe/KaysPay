@@ -35,7 +35,7 @@ interface Filters {
 }
 
 const STAGE_LABELS: Record<string, string> = {
-  app_opened: 'App opened', onboarding_started: 'Onboarding started',
+  app_opened: 'App opened',
   registration_started: 'Registration started', account_created: 'Account created',
   email_verified: 'Email verified', pin_setup: 'PIN set', home_viewed: 'Reached home',
   kyc_started: 'KYC started', kyc_completed: 'KYC completed',
