@@ -428,7 +428,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             </TouchableOpacity>
           </View>
           <View style={styles.walletButtons}>
-            <TouchableOpacity style={styles.walletButton} onPress={() => navigation.navigate('WalletFunding')}>
+            <TouchableOpacity style={styles.walletButton} onPress={() => navigation.navigate('FundIntent')}>
               <Text style={styles.walletButtonText}>{Strings.HOME_FUND_WALLET}</Text>
             </TouchableOpacity>
             {transferEnabled && (
