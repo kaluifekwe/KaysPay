@@ -28,8 +28,6 @@ import { formatNaira } from '../utils/formatCurrency';
 import { storageHelpers, StorageKeys } from '../lib/mmkv';
 import {
   cryptoService,
-  CRYPTO_NETWORKS,
-  type CryptoNetwork,
   type QuidaxWalletBalance,
   type CryptoBuyPayment,
   type BuyAsset,
@@ -42,7 +40,6 @@ import ProviderLogo from '../components/ProviderLogo';
 import BankLogoIcon from '../components/BankLogoIcon';
 import { CRYPTO_LOGOS } from '../utils/providerLogos';
 import ResultStatusView, { type ResultStatus } from '../components/ResultStatusView';
-import QrCodeView from '../components/QrCodeView';
 import CryptoRefundBankModal from '../components/CryptoRefundBankModal';
 import { supabase } from '../lib/supabase';
 
@@ -216,12 +213,6 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
   const [quidaxWallets, setQuidaxWallets] = useState<QuidaxWalletBalance[]>([]);
   const [quidaxLoadError, setQuidaxLoadError] = useState<string | null>(null);
 
-  const [depositNetwork, setDepositNetwork] = useState<CryptoNetwork>('TRC20');
-  const [depositAddress, setDepositAddress] = useState<string | null>(null);
-  const [depositLoading, setDepositLoading] = useState(false);
-  const [depositError, setDepositError] = useState<string | null>(null);
-  const [addressCopied, setAddressCopied] = useState(false);
-
   const [actionState, setActionState] = useState<ResultStatus | 'idle'>('idle');
   const [actionError, setActionError] = useState('');
   // Sell and withdraw are accepted-then-settled, so the result screen needs
@@ -387,6 +378,10 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
   }, []);
 
   const handleSelectTab = useCallback((t: Tab) => {
+    if (t === 'deposit') {
+      navigation.navigate('CryptoDeposit');
+      return;
+    }
     if (t === 'buy') {
       navigation.navigate('CryptoBuy');
       return;
@@ -433,37 +428,6 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
     : totalCryptoUsdt != null
       ? formatUsdt(totalCryptoUsdt)
       : '—';
-
-  // Any network change invalidates whatever address is on screen — never
-  // show a TRC20 address after the user switched to BEP20.
-  useEffect(() => {
-    setDepositAddress(null);
-    setDepositError(null);
-    setAddressCopied(false);
-  }, [depositNetwork]);
-
-  const handleGenerateDepositAddress = useCallback(async () => {
-    setDepositLoading(true);
-    setDepositError(null);
-    const result = await cryptoService.getDepositAddress(depositNetwork);
-    setDepositLoading(false);
-    if (result.success && result.address) {
-      setDepositAddress(result.address);
-    } else {
-      setDepositError(result.error || 'Could not generate a deposit address.');
-    }
-  }, [depositNetwork]);
-
-  const handleCopyDepositAddress = useCallback(async () => {
-    if (!depositAddress) return;
-    try {
-      await Clipboard.setStringAsync(depositAddress);
-      setAddressCopied(true);
-      setTimeout(() => setAddressCopied(false), 2000);
-    } catch {
-      Alert.alert('Copy address', 'Could not copy the address. Please try again.');
-    }
-  }, [depositAddress]);
 
   const numericSellUsdt = parseFloat(sellUsdt);
 
@@ -1069,58 +1033,6 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
               </View>
             )}
 
-            {tab === 'deposit' && (
-              <View>
-                <Text style={styles.hintText}>
-                  Bring USDT you already hold on Binance, Bybit, or another exchange into your own crypto account here.
-                </Text>
-
-                <Text style={styles.label}>Network</Text>
-                <View style={styles.networkRow}>
-                  {CRYPTO_NETWORKS.map((n) => (
-                    <TouchableOpacity
-                      key={n.key}
-                      style={[styles.networkChip, depositNetwork === n.key && styles.networkChipSelected]}
-                      onPress={() => setDepositNetwork(n.key)}
-                    >
-                      <Text style={[styles.networkChipText, depositNetwork === n.key && styles.networkChipTextSelected]}>
-                        {n.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {depositAddress ? (
-                  <View style={styles.confirmBox}>
-                    <View style={styles.qrCard}>
-                      <QrCodeView value={depositAddress} size={160} />
-                    </View>
-                    <Text style={styles.depositAddressText} selectable>{depositAddress}</Text>
-                    <TouchableOpacity style={styles.copyAddressButton} onPress={handleCopyDepositAddress}>
-                      <Text style={styles.copyAddressButtonText}>{addressCopied ? 'Copied ✓' : 'Copy Address'}</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.confirmWarning}>
-                      Only send USDT on {depositNetwork} to this address. Sending on the wrong network, or any other
-                      asset, cannot be recovered.
-                    </Text>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    style={[styles.primaryButton, depositLoading && styles.primaryButtonDisabled]}
-                    onPress={handleGenerateDepositAddress}
-                    disabled={depositLoading}
-                  >
-                    {depositLoading ? (
-                      <ActivityIndicator color={theme.background} />
-                    ) : (
-                      <Text style={styles.primaryButtonText}>Generate Deposit Address</Text>
-                    )}
-                  </TouchableOpacity>
-                )}
-                {depositError && <Text style={styles.errorText}>{depositError}</Text>}
-              </View>
-            )}
-
             {tab === 'sell' && kycVerified !== false && (
               <View onLayout={(e) => { sellSectionYRef.current = e.nativeEvent.layout.y; }}>
                 <Text style={styles.label}>Amount (USDT)</Text>
@@ -1477,28 +1389,6 @@ function createStyles(theme: AppTheme) {
   primaryButtonDisabled: { opacity: 0.4 },
   primaryButtonText: { ...Typography.BUTTON_TEXT, color: theme.background },
 
-  networkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.S },
-  networkChip: {
-    paddingHorizontal: Spacing.M,
-    paddingVertical: Spacing.S,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: theme.hairline,
-  },
-  networkChipSelected: { backgroundColor: theme.brandSoft, borderColor: theme.brand },
-  networkChipText: { ...Typography.CAPTION, color: theme.inkMuted, fontWeight: '600' },
-  networkChipTextSelected: { color: theme.brand },
-
-  qrCard: {
-    alignSelf: 'center',
-    backgroundColor: theme.ink,
-    borderWidth: 1,
-    borderColor: theme.hairline,
-    borderRadius: 12,
-    padding: Spacing.M,
-    marginBottom: Spacing.M,
-  },
-  depositAddressText: { ...Typography.BODY, fontFamily: MONO, color: theme.ink, textAlign: 'center', marginBottom: Spacing.M },
   copyAddressButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     borderRadius: Spacing.BUTTON_RADIUS,

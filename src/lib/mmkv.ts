@@ -47,6 +47,10 @@ export const StorageKeys = {
   // Display-only: every actual Buy/Sell/Withdraw re-checks the live balance
   // server-side regardless of what this cache holds.
   CRYPTO_SCREEN_CACHE: 'crypto_screen_cache',
+  // Last known Buy coin list/prices, painted instantly on open while the
+  // real live prices load in the background — see CryptoBuyScreen.tsx.
+  // Display-only: the actual purchase always re-prices server-side.
+  CRYPTO_MARKETS_CACHE: 'crypto_markets_cache',
   // Set the first time this device ever sees a completed purchase — see
   // analytics.service.ts's trackFirstPurchaseIfNeeded(). Deliberately
   // persisted rather than an in-memory ref (like first_funding_completed

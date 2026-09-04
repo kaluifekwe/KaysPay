@@ -19,6 +19,7 @@ import { Spacing } from '../constants/spacing';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
 import { formatNaira } from '../utils/formatCurrency';
+import { storageHelpers, StorageKeys } from '../lib/mmkv';
 import {
   cryptoService,
   isValidCryptoAddress,
@@ -145,10 +146,25 @@ export default function CryptoBuyScreen({ navigation }: { navigation: any }) {
     setMarketsLoading(true);
     const result = await cryptoService.getMarkets();
     setMarketsLoading(false);
-    if (result) setMarkets(result.coins);
+    if (result) {
+      setMarkets(result.coins);
+      // Display-only: a real purchase always re-prices server-side, so a
+      // stale cached price here can never cost anyone anything.
+      storageHelpers.setObject(StorageKeys.CRYPTO_MARKETS_CACHE, result.coins);
+    }
   }, []);
 
   useEffect(() => {
+    // Paints the coin list instantly from the last live fetch (any screen
+    // this session, or a prior visit) while the real live fetch below runs
+    // in parallel — same "cache-first paint" CryptoScreen already uses for
+    // wallet balances. Buy is now its own screen reached directly from
+    // Home, so there's no longer a head start from an earlier mount
+    // elsewhere; without this the coin list showed a blank spinner every
+    // time until the live Quidax ticker fetch completed.
+    storageHelpers.getObject<MarketCoin[]>(StorageKeys.CRYPTO_MARKETS_CACHE).then((cached) => {
+      if (cached && cached.length > 0) setMarkets(cached);
+    });
     loadMarkets();
     cryptoService.getBuyLimits().then((limits) => { if (limits) setBuyLimits(limits); });
   }, [loadMarkets]);

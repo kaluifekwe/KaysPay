@@ -27,6 +27,7 @@ import {
   type CryptoNetwork,
   type SavedCryptoAddress,
   type CryptoWithdrawQuote,
+  type QuidaxWalletBalance,
 } from '../services/crypto.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import ProviderLogo from '../components/ProviderLogo';
@@ -43,12 +44,26 @@ function cryptoDecimals(n: number, code: string): number {
   return 8;
 }
 
-function formatCoin(n: number, code: string): string {
+function formatCoinAmount(n: number, code: string): string {
   const dp = cryptoDecimals(n, code);
   const factor = 10 ** dp;
   const floored = Math.floor((Number.isFinite(n) ? n : 0) * factor) / factor;
-  return `${floored.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })} ${code}`;
+  return floored.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
 }
+
+function formatCoin(n: number, code: string): string {
+  return `${formatCoinAmount(n, code)} ${code}`;
+}
+
+// Same names crypto-markets (the Buy coin list) uses server-side —
+// SUPPORTED_SWAP_ASSETS in supabase/functions/_shared/crypto-assets.ts.
+const ASSET_NAMES: Record<CryptoAsset, string> = {
+  USDT: 'Tether',
+  BTC: 'Bitcoin',
+  ETH: 'Ethereum',
+  SOL: 'Solana',
+};
+const WITHDRAWABLE_ASSETS = ['USDT', ...WITHDRAW_SINGLE_NETWORK_ASSETS] as CryptoAsset[];
 
 /**
  * Withdraw as its own 3-step screen (asset -> address -> amount), matching
@@ -85,22 +100,29 @@ export default function CryptoWithdrawScreen({ navigation }: { navigation: any }
   const [wdQuote, setWdQuote] = useState<CryptoWithdrawQuote | null>(null);
   const [wdQuoteLoading, setWdQuoteLoading] = useState(false);
   const [wdQuoteError, setWdQuoteError] = useState<string | null>(null);
-  const [wdBalance, setWdBalance] = useState<number | null>(null);
+  // Fetched once, for every asset -- the picker step shows each coin's own
+  // balance so the customer can see what's actually worth withdrawing
+  // before committing to one, not just after.
+  const [quidaxWallets, setQuidaxWallets] = useState<QuidaxWalletBalance[]>([]);
 
   const [actionState, setActionState] = useState<ResultStatus | 'idle'>('idle');
   const [actionError, setActionError] = useState('');
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
-  const loadBalance = useCallback(async (asset: CryptoAsset) => {
-    const account = await cryptoService.getOrCreateAccount();
-    if (!account.success) return;
-    const wallet = account.wallets.find((w) => w.currency === asset);
-    setWdBalance(wallet ? Number(wallet.balance) : null);
+  useEffect(() => {
+    cryptoService.getOrCreateAccount().then((account) => {
+      if (account.success) setQuidaxWallets(account.wallets);
+    });
   }, []);
 
-  useEffect(() => {
-    loadBalance(wdAsset);
-  }, [wdAsset, loadBalance]);
+  const balanceOf = useCallback(
+    (asset: CryptoAsset): number | null => {
+      const wallet = quidaxWallets.find((w) => w.currency === asset);
+      return wallet ? Number(wallet.balance) : null;
+    },
+    [quidaxWallets],
+  );
+  const wdBalance = balanceOf(wdAsset);
 
   useEffect(() => {
     cryptoService.listSavedAddresses('USDT').then(setSavedAddresses);
@@ -275,18 +297,34 @@ export default function CryptoWithdrawScreen({ navigation }: { navigation: any }
           {step === 'asset' && (
             <>
               <Text style={styles.label}>What are you withdrawing?</Text>
-              <View style={styles.networkRow}>
-                {(['USDT', ...WITHDRAW_SINGLE_NETWORK_ASSETS] as CryptoAsset[]).map((a) => (
-                  <TouchableOpacity
-                    key={a}
-                    style={[styles.networkChip, wdAsset === a && styles.networkChipSelected]}
-                    onPress={() => handlePickWdAsset(a)}
-                  >
-                    <Text style={[styles.networkChipText, wdAsset === a && styles.networkChipTextSelected]}>
-                      {a}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+              <Text style={styles.hintText}>Tap a coin to continue.</Text>
+              <View style={styles.assetList}>
+                {WITHDRAWABLE_ASSETS.map((a) => {
+                  const balance = balanceOf(a);
+                  return (
+                    <TouchableOpacity
+                      key={a}
+                      style={styles.assetRow}
+                      onPress={() => handlePickWdAsset(a)}
+                      activeOpacity={0.7}
+                    >
+                      <ProviderLogo
+                        source={CRYPTO_LOGOS[a]}
+                        fallbackLabel={ASSET_NAMES[a]}
+                        fallbackColor={theme.brand}
+                        size={36}
+                        style={{ marginRight: Spacing.M }}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.coinName}>{ASSET_NAMES[a]}</Text>
+                        <Text style={styles.assetRowSub}>
+                          {a} · balance {balance != null ? formatCoinAmount(balance, a) : '—'}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color={theme.inkFaint} />
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
               {savedAddresses.length > 0 && (
@@ -493,6 +531,7 @@ function createStyles(theme: AppTheme) {
     },
     headerTitle: { ...Typography.SECTION_HEADING, color: theme.ink },
     content: { paddingHorizontal: Spacing.SCREEN_PADDING, paddingVertical: Spacing.M, paddingBottom: 60 },
+    hintText: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: Spacing.M },
 
     notLiveBanner: {
       ...Typography.CAPTION,
@@ -552,6 +591,16 @@ function createStyles(theme: AppTheme) {
       marginBottom: Spacing.L,
     },
     coinName: { ...Typography.BODY, color: theme.ink, fontWeight: '600' },
+
+    assetList: { marginTop: Spacing.M },
+    assetRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: Spacing.M,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.hairlineSoft,
+    },
+    assetRowSub: { ...Typography.CAPTION, color: theme.inkFaint, marginTop: 2 },
 
     checkRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.M },
     checkbox: {
