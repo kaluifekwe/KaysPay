@@ -28,18 +28,13 @@ import { formatNaira } from '../utils/formatCurrency';
 import { storageHelpers, StorageKeys } from '../lib/mmkv';
 import {
   cryptoService,
-  isValidCryptoAddress,
   CRYPTO_NETWORKS,
-  WITHDRAW_SINGLE_NETWORK_ASSETS,
-  type CryptoAsset,
   type CryptoNetwork,
-  type SavedCryptoAddress,
   type QuidaxWalletBalance,
   type CryptoBuyPayment,
   type BuyAsset,
   type MarketCoin,
   type CryptoSellQuote,
-  type CryptoWithdrawQuote,
 } from '../services/crypto.service';
 import { kycService } from '../services/kyc.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
@@ -289,34 +284,15 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
   const [sellQuoteLoading, setSellQuoteLoading] = useState(false);
   const [sellQuoteError, setSellQuoteError] = useState<string | null>(null);
 
-  // Three steps -- pick asset, then address (format-validated live as you
-  // type), then amount -- replacing one long form where all four fields
-  // (asset, network, address, amount) were visible and editable at once.
-  // Owner decision, 2026-09-04: matches Sell's "commit to one thing at a
-  // time" shape rather than Buy/Sell's own single-screen-with-a-quote-card
-  // pattern, since a withdrawal address is the one field here an unreversed
-  // mistake actually costs real money on.
-  const [wdStep, setWdStep] = useState<'asset' | 'address' | 'amount'>('asset');
-  const [wdAsset, setWdAsset] = useState<CryptoAsset>('USDT');
-  const [wdNetwork, setWdNetwork] = useState<CryptoNetwork>('TRC20');
-  const [wdAddress, setWdAddress] = useState('');
-  const [wdAmount, setWdAmount] = useState('');
-  const [wdVerified, setWdVerified] = useState(false);
-  const [savedAddresses, setSavedAddresses] = useState<SavedCryptoAddress[]>([]);
-  const [wdQuote, setWdQuote] = useState<CryptoWithdrawQuote | null>(null);
-  const [wdQuoteLoading, setWdQuoteLoading] = useState(false);
-  const [wdQuoteError, setWdQuoteError] = useState<string | null>(null);
-
   // A Buy Quidax auto-refunded (paying account name didn't match) and is
   // waiting on the customer's own bank details — see CryptoRefundBankModal.
   const [pendingRefund, setPendingRefund] = useState<{ transactionId: string; amountNgn: number } | null>(null);
   const [refundModalVisible, setRefundModalVisible] = useState(false);
 
   const loadAll = useCallback(async () => {
-    const [usdt, liveRate, saved, quidaxAccount, refund] = await Promise.all([
+    const [usdt, liveRate, quidaxAccount, refund] = await Promise.all([
       cryptoService.getBalance('USDT'),
       cryptoService.getQuoteRate(),
-      cryptoService.listSavedAddresses('USDT'),
       cryptoService.getOrCreateAccount(),
       cryptoService.getPendingBuyRefund(),
     ]);
@@ -324,7 +300,6 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
     setRate(liveRate?.rate ?? null);
     setBuyRate(liveRate?.buyRate ?? null);
     setSellRate(liveRate?.sellRate ?? null);
-    setSavedAddresses(saved);
     setPendingRefund(refund);
     if (quidaxAccount.success) {
       setQuidaxWallets(quidaxAccount.wallets);
@@ -416,10 +391,11 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
       navigation.navigate('CryptoBuy');
       return;
     }
-    setTab(t);
     if (t === 'withdraw') {
-      setWdStep('asset');
+      navigation.navigate('CryptoWithdraw');
+      return;
     }
+    setTab(t);
   }, [navigation]);
 
   const quidaxUsdt = quidaxWallets.find((w) => w.currency === 'USDT');
@@ -427,10 +403,6 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
   // Quidax sub-account — never the legacy `usdtBalance` ledger number,
   // which only backs the not-yet-migrated Buy flow.
   const quidaxUsdtBalance = quidaxUsdt ? Number(quidaxUsdt.balance) : null;
-  // Withdraw's balance source generalizes to whichever asset is selected —
-  // same live-from-Quidax rule as USDT, just keyed by wdAsset.
-  const quidaxWdWallet = quidaxWallets.find((w) => w.currency === wdAsset);
-  const wdBalance = wdAsset === 'USDT' ? quidaxUsdtBalance : (quidaxWdWallet ? Number(quidaxWdWallet.balance) : null);
 
   // Only actual crypto belongs in the crypto total and asset list. Quidax
   // also returns its fiat NGN wallet; mixing that into `heldWallets` made
@@ -493,26 +465,7 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
     }
   }, [depositAddress]);
 
-  // Any edit to the withdrawal address/network invalidates the "I've
-  // checked this" confirmation — never let a stale confirmation carry over
-  // to a different address, same discipline as the meter-verify flow.
-  useEffect(() => {
-    setWdVerified(false);
-  }, [wdAddress, wdNetwork, wdAsset]);
-
-  // loadAll only ever fetches USDT's saved addresses (the default asset on
-  // mount) — this covers every other asset the picker switches to.
-  useEffect(() => {
-    if (wdAsset === 'USDT') return;
-    let cancelled = false;
-    cryptoService.listSavedAddresses(wdAsset).then((list) => {
-      if (!cancelled) setSavedAddresses(list);
-    });
-    return () => { cancelled = true; };
-  }, [wdAsset]);
-
   const numericSellUsdt = parseFloat(sellUsdt);
-  const numericWdAmount = parseFloat(wdAmount);
 
   useEffect(() => {
     setSellQuote(null);
@@ -533,39 +486,7 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
     return () => { cancelled = true; clearTimeout(handle); };
   }, [numericSellUsdt]);
 
-  // Same purpose as the sell-quote effect above: show the real network fee
-  // before confirming, not after. Re-fetches on network/asset change too —
-  // unlike Sell (one fixed network), Withdraw's fee depends entirely on
-  // which network the customer picked (for USDT) or which asset (for a
-  // single-network one), and TRC20/ERC20 differ from BEP20 by two orders of
-  // magnitude for the identical send. No client-side amount floor/ceiling
-  // here beyond "greater than zero" — the real min/max is asset-specific
-  // (5 USDT means nothing for BTC) and comes back live in the quote itself.
-  useEffect(() => {
-    setWdQuote(null);
-    setWdQuoteError(null);
-    if (!Number.isFinite(numericWdAmount) || numericWdAmount <= 0) {
-      setWdQuoteLoading(false);
-      return;
-    }
-    let cancelled = false;
-    const handle = setTimeout(async () => {
-      setWdQuoteLoading(true);
-      const result = await cryptoService.getWithdrawQuote(wdAsset, wdAsset === 'USDT' ? wdNetwork : '', numericWdAmount);
-      if (cancelled) return;
-      setWdQuoteLoading(false);
-      if (result.success && result.quote) setWdQuote(result.quote);
-      else setWdQuoteError(result.error || 'Could not calculate the live network fee.');
-    }, 400);
-    return () => { cancelled = true; clearTimeout(handle); };
-  }, [numericWdAmount, wdAsset, wdNetwork]);
-
   const sellNgnEstimate = sellRate && numericSellUsdt > 0 ? numericSellUsdt * sellRate : null;
-
-  const wdAddressValid = wdAddress.trim().length > 0 && isValidCryptoAddress(wdAsset, wdAsset === 'USDT' ? wdNetwork : '', wdAddress);
-  const wdAddressError = wdAddress.trim().length > 0 && !wdAddressValid
-    ? `This doesn't look like a valid ${wdAsset === 'USDT' ? wdNetwork : wdAsset} address.`
-    : null;
 
   // Bank/account details now live on CryptoSellBankScreen (step 2) — this
   // only gates whether the live quote is in a state worth proceeding from.
@@ -589,74 +510,11 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
     }
     setSellUsdt(String(maximum));
   }, [quidaxUsdtBalance]);
-  // Requires a live quote confirming both that the balance actually covers
-  // amount + fee (not just amount — the same gap that let a full-balance
-  // Sell pass locally and bounce at Quidax, fixed there first) and that the
-  // amount clears this asset/network's real minimum and maximum — both
-  // computed live per asset, never a flat USDT-shaped number (5 BTC would
-  // be absurd, 2000 BTC more so).
-  const canWithdraw = Number.isFinite(numericWdAmount) && numericWdAmount > 0
-    && wdBalance != null && wdAddressValid && wdVerified
-    && wdQuote?.sufficient === true && numericWdAmount >= wdQuote.minForNetwork
-    && numericWdAmount <= wdQuote.maxLimit;
 
   const handleProceedToSell = useCallback(() => {
     if (!canProceedSell || !sellQuote) return;
     navigation.navigate('CryptoSellBank', { sellUsdt: numericSellUsdt, sellQuote });
   }, [canProceedSell, sellQuote, numericSellUsdt, navigation]);
-
-  const submitWithdraw = useCallback(async () => {
-    const wdNetworkForRequest = wdAsset === 'USDT' ? wdNetwork : '';
-    const authResult = await authorize({
-      title: 'Confirm Crypto Withdrawal',
-      subtitle: `${numericWdAmount} ${wdAsset} · ${wdAsset === 'USDT' ? wdNetwork : wdAsset} · ${wdAddress.trim()}`,
-    });
-    if (!authResult) return;
-    setActionAmountNgn(null);
-    setActionState('processing');
-    const result = await cryptoService.withdraw(wdAsset, wdNetworkForRequest, wdAddress, numericWdAmount, authResult.token);
-    if (result.success) {
-      setActionMessage(result.message ?? null);
-      setActionState('success');
-      await cryptoService.saveAddress(wdAsset, wdNetworkForRequest, wdAddress, '');
-      setWdAddress('');
-      setWdAmount('');
-      setWdVerified(false);
-      loadAll();
-    } else {
-      setActionError(result.error || 'Withdrawal failed. Please try again.');
-      setActionState('failed');
-    }
-  }, [numericWdAmount, wdAsset, wdNetwork, wdAddress, authorize, loadAll]);
-
-  const handleWithdraw = useCallback(() => {
-    if (!canWithdraw) return;
-    submitWithdraw();
-  }, [canWithdraw, submitWithdraw]);
-
-  // Explicit reset on an actual asset-picker tap only — NOT a useEffect
-  // keyed on wdAsset, which would also fire (and wipe the address right
-  // back out) when handlePickSaved below sets both asset and address
-  // together for a saved BTC/USDT address.
-  const handlePickWdAsset = useCallback((next: CryptoAsset) => {
-    setWdAsset(next);
-    setWdAddress('');
-    setWdAmount('');
-    setWdVerified(false);
-    setWdStep('address');
-  }, []);
-
-  const handlePickSaved = useCallback((addr: SavedCryptoAddress) => {
-    setWdAsset(addr.asset);
-    if (addr.asset === 'USDT' && addr.network) setWdNetwork(addr.network as CryptoNetwork);
-    setWdAddress(addr.address);
-    setWdVerified(false);
-    cryptoService.touchAddress(addr.id);
-    // Address is already known-good (a previously saved one) -- skip
-    // straight to amount rather than making the customer re-confirm a
-    // field they didn't just type.
-    setWdStep('amount');
-  }, []);
 
   // Polls the order live while the customer is on the processing screen, so
   // the purchase visibly lands the instant crypto-ramp-webhook (or the
@@ -1334,210 +1192,6 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
                 </Text>
               </View>
             )}
-
-            {tab === 'withdraw' && (
-              <View>
-                <Text style={styles.notLiveBanner}>
-                  Sends crypto held in your KaysPay Wallet to any external wallet. Network fees are deducted by the
-                  network itself.
-                </Text>
-
-                {wdStep === 'asset' && (
-                  <>
-                    <Text style={styles.label}>What are you withdrawing?</Text>
-                    <View style={styles.networkRow}>
-                      {(['USDT', ...WITHDRAW_SINGLE_NETWORK_ASSETS] as CryptoAsset[]).map((a) => (
-                        <TouchableOpacity
-                          key={a}
-                          style={[styles.networkChip, wdAsset === a && styles.networkChipSelected]}
-                          onPress={() => handlePickWdAsset(a)}
-                        >
-                          <Text style={[styles.networkChipText, wdAsset === a && styles.networkChipTextSelected]}>
-                            {a}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    {savedAddresses.length > 0 && (
-                      <>
-                        <Text style={styles.label}>Saved addresses</Text>
-                        {savedAddresses.map((a) => (
-                          <TouchableOpacity key={a.id} style={styles.savedRow} onPress={() => handlePickSaved(a)}>
-                            <Text style={styles.savedRowText} numberOfLines={1}>
-                              {a.label ? `${a.label} · ` : ''}{a.address.slice(0, 6)}...{a.address.slice(-4)} ({a.asset === 'USDT' ? a.network : a.asset})
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </>
-                    )}
-                  </>
-                )}
-
-                {wdStep === 'address' && (
-                  <>
-                    <TouchableOpacity style={styles.backLink} onPress={() => setWdStep('asset')}>
-                      <Ionicons name="chevron-back" size={16} color={theme.inkFaint} />
-                      <Text style={styles.backLinkText}>Change asset</Text>
-                    </TouchableOpacity>
-
-                    <View style={styles.coinSummaryRow}>
-                      <ProviderLogo
-                        source={CRYPTO_LOGOS[wdAsset]}
-                        fallbackLabel={wdAsset}
-                        fallbackColor={theme.brand}
-                        size={38}
-                        style={{ marginRight: Spacing.M }}
-                      />
-                      <Text style={styles.coinName}>Withdrawing {wdAsset}</Text>
-                    </View>
-
-                    {wdAsset === 'USDT' && (
-                      <>
-                        <Text style={styles.label}>Network</Text>
-                        <View style={styles.networkRow}>
-                          {CRYPTO_NETWORKS.map((n) => (
-                            <TouchableOpacity
-                              key={n.key}
-                              style={[styles.networkChip, wdNetwork === n.key && styles.networkChipSelected]}
-                              onPress={() => setWdNetwork(n.key)}
-                            >
-                              <Text style={[styles.networkChipText, wdNetwork === n.key && styles.networkChipTextSelected]}>
-                                {n.label}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </>
-                    )}
-
-                    <Text style={styles.label}>Wallet Address</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={wdAddress}
-                      onChangeText={setWdAddress}
-                      placeholder={`Paste your ${wdAsset === 'USDT' ? wdNetwork : wdAsset} address`}
-                      placeholderTextColor={theme.inkFaint}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                    {/* Format/checksum validation only — the strongest real
-                        check possible. There is no registry to confirm a
-                        crypto address belongs to an actual wallet, unlike a
-                        bank account number. */}
-                    {wdAddressError && <Text style={styles.errorText}>{wdAddressError}</Text>}
-                    {wdAddressValid && (
-                      <View style={styles.checkRow}>
-                        <Ionicons name="checkmark-circle" size={16} color={theme.brand} />
-                        <Text style={[styles.checkLabel, { color: theme.brand }]}>
-                          Looks like a valid {wdAsset === 'USDT' ? wdNetwork : wdAsset} address
-                        </Text>
-                      </View>
-                    )}
-
-                    <TouchableOpacity
-                      style={[styles.primaryButton, !wdAddressValid && styles.primaryButtonDisabled]}
-                      onPress={() => setWdStep('amount')}
-                      disabled={!wdAddressValid}
-                    >
-                      <Text style={styles.primaryButtonText}>Continue</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-
-                {wdStep === 'amount' && (
-                  <>
-                    <TouchableOpacity style={styles.backLink} onPress={() => setWdStep('address')}>
-                      <Ionicons name="chevron-back" size={16} color={theme.inkFaint} />
-                      <Text style={styles.backLinkText}>Change address</Text>
-                    </TouchableOpacity>
-
-                    <View style={styles.coinSummaryRow}>
-                      <ProviderLogo
-                        source={CRYPTO_LOGOS[wdAsset]}
-                        fallbackLabel={wdAsset}
-                        fallbackColor={theme.brand}
-                        size={38}
-                        style={{ marginRight: Spacing.M }}
-                      />
-                      <Text style={styles.coinName} numberOfLines={1}>
-                        {wdAsset === 'USDT' ? wdNetwork : wdAsset} · {wdAddress.trim().slice(0, 6)}...{wdAddress.trim().slice(-4)}
-                      </Text>
-                    </View>
-
-                    <Text style={styles.label}>Amount ({wdAsset})</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={wdAmount}
-                      onChangeText={(t) => setWdAmount(t.replace(/[^0-9.]/g, ''))}
-                      placeholder={wdAsset === 'USDT' ? 'e.g. 20' : 'e.g. 0.001'}
-                      placeholderTextColor={theme.inkFaint}
-                      keyboardType="decimal-pad"
-                    />
-                    {wdBalance != null && numericWdAmount > wdBalance && (
-                      <Text style={styles.errorText}>Insufficient {wdAsset} balance.</Text>
-                    )}
-
-                    {/* Shows the real per-network fee before confirming — the
-                        withdraw screen used to show none at all, on any network,
-                        for any amount. A 5 USDT withdrawal on ERC20 cost $2 in
-                        fees with nothing on screen ever warning it was coming. */}
-                    {wdQuote && (
-                      <View style={styles.sellQuoteCard}>
-                        <Text style={styles.sellQuoteText}>Amount to withdraw: {formatCoin(wdQuote.amount, wdAsset)}</Text>
-                        <Text style={styles.sellQuoteText}>
-                          {wdQuote.network} network fee: {formatCoin(wdQuote.networkFee, wdAsset)}
-                          {wdQuote.feeSharePercent != null ? ` (${wdQuote.feeSharePercent}%)` : ''}
-                        </Text>
-                        <Text style={styles.sellQuoteTotal}>Total required: {formatCoin(wdQuote.totalRequired, wdAsset)}</Text>
-                      </View>
-                    )}
-                    {wdQuote && !wdQuote.sufficient && (
-                      <Text style={styles.errorText}>
-                        You need {formatCoin(wdQuote.totalRequired, wdAsset)}, but only {formatCoin(wdQuote.available, wdAsset)} is available.
-                      </Text>
-                    )}
-                    {wdQuote && numericWdAmount > 0 && numericWdAmount < wdQuote.minForNetwork && (
-                      <Text style={styles.errorText}>
-                        Enter at least {formatCoin(wdQuote.minForNetwork, wdAsset)} for {wdQuote.network} — the network fee makes anything smaller not worth sending.
-                      </Text>
-                    )}
-                    {wdQuote && numericWdAmount > wdQuote.maxLimit && (
-                      <Text style={styles.errorText}>
-                        Enter an amount up to {formatCoin(wdQuote.maxLimit, wdAsset)}.
-                      </Text>
-                    )}
-                    {wdQuoteError && <Text style={styles.errorText}>{wdQuoteError}</Text>}
-
-                    {wdAddressValid && numericWdAmount > 0 && (
-                      <View style={styles.confirmBox}>
-                        <Text style={styles.confirmText}>
-                          Sending {Number.isFinite(numericWdAmount) ? numericWdAmount : 0} {wdAsset} on {wdAsset === 'USDT' ? wdNetwork : wdAsset} to{'\n'}
-                          {wdAddress.trim()}
-                        </Text>
-                        <Text style={styles.confirmWarning}>
-                          This cannot be reversed if the address or network is wrong. Only send to a wallet you control.
-                        </Text>
-                        <TouchableOpacity style={styles.checkRow} onPress={() => setWdVerified((v) => !v)}>
-                          <View style={[styles.checkbox, wdVerified && styles.checkboxChecked]}>
-                            {wdVerified && <Text style={styles.checkboxMark}>✓</Text>}
-                          </View>
-                          <Text style={styles.checkLabel}>I've checked this address and network are correct</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-
-                    <TouchableOpacity
-                      style={[styles.primaryButton, !canWithdraw && styles.primaryButtonDisabled]}
-                      onPress={handleWithdraw}
-                      disabled={!canWithdraw}
-                    >
-                      <Text style={styles.primaryButtonText}>Withdraw {wdAsset}</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-              </View>
-            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -1789,14 +1443,6 @@ function createStyles(theme: AppTheme) {
   headerTitle: { ...Typography.SECTION_HEADING, color: theme.ink },
   errorText: { ...Typography.ERROR, color: theme.down, marginTop: Spacing.S },
   hintText: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: Spacing.M },
-  notLiveBanner: {
-    ...Typography.CAPTION,
-    color: theme.brand,
-    backgroundColor: theme.brandSoft,
-    borderRadius: Spacing.CARD_RADIUS,
-    padding: Spacing.M,
-    marginBottom: Spacing.L,
-  },
 
   kycGate: {
     alignItems: 'center',
@@ -1830,16 +1476,6 @@ function createStyles(theme: AppTheme) {
   },
   primaryButtonDisabled: { opacity: 0.4 },
   primaryButtonText: { ...Typography.BUTTON_TEXT, color: theme.background },
-
-  savedRow: {
-    borderWidth: 1,
-    borderColor: theme.hairline,
-    backgroundColor: theme.surfaceRaised,
-    borderRadius: Spacing.CARD_RADIUS,
-    padding: Spacing.M,
-    marginBottom: Spacing.S,
-  },
-  savedRowText: { ...Typography.BODY, color: theme.ink },
 
   networkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.S },
   networkChip: {
@@ -1881,24 +1517,7 @@ function createStyles(theme: AppTheme) {
     padding: Spacing.CARD_PADDING,
     marginTop: Spacing.L,
   },
-  confirmText: { ...Typography.BODY, color: theme.ink },
   confirmWarning: { ...Typography.CAPTION, color: theme.gold, marginTop: Spacing.S },
-  checkRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.M },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: theme.brand,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: Spacing.M,
-  },
-  checkboxChecked: { backgroundColor: theme.brand },
-  checkboxMark: { color: theme.background, fontSize: 14, fontWeight: '700' },
-  checkLabel: { ...Typography.CAPTION, color: theme.ink, flex: 1 },
-
-  destinationToggleRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.L },
 
   heroValue2: { fontFamily: MONO, fontSize: 26, fontWeight: '600', color: theme.ink, marginTop: Spacing.XS },
   tapToCopyHint: { ...Typography.CAPTION, color: theme.brand, marginBottom: Spacing.M },
@@ -1953,16 +1572,6 @@ function createStyles(theme: AppTheme) {
     padding: Spacing.M,
     marginTop: Spacing.L,
   },
-  bankTransferNotice: {
-    flexDirection: 'row',
-    gap: Spacing.S,
-    backgroundColor: `${theme.brand}1A`,
-    borderRadius: Spacing.CARD_RADIUS,
-    padding: Spacing.M,
-    marginTop: Spacing.L,
-  },
-  bankTransferNoticeTitle: { ...Typography.BODY_SMALL, fontWeight: '700', color: theme.ink, marginBottom: 2 },
-  bankTransferNoticeText: { ...Typography.CAPTION, color: theme.inkMuted, lineHeight: 18 },
   doneButtonOutline: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     borderRadius: Spacing.BUTTON_RADIUS,
@@ -1982,34 +1591,6 @@ function createStyles(theme: AppTheme) {
   },
   cancelPurchaseButtonText: { ...Typography.BUTTON_TEXT, color: theme.inkMuted },
 
-  search: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.S,
-    backgroundColor: theme.surfaceRaised,
-    borderWidth: 1,
-    borderColor: theme.hairline,
-    borderRadius: 13,
-    paddingHorizontal: Spacing.M,
-    height: Spacing.INPUT_HEIGHT,
-  },
-  searchInput: { flex: 1, ...Typography.BODY, color: theme.ink, padding: 0 },
-
-  seg: {
-    flexDirection: 'row',
-    gap: 6,
-    backgroundColor: theme.surfaceRaised,
-    borderWidth: 1,
-    borderColor: theme.hairline,
-    borderRadius: 12,
-    padding: 4,
-    marginTop: Spacing.M,
-  },
-  segOpt: { flex: 1, alignItems: 'center', paddingVertical: Spacing.S, borderRadius: 9 },
-  segOptOn: { backgroundColor: theme.surfaceRaised2 },
-  segOptText: { ...Typography.CAPTION, color: theme.inkFaint, fontWeight: '600' },
-  segOptTextOn: { color: theme.ink },
-
   sectionLabel: {
     ...Typography.CAPTION,
     fontFamily: MONO,
@@ -2020,46 +1601,5 @@ function createStyles(theme: AppTheme) {
     marginBottom: Spacing.XS,
   },
 
-  coinList: { gap: Spacing.XS },
-  coinRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.M,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.hairlineSoft,
-  },
-  coinMid: { flex: 1, gap: 3 },
-  coinNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  coinName: { ...Typography.BODY, color: theme.ink, fontWeight: '600' },
-  coinTag: {
-    ...Typography.CAPTION,
-    fontFamily: MONO,
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    color: theme.gold,
-    backgroundColor: theme.goldSoft,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 999,
-  },
-  coinTicker: { ...Typography.CAPTION, fontFamily: MONO, color: theme.inkFaint },
-  coinRight: { alignItems: 'flex-end' },
-  coinPrice: { ...Typography.BODY, fontFamily: MONO, color: theme.ink, fontWeight: '600' },
-  coinChange: { ...Typography.CAPTION, fontFamily: MONO, fontWeight: '600', marginTop: 2 },
-
-  backLink: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.M },
-  backLinkText: { ...Typography.CAPTION, color: theme.inkFaint, marginLeft: 2 },
-
-  coinSummaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.surfaceRaised,
-    borderWidth: 1,
-    borderColor: theme.hairline,
-    borderRadius: Spacing.CARD_RADIUS,
-    padding: Spacing.M,
-    marginBottom: Spacing.L,
-  },
   });
 }
