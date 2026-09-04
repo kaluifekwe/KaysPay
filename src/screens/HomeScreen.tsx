@@ -24,7 +24,6 @@ import { formatNaira } from '../utils/formatCurrency';
 import { walletService } from '../services/wallet.service';
 import { notificationService } from '../services/notification.service';
 import { vtuService } from '../services/vtu.service';
-import { kycService } from '../services/kyc.service';
 import { cryptoService } from '../services/crypto.service';
 import { transferService } from '../services/transfer.service';
 import { esimService } from '../services/esim.service';
@@ -166,14 +165,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     greetingHour < 12 ? 'Good morning' : greetingHour < 17 ? 'Good afternoon' : 'Good evening';
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
-  // null = not checked yet (banner stays hidden rather than flashing on
-  // every open); false shows the "Complete your KYC" banner below. Wallet
-  // funding and Crypto both gate on this same status — this is just the
-  // visible reminder so it's never a surprise when those are blocked.
-  const [kycVerified, setKycVerified] = useState<boolean | null>(null);
   // Admin's Crypto kill switch — defaults to true so the tile doesn't
   // flash away and back on every open; only actually hides once the check
-  // comes back false. Re-checked on every focus, same as kycVerified above.
+  // comes back false. Re-checked on every focus.
   const [cryptoEnabled, setCryptoEnabled] = useState(true);
   // Wallet Transfer is a cash-out feature, so its visibility fails closed:
   // it appears only after the live admin switch is confirmed enabled.
@@ -196,7 +190,6 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   useFocusEffect(
     useCallback(() => {
       void analytics.track('home_viewed', { outcome: 'view' });
-      kycService.getStatus().then((s) => setKycVerified(s.verified)).catch(() => {});
       void refreshFeatureAvailability();
     }, [refreshFeatureAvailability]),
   );
@@ -458,26 +451,6 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           </TouchableOpacity>
         )}
 
-        {kycVerified === false && (
-          <TouchableOpacity
-            style={styles.kycBanner}
-            activeOpacity={0.85}
-            onPress={() => navigation.navigate('Kyc')}
-          >
-            <View style={styles.kycBannerIconWrap}>
-              <Ionicons name="alert-circle-outline" size={20} color={theme.gold} />
-            </View>
-            <View style={styles.kycBannerTextWrap}>
-              <View style={styles.kycBannerPill}>
-                <Text style={styles.kycBannerPillText}>Action needed</Text>
-              </View>
-              <Text style={styles.kycBannerTitle}>Complete your identity verification</Text>
-              <Text style={styles.kycBannerSubtitle}>Required to fund your wallet or trade crypto</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={theme.gold} />
-          </TouchableOpacity>
-        )}
-
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{Strings.HOME_QUICK_ACTIONS}</Text>
           <View style={styles.quickActionsGrid}>
@@ -669,55 +642,6 @@ function createStyles(theme: AppTheme) {
   },
   cashbackPillAmount: {
     fontWeight: '800',
-  },
-  kycBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    // Gold, not brandSoft. In brand green this banner sat on a green header
-    // above a green wallet card and read as decoration — people scrolled past
-    // a step that blocks funding, then wondered why their transfer was held.
-    // Gold is already the app's "look here" accent (the New badges), so this
-    // draws the eye without introducing a colour the app doesn't use.
-    backgroundColor: theme.goldSoft,
-    borderRadius: 12,
-    paddingHorizontal: 13,
-    paddingVertical: 12,
-    marginBottom: 16,
-    gap: 10,
-  },
-  kycBannerPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: theme.gold,
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginBottom: 4,
-  },
-  kycBannerPillText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: theme.onBrand,
-  },
-  kycBannerIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: theme.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  kycBannerTextWrap: {
-    flex: 1,
-  },
-  kycBannerTitle: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: theme.ink,
-  },
-  kycBannerSubtitle: {
-    fontSize: 12,
-    color: theme.inkMuted,
-    marginTop: 2,
   },
   walletLabel: {
     ...Typography.CAPTION,
