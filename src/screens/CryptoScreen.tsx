@@ -374,6 +374,14 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [sellQuoteLoading, setSellQuoteLoading] = useState(false);
   const [sellQuoteError, setSellQuoteError] = useState<string | null>(null);
 
+  // Three steps -- pick asset, then address (format-validated live as you
+  // type), then amount -- replacing one long form where all four fields
+  // (asset, network, address, amount) were visible and editable at once.
+  // Owner decision, 2026-09-04: matches Sell's "commit to one thing at a
+  // time" shape rather than Buy/Sell's own single-screen-with-a-quote-card
+  // pattern, since a withdrawal address is the one field here an unreversed
+  // mistake actually costs real money on.
+  const [wdStep, setWdStep] = useState<'asset' | 'address' | 'amount'>('asset');
   const [wdAsset, setWdAsset] = useState<CryptoAsset>('USDT');
   const [wdNetwork, setWdNetwork] = useState<CryptoNetwork>('TRC20');
   const [wdAddress, setWdAddress] = useState('');
@@ -491,6 +499,9 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
       setSelectedBuyAsset(null);
       setBuyNgn('');
       setBuyToExternal(false);
+    }
+    if (t === 'withdraw') {
+      setWdStep('asset');
     }
   }, []);
 
@@ -819,6 +830,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     setWdAddress('');
     setWdAmount('');
     setWdVerified(false);
+    setWdStep('address');
   }, []);
 
   const handlePickSaved = useCallback((addr: SavedCryptoAddress) => {
@@ -827,6 +839,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     setWdAddress(addr.address);
     setWdVerified(false);
     cryptoService.touchAddress(addr.id);
+    // Address is already known-good (a previously saved one) -- skip
+    // straight to amount rather than making the customer re-confirm a
+    // field they didn't just type.
+    setWdStep('amount');
   }, []);
 
   // Polls the order live while the customer is on the processing screen, so
@@ -1741,134 +1757,202 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   network itself.
                 </Text>
 
-                <Text style={styles.label}>Asset</Text>
-                <View style={styles.networkRow}>
-                  {(['USDT', ...WITHDRAW_SINGLE_NETWORK_ASSETS] as CryptoAsset[]).map((a) => (
-                    <TouchableOpacity
-                      key={a}
-                      style={[styles.networkChip, wdAsset === a && styles.networkChipSelected]}
-                      onPress={() => handlePickWdAsset(a)}
-                    >
-                      <Text style={[styles.networkChipText, wdAsset === a && styles.networkChipTextSelected]}>
-                        {a}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {savedAddresses.length > 0 && (
+                {wdStep === 'asset' && (
                   <>
-                    <Text style={styles.label}>Saved addresses</Text>
-                    {savedAddresses.map((a) => (
-                      <TouchableOpacity key={a.id} style={styles.savedRow} onPress={() => handlePickSaved(a)}>
-                        <Text style={styles.savedRowText} numberOfLines={1}>
-                          {a.label ? `${a.label} · ` : ''}{a.address.slice(0, 6)}...{a.address.slice(-4)} ({a.asset === 'USDT' ? a.network : a.asset})
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </>
-                )}
-
-                {wdAsset === 'USDT' && (
-                  <>
-                    <Text style={styles.label}>Network</Text>
+                    <Text style={styles.label}>What are you withdrawing?</Text>
                     <View style={styles.networkRow}>
-                      {CRYPTO_NETWORKS.map((n) => (
+                      {(['USDT', ...WITHDRAW_SINGLE_NETWORK_ASSETS] as CryptoAsset[]).map((a) => (
                         <TouchableOpacity
-                          key={n.key}
-                          style={[styles.networkChip, wdNetwork === n.key && styles.networkChipSelected]}
-                          onPress={() => setWdNetwork(n.key)}
+                          key={a}
+                          style={[styles.networkChip, wdAsset === a && styles.networkChipSelected]}
+                          onPress={() => handlePickWdAsset(a)}
                         >
-                          <Text style={[styles.networkChipText, wdNetwork === n.key && styles.networkChipTextSelected]}>
-                            {n.label}
+                          <Text style={[styles.networkChipText, wdAsset === a && styles.networkChipTextSelected]}>
+                            {a}
                           </Text>
                         </TouchableOpacity>
                       ))}
                     </View>
+
+                    {savedAddresses.length > 0 && (
+                      <>
+                        <Text style={styles.label}>Saved addresses</Text>
+                        {savedAddresses.map((a) => (
+                          <TouchableOpacity key={a.id} style={styles.savedRow} onPress={() => handlePickSaved(a)}>
+                            <Text style={styles.savedRowText} numberOfLines={1}>
+                              {a.label ? `${a.label} · ` : ''}{a.address.slice(0, 6)}...{a.address.slice(-4)} ({a.asset === 'USDT' ? a.network : a.asset})
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </>
+                    )}
                   </>
                 )}
 
-                <Text style={styles.label}>Wallet Address</Text>
-                <TextInput
-                  style={styles.input}
-                  value={wdAddress}
-                  onChangeText={setWdAddress}
-                  placeholder={`Paste your ${wdAsset === 'USDT' ? wdNetwork : wdAsset} address`}
-                  placeholderTextColor={theme.inkFaint}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                {wdAddressError && <Text style={styles.errorText}>{wdAddressError}</Text>}
-
-                <Text style={styles.label}>Amount ({wdAsset})</Text>
-                <TextInput
-                  style={styles.input}
-                  value={wdAmount}
-                  onChangeText={(t) => setWdAmount(t.replace(/[^0-9.]/g, ''))}
-                  placeholder={wdAsset === 'USDT' ? 'e.g. 20' : 'e.g. 0.001'}
-                  placeholderTextColor={theme.inkFaint}
-                  keyboardType="decimal-pad"
-                />
-                {wdBalance != null && numericWdAmount > wdBalance && (
-                  <Text style={styles.errorText}>Insufficient {wdAsset} balance.</Text>
-                )}
-
-                {/* Shows the real per-network fee before confirming — the
-                    withdraw screen used to show none at all, on any network,
-                    for any amount. A 5 USDT withdrawal on ERC20 cost $2 in
-                    fees with nothing on screen ever warning it was coming. */}
-                {wdQuote && (
-                  <View style={styles.sellQuoteCard}>
-                    <Text style={styles.sellQuoteText}>Amount to withdraw: {formatCoin(wdQuote.amount, wdAsset)}</Text>
-                    <Text style={styles.sellQuoteText}>
-                      {wdQuote.network} network fee: {formatCoin(wdQuote.networkFee, wdAsset)}
-                      {wdQuote.feeSharePercent != null ? ` (${wdQuote.feeSharePercent}%)` : ''}
-                    </Text>
-                    <Text style={styles.sellQuoteTotal}>Total required: {formatCoin(wdQuote.totalRequired, wdAsset)}</Text>
-                  </View>
-                )}
-                {wdQuote && !wdQuote.sufficient && (
-                  <Text style={styles.errorText}>
-                    You need {formatCoin(wdQuote.totalRequired, wdAsset)}, but only {formatCoin(wdQuote.available, wdAsset)} is available.
-                  </Text>
-                )}
-                {wdQuote && numericWdAmount > 0 && numericWdAmount < wdQuote.minForNetwork && (
-                  <Text style={styles.errorText}>
-                    Enter at least {formatCoin(wdQuote.minForNetwork, wdAsset)} for {wdQuote.network} — the network fee makes anything smaller not worth sending.
-                  </Text>
-                )}
-                {wdQuote && numericWdAmount > wdQuote.maxLimit && (
-                  <Text style={styles.errorText}>
-                    Enter an amount up to {formatCoin(wdQuote.maxLimit, wdAsset)}.
-                  </Text>
-                )}
-                {wdQuoteError && <Text style={styles.errorText}>{wdQuoteError}</Text>}
-
-                {wdAddressValid && numericWdAmount > 0 && (
-                  <View style={styles.confirmBox}>
-                    <Text style={styles.confirmText}>
-                      Sending {Number.isFinite(numericWdAmount) ? numericWdAmount : 0} {wdAsset} on {wdAsset === 'USDT' ? wdNetwork : wdAsset} to{'\n'}
-                      {wdAddress.trim()}
-                    </Text>
-                    <Text style={styles.confirmWarning}>
-                      This cannot be reversed if the address or network is wrong. Only send to a wallet you control.
-                    </Text>
-                    <TouchableOpacity style={styles.checkRow} onPress={() => setWdVerified((v) => !v)}>
-                      <View style={[styles.checkbox, wdVerified && styles.checkboxChecked]}>
-                        {wdVerified && <Text style={styles.checkboxMark}>✓</Text>}
-                      </View>
-                      <Text style={styles.checkLabel}>I've checked this address and network are correct</Text>
+                {wdStep === 'address' && (
+                  <>
+                    <TouchableOpacity style={styles.backLink} onPress={() => setWdStep('asset')}>
+                      <Ionicons name="chevron-back" size={16} color={theme.inkFaint} />
+                      <Text style={styles.backLinkText}>Change asset</Text>
                     </TouchableOpacity>
-                  </View>
+
+                    <View style={styles.coinSummaryRow}>
+                      <ProviderLogo
+                        source={CRYPTO_LOGOS[wdAsset]}
+                        fallbackLabel={wdAsset}
+                        fallbackColor={theme.brand}
+                        size={38}
+                        style={{ marginRight: Spacing.M }}
+                      />
+                      <Text style={styles.coinName}>Withdrawing {wdAsset}</Text>
+                    </View>
+
+                    {wdAsset === 'USDT' && (
+                      <>
+                        <Text style={styles.label}>Network</Text>
+                        <View style={styles.networkRow}>
+                          {CRYPTO_NETWORKS.map((n) => (
+                            <TouchableOpacity
+                              key={n.key}
+                              style={[styles.networkChip, wdNetwork === n.key && styles.networkChipSelected]}
+                              onPress={() => setWdNetwork(n.key)}
+                            >
+                              <Text style={[styles.networkChipText, wdNetwork === n.key && styles.networkChipTextSelected]}>
+                                {n.label}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </>
+                    )}
+
+                    <Text style={styles.label}>Wallet Address</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={wdAddress}
+                      onChangeText={setWdAddress}
+                      placeholder={`Paste your ${wdAsset === 'USDT' ? wdNetwork : wdAsset} address`}
+                      placeholderTextColor={theme.inkFaint}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoFocus
+                    />
+                    {/* Format/checksum validation only — the strongest real
+                        check possible. There is no registry to confirm a
+                        crypto address belongs to an actual wallet, unlike a
+                        bank account number. */}
+                    {wdAddressError && <Text style={styles.errorText}>{wdAddressError}</Text>}
+                    {wdAddressValid && (
+                      <View style={styles.checkRow}>
+                        <Ionicons name="checkmark-circle" size={16} color={theme.brand} />
+                        <Text style={[styles.checkLabel, { color: theme.brand }]}>
+                          Looks like a valid {wdAsset === 'USDT' ? wdNetwork : wdAsset} address
+                        </Text>
+                      </View>
+                    )}
+
+                    <TouchableOpacity
+                      style={[styles.primaryButton, !wdAddressValid && styles.primaryButtonDisabled]}
+                      onPress={() => setWdStep('amount')}
+                      disabled={!wdAddressValid}
+                    >
+                      <Text style={styles.primaryButtonText}>Continue</Text>
+                    </TouchableOpacity>
+                  </>
                 )}
 
-                <TouchableOpacity
-                  style={[styles.primaryButton, !canWithdraw && styles.primaryButtonDisabled]}
-                  onPress={handleWithdraw}
-                  disabled={!canWithdraw}
-                >
-                  <Text style={styles.primaryButtonText}>Withdraw {wdAsset}</Text>
-                </TouchableOpacity>
+                {wdStep === 'amount' && (
+                  <>
+                    <TouchableOpacity style={styles.backLink} onPress={() => setWdStep('address')}>
+                      <Ionicons name="chevron-back" size={16} color={theme.inkFaint} />
+                      <Text style={styles.backLinkText}>Change address</Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.coinSummaryRow}>
+                      <ProviderLogo
+                        source={CRYPTO_LOGOS[wdAsset]}
+                        fallbackLabel={wdAsset}
+                        fallbackColor={theme.brand}
+                        size={38}
+                        style={{ marginRight: Spacing.M }}
+                      />
+                      <Text style={styles.coinName} numberOfLines={1}>
+                        {wdAsset === 'USDT' ? wdNetwork : wdAsset} · {wdAddress.trim().slice(0, 6)}...{wdAddress.trim().slice(-4)}
+                      </Text>
+                    </View>
+
+                    <Text style={styles.label}>Amount ({wdAsset})</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={wdAmount}
+                      onChangeText={(t) => setWdAmount(t.replace(/[^0-9.]/g, ''))}
+                      placeholder={wdAsset === 'USDT' ? 'e.g. 20' : 'e.g. 0.001'}
+                      placeholderTextColor={theme.inkFaint}
+                      keyboardType="decimal-pad"
+                      autoFocus
+                    />
+                    {wdBalance != null && numericWdAmount > wdBalance && (
+                      <Text style={styles.errorText}>Insufficient {wdAsset} balance.</Text>
+                    )}
+
+                    {/* Shows the real per-network fee before confirming — the
+                        withdraw screen used to show none at all, on any network,
+                        for any amount. A 5 USDT withdrawal on ERC20 cost $2 in
+                        fees with nothing on screen ever warning it was coming. */}
+                    {wdQuote && (
+                      <View style={styles.sellQuoteCard}>
+                        <Text style={styles.sellQuoteText}>Amount to withdraw: {formatCoin(wdQuote.amount, wdAsset)}</Text>
+                        <Text style={styles.sellQuoteText}>
+                          {wdQuote.network} network fee: {formatCoin(wdQuote.networkFee, wdAsset)}
+                          {wdQuote.feeSharePercent != null ? ` (${wdQuote.feeSharePercent}%)` : ''}
+                        </Text>
+                        <Text style={styles.sellQuoteTotal}>Total required: {formatCoin(wdQuote.totalRequired, wdAsset)}</Text>
+                      </View>
+                    )}
+                    {wdQuote && !wdQuote.sufficient && (
+                      <Text style={styles.errorText}>
+                        You need {formatCoin(wdQuote.totalRequired, wdAsset)}, but only {formatCoin(wdQuote.available, wdAsset)} is available.
+                      </Text>
+                    )}
+                    {wdQuote && numericWdAmount > 0 && numericWdAmount < wdQuote.minForNetwork && (
+                      <Text style={styles.errorText}>
+                        Enter at least {formatCoin(wdQuote.minForNetwork, wdAsset)} for {wdQuote.network} — the network fee makes anything smaller not worth sending.
+                      </Text>
+                    )}
+                    {wdQuote && numericWdAmount > wdQuote.maxLimit && (
+                      <Text style={styles.errorText}>
+                        Enter an amount up to {formatCoin(wdQuote.maxLimit, wdAsset)}.
+                      </Text>
+                    )}
+                    {wdQuoteError && <Text style={styles.errorText}>{wdQuoteError}</Text>}
+
+                    {wdAddressValid && numericWdAmount > 0 && (
+                      <View style={styles.confirmBox}>
+                        <Text style={styles.confirmText}>
+                          Sending {Number.isFinite(numericWdAmount) ? numericWdAmount : 0} {wdAsset} on {wdAsset === 'USDT' ? wdNetwork : wdAsset} to{'\n'}
+                          {wdAddress.trim()}
+                        </Text>
+                        <Text style={styles.confirmWarning}>
+                          This cannot be reversed if the address or network is wrong. Only send to a wallet you control.
+                        </Text>
+                        <TouchableOpacity style={styles.checkRow} onPress={() => setWdVerified((v) => !v)}>
+                          <View style={[styles.checkbox, wdVerified && styles.checkboxChecked]}>
+                            {wdVerified && <Text style={styles.checkboxMark}>✓</Text>}
+                          </View>
+                          <Text style={styles.checkLabel}>I've checked this address and network are correct</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
+                    <TouchableOpacity
+                      style={[styles.primaryButton, !canWithdraw && styles.primaryButtonDisabled]}
+                      onPress={handleWithdraw}
+                      disabled={!canWithdraw}
+                    >
+                      <Text style={styles.primaryButtonText}>Withdraw {wdAsset}</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
             )}
           </View>
