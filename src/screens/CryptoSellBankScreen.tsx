@@ -53,6 +53,7 @@ export default function CryptoSellBankScreen({ navigation, route }: any) {
   const [actionState, setActionState] = useState<ResultStatus | 'idle'>('idle');
   const [actionError, setActionError] = useState('');
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     cryptoService.listSellBanks().then((list) => {
@@ -92,7 +93,13 @@ export default function CryptoSellBankScreen({ navigation, route }: any) {
   const sellNgnEstimate = sellQuote.expectedNgn;
 
   const handleSell = useCallback(async () => {
-    if (!canSell || !sellBank) return;
+    if (!canSell || !sellBank || sending) return;
+    // Disabled BEFORE the PIN/biometric step, not after it -- same fix as
+    // CryptoScreen's handleBuy (see its comment): authorize() awaits real
+    // user interaction, so leaving the button live until it resolves let a
+    // second tap start an entirely separate sale, observed live as two real
+    // off-ramp orders ~73 seconds apart for the same amount.
+    setSending(true);
     const authResult = await authorize({
       title: 'Confirm Crypto Sale',
       amount: sellNgnEstimate ?? undefined,
@@ -103,9 +110,13 @@ export default function CryptoSellBankScreen({ navigation, route }: any) {
       // amount spent from the wallet, so a wallet-balance check is backwards.
       skipBalanceCheck: true,
     });
-    if (!authResult) return;
+    if (!authResult) {
+      setSending(false);
+      return;
+    }
     setActionState('processing');
     const result = await cryptoService.sell(sellUsdt, sellBank.code, sellBank.name, sellAccountNumber, authResult.token);
+    setSending(false);
     if (result.success) {
       setActionMessage(result.message ?? null);
       setActionState('success');
@@ -113,7 +124,7 @@ export default function CryptoSellBankScreen({ navigation, route }: any) {
       setActionError(result.error || 'Sale failed. Please try again.');
       setActionState('failed');
     }
-  }, [canSell, sellBank, sellAccountNumber, sellNgnEstimate, sellUsdt, authorize]);
+  }, [canSell, sellBank, sellAccountNumber, sellNgnEstimate, sellUsdt, authorize, sending]);
 
   if (actionState !== 'idle') {
     return (
@@ -217,11 +228,11 @@ export default function CryptoSellBankScreen({ navigation, route }: any) {
 
           <View style={{ flex: 1 }} />
           <TouchableOpacity
-            style={[styles.primaryButton, !canSell && styles.primaryButtonDisabled]}
+            style={[styles.primaryButton, (!canSell || sending) && styles.primaryButtonDisabled]}
             onPress={handleSell}
-            disabled={!canSell}
+            disabled={!canSell || sending}
           >
-            <Text style={styles.primaryButtonText}>Confirm Sell</Text>
+            {sending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryButtonText}>Confirm Sell</Text>}
           </TouchableOpacity>
           <Text style={styles.hintText}>Paid straight to that bank account — your KaysPay wallet is not involved.</Text>
         </View>
