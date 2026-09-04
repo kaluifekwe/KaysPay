@@ -26,7 +26,6 @@ import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
 import { formatNaira } from '../utils/formatCurrency';
 import { storageHelpers, StorageKeys } from '../lib/mmkv';
-import { analytics } from '../services/analytics.service';
 import {
   cryptoService,
   isValidCryptoAddress,
@@ -54,9 +53,24 @@ import { supabase } from '../lib/supabase';
 
 interface CryptoScreenProps {
   navigation: { goBack: () => void; navigate: (screen: string, params?: any) => void };
+  route?: { params?: { pendingBuyPayment?: PendingBuyPayment } };
 }
 
 type Tab = 'deposit' | 'buy' | 'sell' | 'withdraw';
+
+// Handed off from CryptoBuyScreen via navigation params once a purchase is
+// started there — this screen still owns the payment-instructions and
+// live-polling UI that follow (see the top-of-file comment in
+// CryptoBuyScreen.tsx for why the split stopped there).
+interface PendingBuyPayment {
+  payment: CryptoBuyPayment;
+  estimatedCrypto: number;
+  destinationType: 'kayspay_account' | 'external_wallet';
+  asset: BuyAsset;
+  pendingSwap: boolean;
+  transactionId: string;
+  expiresAt: number;
+}
 
 // Display-only snapshot for instant paint on open — see the mount effect
 // and loadAll() below. Never consulted by any balance check that actually
@@ -73,64 +87,6 @@ interface CryptoScreenCache {
 // it now follows the app-wide theme toggle (Settings > Dark Mode) like every
 // other screen — dark mode just happens to reuse the same palette this
 // screen originally built for itself (see constants/theme.ts).
-
-// The coin picker's "Popular" filter — a subset of the full curated list,
-// not a separate data source. "All" always means the full 9 coins Buy
-// actually supports (not Quidax's wider ~50-asset universe — this app only
-// offers what it can actually deliver end to end).
-const POPULAR_BUY_CODES: BuyAsset[] = ['USDT', 'BTC', 'ETH', 'SOL', 'XRP'];
-type CoinFilter = 'popular' | 'gainers' | 'all';
-
-// A tiny connected-line sparkline built from pure Views (no react-native-svg
-// in this project — same constraint QrCodeView.tsx already works around).
-// Quidax's ticker has no intraday tick history, only today's open/low/high/
-// last, so this shapes an honest little trend line from those 4 real
-// reference points rather than either omitting the chart or fabricating
-// fake tick data to fill it.
-function Sparkline({ open, low, high, last, up, upColor, downColor }: {
-  open: number | null; low: number | null; high: number | null; last: number;
-  up: boolean; upColor: string; downColor: string;
-}) {
-  const w = 46;
-  const h = 16;
-  const pts = [open ?? last, low ?? last, ((low ?? last) + (high ?? last)) / 2, high ?? last, last]
-    .filter((n): n is number => Number.isFinite(n));
-  if (pts.length < 2) return <View style={{ width: w, height: h }} />;
-  const max = Math.max(...pts);
-  const min = Math.min(...pts);
-  const span = max - min || 1;
-  const coords = pts.map((p, i) => ({
-    x: (i / (pts.length - 1)) * w,
-    y: h - ((p - min) / span) * h,
-  }));
-  const color = up ? upColor : downColor;
-  return (
-    <View style={{ width: w, height: h }}>
-      {coords.slice(0, -1).map((p, i) => {
-        const next = coords[i + 1];
-        const dx = next.x - p.x;
-        const dy = next.y - p.y;
-        const length = Math.sqrt(dx * dx + dy * dy) || 0.01;
-        const angle = Math.atan2(dy, dx);
-        return (
-          <View
-            key={i}
-            style={{
-              position: 'absolute',
-              left: p.x,
-              top: p.y,
-              width: length,
-              height: 1.6,
-              backgroundColor: color,
-              transform: [{ translateY: -0.8 }, { rotate: `${angle}rad` }],
-              transformOrigin: '0 50%',
-            }}
-          />
-        );
-      })}
-    </View>
-  );
-}
 
 const TAB_ICONS: Record<Tab, keyof typeof Ionicons.glyphMap> = {
   deposit: 'arrow-down-circle-outline',
@@ -178,7 +134,7 @@ function formatCoin(n: number, code: string): string {
   return formatCrypto(n, code);
 }
 
-export default function CryptoScreen({ navigation }: CryptoScreenProps) {
+export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
   const { authorize } = useTransactionAuth();
   const { theme } = useTheme();
   const styles = createStyles(theme);
@@ -209,7 +165,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // not an imperative measurement call — captured once when that step
   // renders. Scrolling on focus is then a fixed calculation, no runtime
   // measurement at all.
-  const buySectionYRef = useRef(0);
   const sellSectionYRef = useRef(0);
   const scrollSectionIntoView = useCallback((sectionYRef: React.RefObject<number>) => {
     // A short delay only to let onLayout report back first on a section
@@ -279,56 +234,15 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionAmountNgn, setActionAmountNgn] = useState<number | null>(null);
 
-  // Buy is a 2-step flow: pick a coin from live prices, then set an amount
-  // and (USDT only) choose where it's delivered together on one screen —
-  // owner decision 2026-08-22, collapsing the previous separate destination
-  // step since there was nothing left to review between the two.
-  const [buyStep, setBuyStep] = useState<'pick' | 'amount'>('pick');
-  // The amount field's onFocus alone isn't fully reliable here: it carries
-  // autoFocus, so it fires the instant this step's View mounts, before
-  // onLayout may have reported the section's position back yet. Triggering
-  // the same scroll again off buyStep itself is a redundant, harmless
-  // second attempt — scrollSectionIntoView already no-ops if the ref is
-  // still unset.
-  useEffect(() => {
-    if (buyStep === 'amount') scrollSectionIntoView(buySectionYRef);
-  }, [buyStep, scrollSectionIntoView]);
   const [markets, setMarkets] = useState<MarketCoin[]>([]);
   const [marketsLoading, setMarketsLoading] = useState(false);
-  const [coinSearch, setCoinSearch] = useState('');
-  const [coinFilter, setCoinFilter] = useState<CoinFilter>('popular');
   const [usdtNgnRate, setUsdtNgnRate] = useState<number | null>(null);
-  // Shown on the amount screen before the customer commits — the exact
-  // numbers crypto-buy itself enforces, so this can't promise something the
-  // real purchase then rejects (or worse, silently accepts and gets stuck —
-  // see the ₦2,790 purchase that hung forever below Quidax's real minimum).
-  const [buyLimits, setBuyLimits] = useState<{ minNgn: number; maxNgn: number } | null>(null);
-  const [selectedBuyAsset, setSelectedBuyAsset] = useState<BuyAsset | null>(null);
-  const [buyNgn, setBuyNgn] = useState('');
-  // Where a purchase should be delivered: the customer's own KaysPay crypto
-  // account (default), or an external wallet they supply — same address/
-  // network validation as Withdraw, since a wrong entry here is even less
-  // recoverable (Quidax delivers straight out of the purchase, with no
-  // KaysPay-side balance to recover it from). Only offered for USDT — every
-  // other coin needs a swap leg first, so it always lands in the KaysPay
-  // account (see crypto.service.ts's buy() doc comment).
-  const [buyToExternal, setBuyToExternal] = useState(false);
-  const [buyDestNetwork, setBuyDestNetwork] = useState<CryptoNetwork>('TRC20');
-  const [buyDestAddress, setBuyDestAddress] = useState('');
-  const [buyDestVerified, setBuyDestVerified] = useState(false);
-  const [buyLoading, setBuyLoading] = useState(false);
   // A started purchase isn't complete — Quidax hands back a one-time bank
   // account and the app waits for the transfer, same as any other
-  // bank-transfer funding flow already in the app.
-  const [pendingBuyPayment, setPendingBuyPayment] = useState<{
-    payment: CryptoBuyPayment;
-    estimatedCrypto: number;
-    destinationType: 'kayspay_account' | 'external_wallet';
-    asset: BuyAsset;
-    pendingSwap: boolean;
-    transactionId: string;
-    expiresAt: number;
-  } | null>(null);
+  // bank-transfer funding flow already in the app. Set by CryptoBuyScreen's
+  // navigation params (see the route.params effect below) — Buy itself now
+  // lives on its own screen.
+  const [pendingBuyPayment, setPendingBuyPayment] = useState<PendingBuyPayment | null>(null);
   // Quidax's one-time bank account is only valid for 30 minutes (owner
   // confirmed 2026-08-22) — not something the API returns, so tracked
   // client-side from the moment the account is generated. Ticks once a
@@ -352,9 +266,10 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // reset back to null mid-poll, so a slow/duplicate status read can't make
   // a step that already lit up flicker back off.
   const [buyFiatReceivedAt, setBuyFiatReceivedAt] = useState<string | null>(null);
-  // Which coin this in-flight purchase is for. selectedBuyAsset is cleared
-  // the moment the customer commits, so it's captured here to keep the
-  // waiting/confirmation copy specific to what they actually bought.
+  // Which coin this in-flight purchase is for — captured from the handoff
+  // params (CryptoBuyScreen clears its own selection once it navigates
+  // away), so the waiting/confirmation copy can stay specific to what was
+  // actually bought.
   const [buyPollAsset, setBuyPollAsset] = useState<BuyAsset | null>(null);
   const [buyPollPendingSwap, setBuyPollPendingSwap] = useState(false);
   const [buyPollStartedAt, setBuyPollStartedAt] = useState<number | null>(null);
@@ -461,9 +376,8 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     });
     loadAll();
     // Prices are needed up front now too, to value every coin in the wallet
-    // hero — not just once the customer opens Buy.
+    // hero, even though Buy itself now lives on its own screen.
     loadMarkets();
-    cryptoService.getBuyLimits().then((limits) => { if (limits) setBuyLimits(limits); });
     storageHelpers.getBoolean(StorageKeys.BALANCE_VISIBLE).then((v) => {
       if (v !== undefined) setBalanceVisible(v);
     });
@@ -476,13 +390,18 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   // action moved elsewhere.
   useFocusEffect(useCallback(() => { loadAll(); }, [loadAll]));
 
-  // Safety net: retry once if the customer opens Buy and the initial
-  // markets fetch above happened to fail.
+  // Picks up a purchase started on CryptoBuyScreen — that screen navigates
+  // back here with pendingBuyPayment once the bank account is generated,
+  // since this screen still owns the payment-instructions/live-polling UI.
+  // Cleared from params immediately so it can't be re-applied on a later,
+  // unrelated focus of this screen (e.g. the back button).
   useEffect(() => {
-    if (tab === 'buy' && markets.length === 0 && !marketsLoading) {
-      loadMarkets();
-    }
-  }, [tab, markets.length, marketsLoading, loadMarkets]);
+    const payment = route?.params?.pendingBuyPayment;
+    if (!payment) return;
+    setPendingBuyPayment(payment);
+    loadAll();
+    navigation.navigate('Crypto', { pendingBuyPayment: undefined });
+  }, [route?.params?.pendingBuyPayment, navigation, loadAll]);
 
   const toggleBalanceVisibility = useCallback(() => {
     setBalanceVisible((prev) => {
@@ -493,24 +412,15 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
   }, []);
 
   const handleSelectTab = useCallback((t: Tab) => {
-    setTab(t);
     if (t === 'buy') {
-      setBuyStep('pick');
-      setSelectedBuyAsset(null);
-      setBuyNgn('');
-      setBuyToExternal(false);
+      navigation.navigate('CryptoBuy');
+      return;
     }
+    setTab(t);
     if (t === 'withdraw') {
       setWdStep('asset');
     }
-  }, []);
-
-  const handlePickBuyAsset = useCallback((code: BuyAsset) => {
-    setSelectedBuyAsset(code);
-    setBuyNgn('');
-    setBuyToExternal(false);
-    setBuyStep('amount');
-  }, []);
+  }, [navigation]);
 
   const quidaxUsdt = quidaxWallets.find((w) => w.currency === 'USDT');
   // Sell and Withdraw both spend the real balance held in the user's own
@@ -601,11 +511,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     return () => { cancelled = true; };
   }, [wdAsset]);
 
-  useEffect(() => {
-    setBuyDestVerified(false);
-  }, [buyDestAddress, buyDestNetwork]);
-
-  const numericBuyNgn = parseFloat(buyNgn);
   const numericSellUsdt = parseFloat(sellUsdt);
   const numericWdAmount = parseFloat(wdAmount);
 
@@ -655,30 +560,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     return () => { cancelled = true; clearTimeout(handle); };
   }, [numericWdAmount, wdAsset, wdNetwork]);
 
-  const selectedMarket = markets.find((m) => m.code === selectedBuyAsset) || null;
-
-  const visibleMarkets = markets
-    .filter((m) => {
-      if (!coinSearch.trim()) return true;
-      const q = coinSearch.trim().toLowerCase();
-      return m.code.toLowerCase().includes(q) || m.name.toLowerCase().includes(q);
-    })
-    .filter((m) => {
-      if (coinFilter === 'gainers') return (m.change24hPct ?? 0) > 0;
-      if (coinFilter === 'popular') return POPULAR_BUY_CODES.includes(m.code);
-      return true;
-    })
-    .sort((a, b) => (coinFilter === 'gainers' ? (b.change24hPct ?? 0) - (a.change24hPct ?? 0) : 0));
-  // NGN is what the customer actually types (they're paying by bank
-  // transfer in Naira). Deliberately NO pre-purchase crypto-amount estimate
-  // anywhere in Buy any more — the exchange ticker one shown here used to
-  // run far off Ramp's real rate (a genuine ₦3,000 purchase settled at
-  // ~1.1462 USDT; the old formula showed ~2.15208 for the same amount), and
-  // Ramp's own purchase_quotes/buy endpoint 404s regardless of the request
-  // shape tried. Rather than show a number that might be wrong, the first
-  // crypto amount shown anywhere is the real one, once Quidax prices the
-  // purchase — see the "Complete your purchase" screen, which has been
-  // accurate on every real purchase made this session.
   const sellNgnEstimate = sellRate && numericSellUsdt > 0 ? numericSellUsdt * sellRate : null;
 
   const wdAddressValid = wdAddress.trim().length > 0 && isValidCryptoAddress(wdAsset, wdAsset === 'USDT' ? wdNetwork : '', wdAddress);
@@ -686,16 +567,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     ? `This doesn't look like a valid ${wdAsset === 'USDT' ? wdNetwork : wdAsset} address.`
     : null;
 
-  const buyDestAddressValid = buyDestAddress.trim().length > 0 && isValidCryptoAddress('USDT', buyDestNetwork, buyDestAddress);
-  const buyDestAddressError = buyDestAddress.trim().length > 0 && !buyDestAddressValid
-    ? `This doesn't look like a valid ${buyDestNetwork} address.`
-    : null;
-
-  const buyBelowMin = buyLimits != null && numericBuyNgn > 0 && numericBuyNgn < buyLimits.minNgn;
-  const buyAboveMax = buyLimits != null && numericBuyNgn > 0 && numericBuyNgn > buyLimits.maxNgn;
-  const canBuy = !!selectedBuyAsset && Number.isFinite(numericBuyNgn) && numericBuyNgn > 0
-    && !buyBelowMin && !buyAboveMax
-    && (!buyToExternal || (buyDestAddressValid && buyDestVerified));
   // Bank/account details now live on CryptoSellBankScreen (step 2) — this
   // only gates whether the live quote is in a state worth proceeding from.
   const canProceedSell = Number.isFinite(numericSellUsdt) && numericSellUsdt >= 1 && numericSellUsdt <= 2000
@@ -728,64 +599,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
     && wdBalance != null && wdAddressValid && wdVerified
     && wdQuote?.sufficient === true && numericWdAmount >= wdQuote.minForNetwork
     && numericWdAmount <= wdQuote.maxLimit;
-
-  const handleBuy = useCallback(async () => {
-    if (!canBuy || !selectedBuyAsset || buyLoading) return;
-    // Disabled BEFORE the PIN/biometric step, not after it. authorize()
-    // awaits real user interaction, so leaving the button live until it
-    // resolves let a second tap start an entirely separate purchase —
-    // observed live as two orders 190ms apart, each with its own Quidax
-    // bank account the customer could pay into. Same ordering the VTU
-    // screens use.
-    setBuyLoading(true);
-    const subtitle = buyToExternal
-      ? `To ${buyDestNetwork} wallet ${buyDestAddress.trim()}`
-      : 'To your KaysPay Wallet';
-    const authResult = await authorize({
-      title: `Confirm ${selectedBuyAsset} Purchase`,
-      amount: numericBuyNgn || undefined,
-      subtitle,
-      // Buy is paid by bank transfer straight to Quidax's one-time account
-      // -- it never debits the KaysPay wallet (see crypto-buy/index.ts) --
-      // so a wallet-balance check here is comparing against the wrong
-      // number entirely and can wrongly block a purchase the user can
-      // actually afford.
-      skipBalanceCheck: true,
-    });
-    if (!authResult) {
-      setBuyLoading(false);
-      return;
-    }
-    void analytics.track('crypto_buy_started', { outcome: 'started' });
-    const result = await cryptoService.buy(
-      selectedBuyAsset,
-      numericBuyNgn,
-      authResult.token,
-      buyToExternal ? { network: buyDestNetwork, address: buyDestAddress.trim() } : undefined,
-    );
-    setBuyLoading(false);
-    if (result.success && result.payment) {
-      setPendingBuyPayment({
-        payment: result.payment,
-        estimatedCrypto: result.estimatedCrypto ?? 0,
-        destinationType: result.destinationType ?? 'kayspay_account',
-        asset: result.asset ?? selectedBuyAsset,
-        pendingSwap: !!result.pendingSwap,
-        transactionId: result.transactionId ?? '',
-        expiresAt: Date.now() + 30 * 60 * 1000,
-      });
-      // Deliberately NOT resetting buyStep/selectedBuyAsset/buyNgn here —
-      // cancelling out of the bank-details screen needs to land back on
-      // the amount screen with the coin and amount still filled in, not on
-      // a blank coin picker. These only clear once the user actually
-      // commits via "Done — I'll transfer now" below.
-      loadAll();
-    } else {
-      void analytics.track('crypto_buy_failed', { outcome: 'failed', failureCode: 'purchase_rejected' });
-      setActionError(result.error || 'Purchase failed. Please try again.');
-      setActionState('failed');
-    }
-  }, [canBuy, selectedBuyAsset, buyLoading, numericBuyNgn, buyToExternal, buyDestNetwork, buyDestAddress, authorize, loadAll]);
 
   const handleProceedToSell = useCallback(() => {
     if (!canProceedSell || !sellQuote) return;
@@ -1084,14 +897,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
             onPress={() => {
               const txId = pendingBuyPayment?.transactionId;
               setPendingBuyPayment(null);
-              // Only clear the coin/amount now that the user has committed
-              // to actually making the transfer — cancelling instead (below)
-              // deliberately leaves these alone.
-              setBuyStep('pick');
-              setSelectedBuyAsset(null);
-              setBuyNgn('');
-              setBuyDestAddress('');
-              setBuyDestVerified(false);
               if (txId) {
                 setActionAmountNgn(payment.amount);
                 setActionMessage("We're watching for your transfer — this updates automatically.");
@@ -1251,7 +1056,7 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
               there's nowhere higher left to scroll to. Removing them here
               is a structural fix rather than another scroll calculation:
               with nothing above it, the field sits at the top on its own. */}
-          {!((tab === 'buy' && buyStep === 'amount') || tab === 'sell') && (
+          {tab !== 'sell' && (
           <>
           <View style={styles.hero}>
             <View style={styles.heroTop}>
@@ -1386,19 +1191,19 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
           )}
 
           <View style={styles.panel}>
-            {(tab === 'buy' || tab === 'sell') && kycVerified === false && (
+            {tab === 'sell' && kycVerified === false && (
               <View style={styles.kycGate}>
                 <View style={styles.kycGateIconWrap}>
                   <Ionicons name="shield-checkmark-outline" size={28} color={theme.brand} />
                 </View>
                 <Text style={styles.kycGateTitle}>Verify Your Identity</Text>
                 <Text style={styles.kycGateSubtitle}>
-                  Buying and selling crypto requires identity verification. Verify your NIN or BVN to
+                  Selling crypto requires identity verification. Verify your NIN or BVN to
                   continue — it only takes a minute.
                 </Text>
                 <TouchableOpacity
                   style={styles.primaryButton}
-                  onPress={() => navigation.navigate('Kyc', { requiredFor: 'buy or sell crypto' })}
+                  onPress={() => navigation.navigate('Kyc', { requiredFor: 'sell crypto' })}
                   activeOpacity={0.85}
                 >
                   <Text style={styles.primaryButtonText}>Verify Now</Text>
@@ -1455,226 +1260,6 @@ export default function CryptoScreen({ navigation }: CryptoScreenProps) {
                   </TouchableOpacity>
                 )}
                 {depositError && <Text style={styles.errorText}>{depositError}</Text>}
-              </View>
-            )}
-
-            {tab === 'buy' && buyStep === 'pick' && kycVerified !== false && (
-              <View>
-                <View style={styles.search}>
-                  <Ionicons name="search" size={15} color={theme.inkFaint} />
-                  <TextInput
-                    style={styles.searchInput}
-                    value={coinSearch}
-                    onChangeText={setCoinSearch}
-                    placeholder="Search coin or ticker"
-                    placeholderTextColor={theme.inkFaint}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-
-                <View style={styles.seg}>
-                  {(['popular', 'gainers', 'all'] as CoinFilter[]).map((f) => (
-                    <TouchableOpacity
-                      key={f}
-                      style={[styles.segOpt, coinFilter === f && styles.segOptOn]}
-                      onPress={() => setCoinFilter(f)}
-                    >
-                      <Text style={[styles.segOptText, coinFilter === f && styles.segOptTextOn]}>
-                        {f === 'popular' ? 'Popular' : f === 'gainers' ? 'Gainers' : 'All'}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                <Text style={styles.sectionLabel}>Live markets</Text>
-
-                {marketsLoading && markets.length === 0 ? (
-                  <ActivityIndicator color={theme.brand} style={{ marginTop: Spacing.L }} />
-                ) : (
-                  <View style={styles.coinList}>
-                    {visibleMarkets.map((m) => {
-                      const up = (m.change24hPct ?? 0) >= 0;
-                      return (
-                        <TouchableOpacity
-                          key={m.code}
-                          style={styles.coinRow}
-                          onPress={() => handlePickBuyAsset(m.code)}
-                          activeOpacity={0.7}
-                        >
-                          <ProviderLogo
-                            source={CRYPTO_LOGOS[m.code]}
-                            fallbackLabel={m.name}
-                            fallbackColor={theme.brand}
-                            size={38}
-                            style={{ marginRight: Spacing.M }}
-                          />
-                          <View style={styles.coinMid}>
-                            <View style={styles.coinNameRow}>
-                              <Text style={styles.coinName}>{m.name}</Text>
-                              {m.stablecoin && <Text style={styles.coinTag}>STABLE</Text>}
-                            </View>
-                            <Text style={styles.coinTicker}>{m.code}</Text>
-                            <Sparkline open={m.openNgn} low={m.lowNgn} high={m.highNgn} last={m.priceNgn} up={up} upColor={theme.up} downColor={theme.down} />
-                          </View>
-                          <View style={styles.coinRight}>
-                            <Text style={styles.coinPrice}>{formatNaira(m.priceNgn)}</Text>
-                            {m.change24hPct != null && (
-                              <Text style={[styles.coinChange, { color: up ? theme.up : theme.down }]}>
-                                {up ? '+' : ''}{m.change24hPct.toFixed(2)}%
-                              </Text>
-                            )}
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
-                    {!marketsLoading && visibleMarkets.length === 0 && (
-                      <Text style={styles.errorText}>
-                        {markets.length === 0 ? 'Could not load live prices. Pull down to try again.' : 'No coins match.'}
-                      </Text>
-                    )}
-                  </View>
-                )}
-              </View>
-            )}
-
-            {tab === 'buy' && buyStep === 'amount' && selectedBuyAsset && kycVerified !== false && (
-              <View onLayout={(e) => { buySectionYRef.current = e.nativeEvent.layout.y; }}>
-                <TouchableOpacity style={styles.backLink} onPress={() => setBuyStep('pick')}>
-                  <Ionicons name="chevron-back" size={16} color={theme.inkFaint} />
-                  <Text style={styles.backLinkText}>Change coin</Text>
-                </TouchableOpacity>
-
-                <View style={styles.coinSummaryRow}>
-                  <ProviderLogo
-                    source={CRYPTO_LOGOS[selectedBuyAsset]}
-                    fallbackLabel={selectedMarket?.name ?? selectedBuyAsset}
-                    fallbackColor={theme.brand}
-                    size={38}
-                    style={{ marginRight: Spacing.M }}
-                  />
-                  <View>
-                    <Text style={styles.coinName}>{selectedMarket?.name ?? selectedBuyAsset}</Text>
-                    {selectedMarket && <Text style={styles.coinTicker}>{formatNaira(selectedMarket.priceNgn)}</Text>}
-                  </View>
-                </View>
-
-                <View style={styles.bankTransferNotice}>
-                  <Ionicons name="business-outline" size={20} color={theme.brand} style={{ marginTop: 1 }} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.bankTransferNoticeTitle}>Paid by direct bank transfer</Text>
-                    <Text style={styles.bankTransferNoticeText}>
-                      You don't need to fund your KaysPay Wallet first — you'll transfer straight to a one-time account.
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={styles.label}>Amount to spend (₦)</Text>
-                {buyLimits && (
-                  <Text style={styles.hintText}>
-                    Between {formatNaira(buyLimits.minNgn)} and {formatNaira(buyLimits.maxNgn)}
-                  </Text>
-                )}
-                <TextInput
-                  style={styles.input}
-                  value={buyNgn}
-                  onChangeText={(t) => setBuyNgn(t.replace(/[^0-9.]/g, ''))}
-                  placeholder="e.g. 5000"
-                  placeholderTextColor={theme.inkFaint}
-                  keyboardType="decimal-pad"
-                  autoFocus
-                  onFocus={() => scrollSectionIntoView(buySectionYRef)}
-                />
-                {buyBelowMin && buyLimits && (
-                  <Text style={styles.errorText}>
-                    Minimum purchase is {formatNaira(buyLimits.minNgn)}.
-                  </Text>
-                )}
-                {buyAboveMax && buyLimits && (
-                  <Text style={styles.errorText}>
-                    Maximum purchase is {formatNaira(buyLimits.maxNgn)}.
-                  </Text>
-                )}
-
-                {selectedMarket?.stablecoin ? (
-                  <>
-                    <TouchableOpacity
-                      style={styles.destinationToggleRow}
-                      onPress={() => setBuyToExternal((v) => !v)}
-                      activeOpacity={0.75}
-                    >
-                      <View style={[styles.checkbox, buyToExternal && styles.checkboxChecked]}>
-                        {buyToExternal && <Text style={styles.checkboxMark}>✓</Text>}
-                      </View>
-                      <Text style={styles.checkLabel}>Send to a different wallet instead of my KaysPay Wallet</Text>
-                    </TouchableOpacity>
-
-                    {buyToExternal && (
-                      <View>
-                        <Text style={styles.label}>Network</Text>
-                        <View style={styles.networkRow}>
-                          {CRYPTO_NETWORKS.map((n) => (
-                            <TouchableOpacity
-                              key={n.key}
-                              style={[styles.networkChip, buyDestNetwork === n.key && styles.networkChipSelected]}
-                              onPress={() => setBuyDestNetwork(n.key)}
-                            >
-                              <Text style={[styles.networkChipText, buyDestNetwork === n.key && styles.networkChipTextSelected]}>
-                                {n.label}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-
-                        <Text style={styles.label}>Wallet Address</Text>
-                        <TextInput
-                          style={styles.input}
-                          value={buyDestAddress}
-                          onChangeText={setBuyDestAddress}
-                          placeholder={`Paste your ${buyDestNetwork} address`}
-                          placeholderTextColor={theme.inkFaint}
-                          autoCapitalize="none"
-                          autoCorrect={false}
-                        />
-                        {buyDestAddressError && <Text style={styles.errorText}>{buyDestAddressError}</Text>}
-
-                        {buyDestAddressValid && (
-                          <View style={styles.confirmBox}>
-                            <Text style={styles.confirmWarning}>
-                              This is riskier than a withdrawal: the USDT is delivered straight out of this purchase, with
-                              no KaysPay balance to recover it from if the address or network is wrong.
-                            </Text>
-                            <TouchableOpacity style={styles.checkRow} onPress={() => setBuyDestVerified((v) => !v)}>
-                              <View style={[styles.checkbox, buyDestVerified && styles.checkboxChecked]}>
-                                {buyDestVerified && <Text style={styles.checkboxMark}>✓</Text>}
-                              </View>
-                              <Text style={styles.checkLabel}>I've checked this address and network are correct</Text>
-                            </TouchableOpacity>
-                          </View>
-                        )}
-                      </View>
-                    )}
-                  </>
-                ) : (
-                  <View style={styles.confirmBox}>
-                    <Text style={styles.confirmText}>
-                      Delivered to your KaysPay Wallet. The exact amount of {selectedBuyAsset} you receive is
-                      confirmed once your transfer is priced.
-                    </Text>
-                  </View>
-                )}
-
-                <TouchableOpacity
-                  style={[styles.primaryButton, (!canBuy || buyLoading) && styles.primaryButtonDisabled]}
-                  onPress={handleBuy}
-                  disabled={!canBuy || buyLoading}
-                >
-                  {buyLoading ? (
-                    <ActivityIndicator color={theme.background} />
-                  ) : (
-                    <Text style={styles.primaryButtonText}>Confirm</Text>
-                  )}
-                </TouchableOpacity>
               </View>
             )}
 
