@@ -245,9 +245,6 @@ verify_jwt = true
 [functions.admin-dashboard-stats]
 verify_jwt = true
 
-[functions.admin-share-report]
-verify_jwt = true
-
 [functions.admin-crypto-sell-resolve]
 verify_jwt = true
 
@@ -255,9 +252,6 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.admin-campaigns]
-verify_jwt = true
-
-[functions.admin-campaign-dispatch]
 verify_jwt = true
 
 [functions.marketing-unsubscribe]

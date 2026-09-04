@@ -8,7 +8,7 @@ import { getBuyLimits } from "./quidax-ramp-client.ts";
 // Only used if Quidax's own limits endpoint is unreachable — their live
 // values win, since breaching them fails the purchase only AFTER the
 // customer has been shown an account to pay into.
-export const FALLBACK_MIN_NGN = 3000;
+export const FALLBACK_MIN_NGN = 10000;
 export const FALLBACK_MAX_NGN = 2_000_000;
 
 // Quidax's purchase_limits/buy endpoint reports a ₦2,000 minimum, but that's
@@ -21,29 +21,31 @@ export const FALLBACK_MAX_NGN = 2_000_000;
 // whatever they report live, so their API's own number is never trusted
 // below this regardless of what it says.
 //
-// This was briefly raised to ₦10,000 on 2026-08-31 and is now back to
-// ₦3,000, because the reason for raising it has gone away.
+// History: briefly raised to ₦10,000 on 2026-08-31 as a stopgap (see below),
+// then dropped back to ₦3,000 on the same day once delivery moved to BEP20
+// and the fee problem that justified it was actually fixed. Raised to
+// ₦10,000 again on 2026-09-05 — this time as a deliberate owner decision on
+// minimum order size, not a fee workaround; the BEP20 fix below still holds,
+// so a ₦3,000 purchase would deliver its full value today if allowed.
 //
 // Quidax explained that the ₦2,790 order hung because TRC20 gas is a flat $1
 // and the order was worth 0.9963 USDT — less than the fee to move it. They
 // also confirmed that money is never returned ("it remains in that state").
 // Being a FLAT fee, it hit small orders hardest: measured across every
 // completed buy the gap between gross and delivered was $1.00–$1.08 every
-// time, so a ₦3,000 purchase delivered barely half its value. ₦10,000 was
-// the size at which that fee stopped being outrageous.
+// time, so a ₦3,000 purchase delivered barely half its value under TRC20.
 //
-// It was never the real fix. crypto-buy was settling on TRC20 in the belief
-// that it was the cheapest network; Quidax's own fee table shows it is joint
-// most expensive at $1.00, while BEP20 is $0.02. Delivery moved to BEP20, so
-// the fee that justified a ₦10,000 floor is now two cents and a ₦3,000
-// purchase delivers ~99% of its value.
+// crypto-buy was settling on TRC20 in the belief that it was the cheapest
+// network; Quidax's own fee table shows it is joint most expensive at $1.00,
+// while BEP20 is $0.02. Delivery moved to BEP20, so that fee is now two
+// cents and no longer a reason to keep the floor above ₦3,000 on its own.
 //
-// Keeping ₦3,000 rather than dropping to the ₦2,000 Quidax's limits endpoint
-// reports: their number is what let the lost ₦2,790 order through, and their
-// support separately confirmed (2026-08-20) that ₦3,000 is the real floor for
-// the underlying trade to execute. Their API's own figure is still never
-// trusted below this.
-export const QUIDAX_MIN_TRADABLE_NGN = 3000;
+// The ₦3,000 (not ₦2,000, which Quidax's limits endpoint reports) floor
+// remains the documented hard minimum for the underlying trade to execute at
+// all, confirmed by Quidax support (2026-08-20) — their API's own figure is
+// still never trusted below this, independent of the ₦10,000 order-size
+// floor above it.
+export const QUIDAX_MIN_TRADABLE_NGN = 10000;
 
 export async function resolveBuyLimits(): Promise<{ minNgn: number; maxNgn: number }> {
   const limits = await getBuyLimits("ngn");
