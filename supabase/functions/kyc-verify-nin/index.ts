@@ -20,7 +20,7 @@ function json(body: unknown, status = 200) {
 }
 
 // Free-tier record-shape normalizing. NIN responses use lowercase
-// firstname/middlename/surname; BVN responses vary by provider â€?Prembly's
+// firstname/middlename/surname; BVN responses vary by provider ï¿½?Prembly's
 // BVN endpoint returns camelCase (firstName/middleName/lastName),
 // CheckMyNINBVN's uses lowercase but "lastname" instead of "surname" (see
 // bvn-verify's own extractBvnRecord, which normalizes the same spellings
@@ -72,10 +72,10 @@ async function tryNinBvnNin(nin: string): Promise<ProviderOutcome> {
   return { ok, record, errorMessage: ok ? undefined : (data?.message || data?.data?.message || `http_${status}`) };
 }
 
-// BVN variants â€?same free, no-wallet-debit model as the NIN checks above.
+// BVN variants ï¿½?same free, no-wallet-debit model as the NIN checks above.
 // Deliberately uses Prembly's lighter bvn_validation endpoint, NOT
 // verifyBvnFull (the richer, costlier lookup reserved for the paid slip
-// product in bvn-verify) â€?this only ever needs a name to confirm identity.
+// product in bvn-verify) ï¿½?this only ever needs a name to confirm identity.
 async function tryPremblyBvn(bvn: string): Promise<ProviderOutcome> {
   const { status, data } = await verifyBvnPrembly(bvn);
   const record = extractRecord(data);
@@ -90,7 +90,7 @@ async function tryNinBvnBvn(bvn: string): Promise<ProviderOutcome> {
   return { ok, record, errorMessage: ok ? undefined : (data?.message || `http_${status}`) };
 }
 
-// Free, self-serve KYC â€?deliberately NOT money-related: no wallet debit, no
+// Free, self-serve KYC ï¿½?deliberately NOT money-related: no wallet debit, no
 // PIN step-up (being logged in is enough, same trust level as changing a
 // PIN). Since it's free to the user but still costs the owner per provider
 // call, it's capped per-user to stop it being used to hammer a paid API.
@@ -112,7 +112,7 @@ serve(async (req: Request) => {
     return json({ success: false, error: "Invalid request body" }, 400);
   }
 
-  // Accepts either identifier â€?whichever the user has on hand. Exactly one
+  // Accepts either identifier ï¿½?whichever the user has on hand. Exactly one
   // must be present; a client sending both is treated as NIN (shouldn't
   // happen, KycScreen only ever sends one).
   const nin = String(body?.nin || "").trim();
@@ -189,17 +189,47 @@ serve(async (req: Request) => {
     .filter(Boolean)
     .join(" ");
 
-  await supabase.from("user_kyc").upsert({
-    user_id: user.id,
-    status: "verified",
-    nin: idType === "nin" ? nin : null,
-    bvn: idType === "bvn" ? bvn : null,
-    verified_record: outcome.record,
-    verified_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+  // One verified identity per account. record_kyc_verified is the single
+  // choke point: it checks (and, via a unique index, ultimately enforces)
+  // that no OTHER account already holds this same NIN/BVN as verified,
+  // before ever writing this one. Confirmed live 2026-09-05 that nothing
+  // previously checked this at all -- a live scan of every existing
+  // verified row found no duplicates yet, but nothing stopped one.
+  const { data: kycResult, error: kycError } = await supabase.rpc("record_kyc_verified", {
+    p_user_id: user.id,
+    p_nin: idType === "nin" ? nin : null,
+    p_bvn: idType === "bvn" ? bvn : null,
+    p_verified_record: outcome.record,
   });
+  if (kycError) {
+    console.error("kyc-verify-nin: record_kyc_verified failed:", kycError.message);
+    return json({ success: false, error: "Could not complete verification. Please try again." }, 500);
+  }
+  const row = kycResult?.[0];
+  if (!row?.ok) {
+    // Flagged for review rather than silently rejected into the void --
+    // this could be a genuine duplicate-account attempt, or a real edge
+    // case (a locked-out account needing a fresh one) that only a human
+    // can tell apart. Fingerprinted on both accounts so a retry doesn't
+    // spam a fresh alert every attempt.
+    await supabase.rpc("record_monitoring_alert", {
+      p_fingerprint: `kyc_duplicate_identity_${[user.id, row?.duplicate_user_id].sort().join("_")}`.slice(0, 100),
+      p_type: "kyc_duplicate_identity",
+      p_severity: "warning",
+      p_details: {
+        id_type: idType,
+        requesting_user_id: user.id,
+        already_verified_user_id: row?.duplicate_user_id ?? null,
+      },
+    });
+    const label = idType === "nin" ? "NIN" : "BVN";
+    return json({
+      success: false,
+      error: `This ${label} is already linked to another KaysPay account. Contact support if you believe this is a mistake.`,
+    });
+  }
 
-  // Auto-sync the profile name to the verified record â€?no confirmation
+  // Auto-sync the profile name to the verified record ï¿½?no confirmation
   // step, per the owner's spec.
   if (verifiedName) {
     await supabase.auth.admin.updateUserById(user.id, {
