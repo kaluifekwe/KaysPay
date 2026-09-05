@@ -276,7 +276,7 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
   // even for XRP), then the same off-ramp a direct USDT sale already uses
   // runs unchanged on the resulting USDT. See migration 211. Owner
   // decision, 2026-09-05.
-  const [sellStep, setSellStep] = useState<'pick' | 'amount'>('pick');
+  const [sellStep, setSellStep] = useState<'guide' | 'pick' | 'amount'>('guide');
   const [sellAsset, setSellAsset] = useState<BuyAsset>('USDT');
   const [sellAmount, setSellAmount] = useState('');
   // Sell pays a bank account directly (off-ramp) — no separate verify step
@@ -406,7 +406,7 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
       return;
     }
     if (t === 'sell') {
-      setSellStep('pick');
+      setSellStep('guide');
       setSellAmount('');
     }
     setTab(t);
@@ -1087,6 +1087,35 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
 
             {tab === 'sell' && kycVerified !== false && (
               <View onLayout={(e) => { sellSectionYRef.current = e.nativeEvent.layout.y; }}>
+                {sellStep === 'guide' && (
+                  <View>
+                    <View style={styles.guideCard}>
+                      <View style={styles.guideIconWrap}>
+                        <Ionicons name="information-circle" size={24} color={theme.brand} />
+                      </View>
+                      <Text style={styles.guideTitle}>How selling crypto works</Text>
+                      <Text style={styles.guideSubtitle}>A quick walkthrough before your first sale.</Text>
+                      {[
+                        'Select the crypto you want to sell',
+                        'Enter the amount you want to sell',
+                        'Choose your bank account (or pick a saved one)',
+                        'Confirm and enter your transaction PIN',
+                        'Wait 1–2 minutes — the naira lands in your bank account automatically',
+                      ].map((text, index) => (
+                        <View key={index} style={styles.guideStepRow}>
+                          <View style={styles.guideStepNumber}>
+                            <Text style={styles.guideStepNumberText}>{index + 1}</Text>
+                          </View>
+                          <Text style={styles.guideStepText}>{text}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    <TouchableOpacity style={styles.primaryButton} onPress={() => setSellStep('pick')} activeOpacity={0.85}>
+                      <Text style={styles.primaryButtonText}>I understand, continue</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
                 {sellStep === 'pick' && (
                   <>
                     <Text style={styles.label}>What are you selling?</Text>
@@ -1482,6 +1511,36 @@ function createStyles(theme: AppTheme) {
     marginBottom: Spacing.L,
   },
 
+  guideCard: {
+    backgroundColor: theme.surfaceRaised,
+    borderWidth: 1,
+    borderColor: theme.hairline,
+    borderRadius: Spacing.CARD_RADIUS,
+    padding: Spacing.CARD_PADDING,
+  },
+  guideIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: theme.brandSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.M,
+  },
+  guideTitle: { ...Typography.CARD_TITLE, color: theme.ink, marginBottom: 4 },
+  guideSubtitle: { ...Typography.BODY, color: theme.inkMuted, marginBottom: Spacing.L },
+  guideStepRow: { flexDirection: 'row', marginBottom: Spacing.M },
+  guideStepNumber: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: theme.brandSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: Spacing.S,
+  },
+  guideStepNumberText: { ...Typography.CAPTION, color: theme.brand, fontWeight: '700' },
+  guideStepText: { ...Typography.BODY, color: theme.ink, flex: 1 },
   primaryButton: {
     height: Spacing.BUTTON_HEIGHT_PRIMARY,
     backgroundColor: theme.brand,
