@@ -12,13 +12,14 @@ function json(body: unknown, status = 200) {
 
 const PAGE_SIZE = 50;
 const VALID_STATUSES = ["pending", "completed", "failed", "refunded"];
-// Mirrors the live transactions_type_check constraint (see migration 082).
+// Mirrors the live transactions_type_check constraint (see migration 213).
 const VALID_TYPES = [
   "airtime", "data", "bill", "exam_pin", "foreign_number", "card_fund",
   "payroll", "wallet_fund", "refund", "withdrawal", "esim",
   "nin_verification", "nin_validation", "bvn_verification",
   "nin_name_modification", "nin_phone_modification", "nin_address_modification",
-  "crypto_buy", "crypto_sell", "crypto_withdraw",
+  "crypto_buy", "crypto_sell", "crypto_withdraw", "crypto_deposit", "crypto_swap",
+  "transfer",
 ];
 
 // Read-only paginated/filterable transactions list for the admin panel.
@@ -39,7 +40,7 @@ serve(async (req) => {
   const page = Math.max(0, Number(url.searchParams.get("page") || 0) || 0);
   const status = url.searchParams.get("status");
   // "types" (plural) supports the admin app's service groupings (e.g. all
-  // NIN/BVN sub-types under one "Identity Verification" filter option) â€?  // comma-separated, each checked against the same allowlist as before.
+  // NIN/BVN sub-types under one "Identity Verification" filter option) ï¿½?  // comma-separated, each checked against the same allowlist as before.
   const types = (url.searchParams.get("types") || "")
     .split(",")
     .map((t) => t.trim())
@@ -68,7 +69,7 @@ serve(async (req) => {
   if (error) return json({ error: "Could not load transactions" }, 500);
 
   // public.users.full_name is never actually populated (see migration 088)
-  // â€?the real name lives in auth.users' own metadata, which PostgREST
+  // ï¿½?the real name lives in auth.users' own metadata, which PostgREST
   // can't embed directly. Batch-resolve it in one extra call rather than
   // one per row.
   const rows = data ?? [];
@@ -86,7 +87,14 @@ serve(async (req) => {
       row.funding_provider = typeof provider === "string" ? provider : null;
       row.funding_reference = typeof reference === "string" ? reference : null;
     }
-    delete row.metadata;
+    // metadata itself is kept, not stripped -- the frontend's own
+    // formatTxAmount (crypto amounts) and "not paid" detection both read it
+    // directly, and the detail modal already allowlist-filters what it
+    // shows from it. Deleting it here silently broke both of those: every
+    // crypto row's amount fell back to a bare "â‚¦0" no matter what the
+    // frontend's own display logic tried to do with it, confirmed live
+    // 2026-09-05 against a swap whose stored data and compiled display code
+    // were both individually correct.
   }
   const userIds = [...new Set(rows.map((r) => r.user_id))];
   if (userIds.length > 0) {
