@@ -17,7 +17,7 @@ const STATUSES = ['', 'pending', 'completed', 'failed', 'refunded'];
 // in recipient_phone, not an actual phone number -- never personal data, so
 // it's excluded from the recipient-number mask below regardless of the
 // toggle.
-const CRYPTO_TYPES = new Set(['crypto_buy', 'crypto_sell', 'crypto_withdraw']);
+const CRYPTO_TYPES = new Set(['crypto_buy', 'crypto_sell', 'crypto_withdraw', 'crypto_deposit', 'crypto_swap']);
 
 // admin-transactions already reads and applies date_from/date_to server-side
 // (created_at gte/lte) — this was purely a missing UI, the backend was ready.

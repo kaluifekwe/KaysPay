@@ -56,7 +56,8 @@ export const SERVICES: { label: string; types: string[] }[] = [
     ],
   },
   { label: 'Wallet Funding', types: ['wallet_fund'] },
-  { label: 'Crypto', types: ['crypto_buy', 'crypto_sell', 'crypto_withdraw'] },
+  { label: 'Wallet Transfer', types: ['transfer'] },
+  { label: 'Crypto', types: ['crypto_buy', 'crypto_sell', 'crypto_withdraw', 'crypto_deposit', 'crypto_swap'] },
 ];
 
 export function serviceLabelForType(type: string): string {
