@@ -76,6 +76,9 @@ verify_jwt = true
 [functions.crypto-sell-quote]
 verify_jwt = true
 
+[functions.crypto-swap]
+verify_jwt = true
+
 [functions.transfer-banks]
 verify_jwt = true
 

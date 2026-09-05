@@ -25,6 +25,7 @@ import CryptoScreen from '../screens/CryptoScreen';
 import CryptoDepositScreen from '../screens/CryptoDepositScreen';
 import CryptoBuyScreen from '../screens/CryptoBuyScreen';
 import CryptoWithdrawScreen from '../screens/CryptoWithdrawScreen';
+import CryptoSwapScreen from '../screens/CryptoSwapScreen';
 import CryptoSellBankScreen from '../screens/CryptoSellBankScreen';
 import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
 import ForeignNumbersScreen from '../screens/ForeignNumbersScreen';
@@ -73,6 +74,7 @@ function MainStackScreen() {
       <MainStack.Screen name="CryptoDeposit" component={CryptoDepositScreen} />
       <MainStack.Screen name="CryptoBuy" component={CryptoBuyScreen} />
       <MainStack.Screen name="CryptoWithdraw" component={CryptoWithdrawScreen} />
+      <MainStack.Screen name="CryptoSwap" component={CryptoSwapScreen} />
       <MainStack.Screen name="CryptoSellBank" component={CryptoSellBankScreen} />
       <MainStack.Screen name="TransactionHistory" component={TransactionHistoryScreen} />
       <MainStack.Screen name="ForeignNumber" component={ForeignNumbersScreen} />

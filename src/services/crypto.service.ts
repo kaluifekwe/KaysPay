@@ -140,6 +140,20 @@ export interface CryptoSellQuote {
   processorFeeNgn: number | null;
 }
 
+export interface CryptoSwapQuote {
+  fromAsset: BuyAsset;
+  toAsset: BuyAsset;
+  amount: number;
+  // Quidax's own live minimum for this pair surfaces as `error` on the
+  // request itself (e.g. "Minimum TRX value should be above 3.02") rather
+  // than a number KaysPay guesses ahead of time -- so unlike Sell/Withdraw
+  // there's no separate minSell/minForNetwork field here.
+  estimatedToAmount: number | null;
+  quotedPrice: string;
+  available: number;
+  sufficient: boolean;
+}
+
 export interface CryptoWithdrawQuote {
   asset: string;
   amount: number;
@@ -559,6 +573,88 @@ export const cryptoService = {
         return { success: false, error: msg };
       }
       if (!data?.success) return { success: false, error: data?.error || 'Sale failed' };
+      return {
+        success: true,
+        transactionId: data.transaction_id,
+        pending: data.pending === true,
+        message: data.message,
+      };
+    } catch {
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  },
+
+  /**
+   * Preview of a Swap -- converts one held coin directly into another
+   * inside the same Quidax sub-account, no bank/off-ramp involved. Quotes
+   * are read-only and cost nothing, same as getSellQuote's non-USDT
+   * preview, so this is safe to call on every keystroke (debounced by the
+   * caller).
+   */
+  async getSwapQuote(fromAsset: BuyAsset, toAsset: BuyAsset, cryptoAmount: number): Promise<{ success: boolean; quote?: CryptoSwapQuote; error?: string }> {
+    try {
+      const { data, error } = await withTimeout(
+        // Quote preview lives inside crypto-swap itself (mode: 'quote'),
+        // not its own function -- see the comment at the top of
+        // supabase/functions/crypto-swap/index.ts for why.
+        supabase.functions.invoke('crypto-swap', { body: { mode: 'quote', from_asset: fromAsset, to_asset: toAsset, crypto_amount: cryptoAmount } }),
+      );
+      if (error || !data?.success) {
+        let message = data?.error || 'Could not price this swap.';
+        try {
+          const body = await (error as any)?.context?.json?.();
+          if (body?.error) message = body.error;
+        } catch {}
+        return { success: false, error: message };
+      }
+      return {
+        success: true,
+        quote: {
+          fromAsset,
+          toAsset,
+          amount: Number(data.amount),
+          estimatedToAmount: data.estimated_to_amount != null ? Number(data.estimated_to_amount) : null,
+          quotedPrice: String(data.quoted_price ?? ''),
+          available: Number(data.available),
+          sufficient: data.sufficient === true,
+        },
+      };
+    } catch {
+      return { success: false, error: 'Network error. Please try again.' };
+    }
+  },
+
+  async swap(
+    fromAsset: BuyAsset,
+    toAsset: BuyAsset,
+    cryptoAmount: number,
+    authToken: string,
+  ): Promise<CryptoActionResult> {
+    try {
+      const idempotencyKey = newIdempotencyKey('crypto_swap');
+      const { data, error } = await invokeWithRetry<any>(
+        () => withTimeout(
+          supabase.functions.invoke('crypto-swap', {
+            body: {
+              from_asset: fromAsset,
+              to_asset: toAsset,
+              crypto_amount: cryptoAmount,
+              auth_token: authToken,
+              idempotency_key: idempotencyKey,
+            },
+          }),
+        ),
+        idempotencyKey,
+      );
+      if (error) {
+        let msg = 'Swap failed. Please try again.';
+        try {
+          const errBody = await (error as any)?.context?.json?.();
+          if (errBody?.error) msg = errBody.error;
+        } catch {}
+        return { success: false, error: msg };
+      }
+      if (!data?.success) return { success: false, error: data?.error || 'Swap failed' };
       return {
         success: true,
         transactionId: data.transaction_id,

@@ -48,7 +48,7 @@ interface CryptoScreenProps {
   route?: { params?: { pendingBuyPayment?: PendingBuyPayment } };
 }
 
-type Tab = 'deposit' | 'buy' | 'sell' | 'withdraw';
+type Tab = 'deposit' | 'buy' | 'sell' | 'swap' | 'withdraw';
 
 // Handed off from CryptoBuyScreen via navigation params once a purchase is
 // started there — this screen still owns the payment-instructions and
@@ -84,12 +84,14 @@ const TAB_ICONS: Record<Tab, keyof typeof Ionicons.glyphMap> = {
   deposit: 'arrow-down-circle-outline',
   buy: 'add-circle-outline',
   sell: 'arrow-up-circle-outline',
+  swap: 'swap-horizontal-outline',
   withdraw: 'paper-plane-outline',
 };
 const TAB_LABELS: Record<Tab, string> = {
   deposit: 'Deposit',
   buy: 'Buy',
   sell: 'Sell',
+  swap: 'Swap',
   withdraw: 'Withdraw',
 };
 
@@ -397,6 +399,10 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
     }
     if (t === 'withdraw') {
       navigation.navigate('CryptoWithdraw');
+      return;
+    }
+    if (t === 'swap') {
+      navigation.navigate('CryptoSwap');
       return;
     }
     if (t === 'sell') {
@@ -1046,7 +1052,7 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
                 2026-09-02 now that it's been extended past USDT-only (BTC,
                 see crypto-withdraw-assets.ts) and is an active feature
                 again — the kill switch itself was already left enabled. */}
-            {(['deposit', 'buy', 'sell', 'withdraw'] as Tab[]).map((t) => (
+            {(['deposit', 'buy', 'sell', 'swap', 'withdraw'] as Tab[]).map((t) => (
               <TouchableOpacity key={t} style={styles.actionItem} onPress={() => handleSelectTab(t)} activeOpacity={0.75}>
                 <View style={[styles.actionIcon, tab === t && styles.actionIconActive]}>
                   <Ionicons name={TAB_ICONS[t]} size={20} color={theme.brand} />

@@ -6,6 +6,7 @@ import { sweepNairaToMainAccount } from "../_shared/crypto-sell-sweep.ts";
 import { notifyCryptoBuyCompleted } from "../_shared/crypto-buy-settle.ts";
 import { deriveVerifiedQuidaxIdentity } from "../_shared/crypto-account.ts";
 import { executeUsdtOffRampWithdrawal, openUsdtOffRampSale } from "../_shared/crypto-sell-offramp.ts";
+import { notifyCryptoSwapCompleted, notifyCryptoSwapFailed } from "../_shared/crypto-swap-notify.ts";
 import { redactSecrets } from "../_shared/redact.ts";
 
 // Receives Quidax's webhook deliveries and settles everything that Quidax
@@ -159,6 +160,34 @@ serve(async (req: Request) => {
       return json({ received: true });
     }
 
+    // A customer-initiated Swap (migration 212) -- coin -> coin directly,
+    // no off-ramp leg at all: the destination coin lands straight back in
+    // the same sub-account, so there's nothing further to do here beyond
+    // marking it complete and notifying. Checked before the Sell-via-swap
+    // branch below since that one only ever targets USDT and this one can
+    // target any of the 9 coins; both claims are no-op-safe against a swap
+    // id that isn't theirs, so the order between them doesn't matter for
+    // correctness, only for which runs its (cheap) no-op check first.
+    const { data: swapRows, error: swapError } = await supabase.rpc("complete_crypto_swap", {
+      p_swap_quotation_id: swapId,
+      p_to_crypto_micro: Math.round(received * 1_000_000),
+    });
+    if (swapError) {
+      console.error("crypto-quidax-webhook: complete_crypto_swap failed:", swapError.message);
+      return json({ error: "Could not settle swap" }, 500);
+    }
+    const swapRow = swapRows?.[0];
+    if (swapRow) {
+      await notifyCryptoSwapCompleted(supabase, {
+        userId: swapRow.user_id,
+        fromAsset: swapRow.from_asset,
+        toAsset: swapRow.to_asset,
+        fromAmount: Number(swapRow.from_crypto_micro) / 1_000_000,
+        toAmount: received,
+      });
+      return json({ received: true });
+    }
+
     // Leg 1 of a non-USDT Sell (see migration 211 and
     // _shared/crypto-sell-offramp.ts): the source coin just finished
     // swapping to USDT inside the customer's own sub-account. Claims the
@@ -292,7 +321,17 @@ serve(async (req: Request) => {
           });
         }
       } else {
-        await supabase.rpc("fail_crypto_sell", { p_swap_id: swapId, p_reason: "swap_failed" });
+        // Customer-initiated Swap (migration 212) -- no-op if this swap id
+        // isn't one of these. Nothing was lost: the FROM coin never left
+        // the sub-account, so this just settles the row failed and
+        // reassures the customer rather than escalating.
+        const { data: failedRows } = await supabase.rpc("fail_crypto_swap", { p_swap_quotation_id: swapId, p_reason: "swap_failed" });
+        const failedRow = failedRows?.[0];
+        if (failedRow) {
+          await notifyCryptoSwapFailed(supabase, { userId: failedRow.user_id, fromAsset: failedRow.from_asset, toAsset: failedRow.to_asset });
+        } else {
+          await supabase.rpc("fail_crypto_sell", { p_swap_id: swapId, p_reason: "swap_failed" });
+        }
       }
     }
     return json({ received: true });
