@@ -141,7 +141,12 @@ export default function TransactionDetailModal({
   transaction: TransactionDetailItem | null;
   onClose: () => void;
 }) {
-  useSensitiveScreenProtection();
+  // Scoped to `visible` -- called unconditionally before, it protected the
+  // whole time the parent screen was focused (the list underneath, not just
+  // this modal's own detail view), which is exactly what useFocusEffect's
+  // recent fix ties protection to. That blocked screenshots of the plain
+  // transaction LIST too, not just an open detail view showing PII.
+  useSensitiveScreenProtection(visible);
   const { theme } = useTheme();
   const styles = createStyles(theme);
   const [generatingPdf, setGeneratingPdf] = useState(false);
