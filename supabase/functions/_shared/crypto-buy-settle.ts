@@ -44,6 +44,39 @@ export async function notifyCryptoBuyCompleted(
 }
 
 /**
+ * Sent once, the first time a Buy's swap leg fails to even START
+ * (createSwapQuotation itself threw -- see the catch block in
+ * settleCryptoBuySuccess below). Previously this case sent no notification
+ * at all: the customer's USDT had already landed safely, but their order
+ * just sat 'pending' forever with nothing telling them anything was
+ * happening. Deliberately reassuring, not alarming -- most of these are
+ * transient (a momentary API failure) and self-heal on crypto-buy-reconcile's
+ * next retry; SWAP_START_FALLBACK_MS in settleCryptoBuySuccess is what
+ * actually gives up and substitutes USDT if it never does.
+ */
+export async function notifyCryptoBuySwapDelayed(
+  supabase: SupabaseClient,
+  params: { userId: string; asset: string },
+): Promise<void> {
+  const { error } = await supabase.from("notifications").insert({
+    user_id: params.userId,
+    title: "Still working on your purchase",
+    body: `We're still working on delivering your ${params.asset} — this can take a little longer than usual. You'll be notified the moment it's ready.`,
+    type: "transaction",
+    data: { kind: "crypto_buy_swap_delayed", asset: params.asset },
+  });
+  if (error) console.error("notifyCryptoBuySwapDelayed: insert failed:", error.message);
+}
+
+// Past this age, a Buy whose swap leg has never even successfully started
+// is not going to resolve itself -- give up and deliver the safely-held
+// USDT instead of leaving the customer waiting on something that may be
+// permanently stuck (e.g. genuinely below Quidax's live minimum for that
+// coin). Matches the 2-hour threshold crypto-buy-reconcile already uses
+// elsewhere for "money received, customer waiting too long".
+const SWAP_START_FALLBACK_MS = 2 * 60 * 60 * 1000;
+
+/**
  * Settles a Buy whose leg 1 (Ramp: NGN -> USDT into the customer's own
  * sub-account) has completed. Shared between crypto-ramp-webhook (the normal
  * path) and crypto-buy-reconcile (the safety net for a webhook that never
@@ -70,7 +103,7 @@ export async function settleCryptoBuySuccess(
 
   const { data: order } = await supabase
     .from("transactions")
-    .select("id, user_id, status, metadata")
+    .select("id, user_id, status, metadata, created_at")
     .eq("type", "crypto_buy")
     .eq("metadata->>quidax_merchant_reference", merchantReference)
     .maybeSingle();
@@ -182,5 +215,35 @@ export async function settleCryptoBuySuccess(
       p_severity: "warning",
       p_details: { merchant_reference: merchantReference, target_asset: targetAsset, error: detail.slice(0, 300) },
     });
+
+    // Previously this was the end of it: no notification, order left
+    // 'pending' forever with nothing telling the customer anything was
+    // happening. This function is re-invoked on every crypto-buy-reconcile
+    // sweep for as long as the order stays pending, so a transient failure
+    // gets a real retry naturally -- this only decides what the customer
+    // sees while that plays out, and when to stop waiting.
+    const orderAgeMs = Date.now() - new Date(order.created_at as string).getTime();
+    if (orderAgeMs > SWAP_START_FALLBACK_MS) {
+      const { data: settledTxId } = await supabase.rpc("fail_crypto_buy_swap_start", {
+        p_merchant_reference: merchantReference,
+        p_usdt_micro: Math.round(receivedUsdt * 1_000_000),
+        p_reason: "swap_start_failed",
+      });
+      if (settledTxId) {
+        await notifyCryptoBuyCompleted(supabase, {
+          userId: order.user_id,
+          asset: "USDT",
+          amount: receivedUsdt,
+          destinationType: order.metadata?.destination_type,
+          substitutedFromAsset: targetAsset,
+        });
+      }
+    } else if (!order.metadata?.swap_start_delay_notified) {
+      await notifyCryptoBuySwapDelayed(supabase, { userId: order.user_id, asset: targetAsset });
+      await supabase
+        .from("transactions")
+        .update({ metadata: { ...order.metadata, swap_start_delay_notified: true } })
+        .eq("id", order.id);
+    }
   }
 }
