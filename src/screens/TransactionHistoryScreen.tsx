@@ -52,6 +52,7 @@ const TRANSACTION_LABELS: Record<string, string> = {
   // raw column value, e.g. "crypto_deposit", in the customer's own history.
   crypto_buy: 'Crypto Purchase',
   crypto_sell: 'Crypto Sale',
+  crypto_swap: 'Crypto Swap',
   crypto_deposit: 'Crypto Deposit',
   crypto_withdraw: 'Crypto Withdrawal',
 };
@@ -61,13 +62,30 @@ const TRANSACTION_LABELS: Record<string, string> = {
 // as crypto_micro. Printing the naira column for those showed "₦0.00" against
 // a deposit that was actually 9.8 USDT, which reads as an empty or broken
 // record rather than the amount it is.
+function formatCryptoAmount(micro: number, asset: string): string {
+  const code = asset.toUpperCase() || 'CRYPTO';
+  const dp = code === 'USDT' ? 2 : 8;
+  const amount = micro / 1_000_000;
+  return `${amount.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })} ${code}`;
+}
+
 function formatTxAmount(amountNgn: number, metadata: any): string {
+  // A Swap has no single "amount" -- it converts one coin into another, so
+  // its metadata is shaped from_asset/from_crypto_micro/to_asset/
+  // to_crypto_micro (migration 212), not the crypto_micro/asset pair every
+  // other crypto type uses. Falling through to that generic check found
+  // nothing and printed "₦0" for every swap in the customer's own history.
+  const fromMicro = Number(metadata?.from_crypto_micro ?? 0);
+  if (fromMicro > 0) {
+    const fromDisplay = formatCryptoAmount(fromMicro, String(metadata?.from_asset || ''));
+    const toMicro = Number(metadata?.to_crypto_micro ?? 0);
+    const toAsset = String(metadata?.to_asset || '').toUpperCase() || 'CRYPTO';
+    return toMicro > 0 ? `${fromDisplay} → ${formatCryptoAmount(toMicro, toAsset)}` : `${fromDisplay} → ${toAsset}`;
+  }
+
   const micro = Number(metadata?.crypto_micro ?? 0);
   if (amountNgn === 0 && micro > 0) {
-    const asset = String(metadata?.asset || '').toUpperCase() || 'CRYPTO';
-    const dp = asset === 'USDT' ? 2 : 8;
-    const amount = micro / 1_000_000;
-    return `${amount.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })} ${asset}`;
+    return formatCryptoAmount(micro, String(metadata?.asset || ''));
   }
   return formatNaira(amountNgn);
 }
