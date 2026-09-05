@@ -451,10 +451,18 @@ function createStyles(theme: AppTheme) {
   amountContainer: {
     alignItems: 'flex-end',
     marginRight: Spacing.M,
+    // A Swap's "4.95000000 XRP → 6.79 USDT" is far longer than any other
+    // transaction type's amount, and without a cap this column claimed
+    // whatever width it needed -- squeezing transactionDetails (flex: 1)
+    // down to almost nothing and wrapping the type label one letter per
+    // line. Wraps onto two lines within this width instead, never at the
+    // label's expense.
+    maxWidth: '45%',
   },
   amount: {
     ...Typography.AMOUNT_SMALL,
     marginBottom: 2,
+    textAlign: 'right',
   },
   timestamp: {
     ...Typography.CAPTION,
