@@ -4,6 +4,9 @@ import { adminClient } from "../_shared/auth.ts";
 import { verifyQuidaxWebhookSignature } from "../_shared/quidax-client.ts";
 import { sweepNairaToMainAccount } from "../_shared/crypto-sell-sweep.ts";
 import { notifyCryptoBuyCompleted } from "../_shared/crypto-buy-settle.ts";
+import { deriveVerifiedQuidaxIdentity } from "../_shared/crypto-account.ts";
+import { executeUsdtOffRampWithdrawal, openUsdtOffRampSale } from "../_shared/crypto-sell-offramp.ts";
+import { redactSecrets } from "../_shared/redact.ts";
 
 // Receives Quidax's webhook deliveries and settles everything that Quidax
 // completes asynchronously: incoming deposits, sales (swap USDT -> NGN, then
@@ -153,6 +156,92 @@ serve(async (req: Request) => {
           destinationType: buyTx.metadata?.destination_type,
         });
       }
+      return json({ received: true });
+    }
+
+    // Leg 1 of a non-USDT Sell (see migration 211 and
+    // _shared/crypto-sell-offramp.ts): the source coin just finished
+    // swapping to USDT inside the customer's own sub-account. Claims the
+    // pending sale (a no-op if this swap id isn't one of these -- same
+    // not-mine-move-on contract as complete_crypto_buy_swap above, and
+    // safe against a retried webhook delivery re-claiming the same sale
+    // twice) and runs the exact same off-ramp leg 2 a direct USDT sale uses.
+    if (toCurrency === "USDT") {
+      const { data: claimedRows, error: claimError } = await supabase.rpc("claim_crypto_sell_swap_for_offramp", {
+        p_swap_quotation_id: swapId,
+        p_usdt_crypto_micro: Math.round(received * 1_000_000),
+      });
+      if (claimError) {
+        console.error("crypto-quidax-webhook: claim_crypto_sell_swap_for_offramp failed:", claimError.message);
+        return json({ error: "Could not continue this sale" }, 500);
+      }
+      const claimed = claimedRows?.[0];
+      if (!claimed) {
+        console.warn(`crypto-quidax-webhook: no pending sell-via-swap for swap ${swapId}`);
+        return json({ received: true });
+      }
+
+      const identity = await deriveVerifiedQuidaxIdentity(supabase, { id: claimed.user_id });
+      const { data: account } = await supabase
+        .from("crypto_accounts")
+        .select("quidax_user_id")
+        .eq("user_id", claimed.user_id)
+        .maybeSingle();
+      if (!identity || !account) {
+        console.error("crypto-quidax-webhook: missing identity/account for sell-via-swap", JSON.stringify({ transactionId: claimed.transaction_id }));
+        await supabase.rpc("fail_crypto_sell_swap_leg", { p_transaction_id: claimed.transaction_id, p_reason: "missing_identity_or_account" });
+        return json({ received: true });
+      }
+
+      const merchantReference = `cs${Date.now()}${crypto.randomUUID().slice(0, 8)}`;
+      const usdtAmount = Math.round(received * 10_000) / 10_000;
+
+      let opened;
+      try {
+        opened = await openUsdtOffRampSale({
+          merchantReference,
+          cryptoAmount: usdtAmount,
+          email: identity.email,
+          firstName: identity.firstName,
+          lastName: identity.lastName,
+          bankCode: claimed.bank_code,
+          accountNumber: claimed.recipient_account_number,
+        });
+      } catch (e) {
+        console.error("crypto-quidax-webhook: openUsdtOffRampSale threw:", redactSecrets(e instanceof Error ? e.message : String(e)));
+        await supabase.rpc("fail_crypto_sell_swap_leg", { p_transaction_id: claimed.transaction_id, p_reason: "offramp_open_failed" });
+        return json({ received: true });
+      }
+      if (!opened.success) {
+        // Nothing has left the sub-account yet -- the USDT just sits there,
+        // recoverable, unlike a createWithdrawal failure below.
+        await supabase.rpc("fail_crypto_sell_swap_leg", { p_transaction_id: claimed.transaction_id, p_reason: opened.nameMismatch ? "name_mismatch" : "offramp_open_failed" });
+        return json({ received: true });
+      }
+
+      await supabase.rpc("finalize_crypto_sell_swap_offramp_init", {
+        p_transaction_id: claimed.transaction_id,
+        p_reference: opened.reference,
+        p_merchant_reference: merchantReference,
+      });
+
+      try {
+        await executeUsdtOffRampWithdrawal({
+          quidaxUserId: account.quidax_user_id,
+          cryptoAmount: usdtAmount,
+          merchantReference,
+          depositAddress: opened.depositAddress!,
+          depositNetwork: opened.depositNetwork!,
+        });
+      } catch (withdrawError) {
+        // From here on this transaction carries a real quidax_reference, so
+        // it's indistinguishable from a direct USDT sale that failed after
+        // confirm -- same critical, "crypto may already have moved
+        // on-chain" handling via the existing RPC, not the softer one above.
+        await supabase.rpc("fail_crypto_sell_offramp", { p_reference: merchantReference, p_reason: "withdrawal_failed" });
+        console.error("crypto-quidax-webhook: sell-via-swap withdrawal failed:", redactSecrets(withdrawError instanceof Error ? withdrawError.message : String(withdrawError)));
+      }
+
       return json({ received: true });
     }
 

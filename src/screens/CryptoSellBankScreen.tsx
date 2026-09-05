@@ -18,14 +18,28 @@ import { Spacing } from '../constants/spacing';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
 import { formatNaira } from '../utils/formatCurrency';
-import { cryptoService, type CryptoSellQuote } from '../services/crypto.service';
+import { cryptoService, type BuyAsset, type CryptoSellQuote } from '../services/crypto.service';
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import BankLogoIcon from '../components/BankLogoIcon';
 import ResultStatusView, { type ResultStatus } from '../components/ResultStatusView';
 
+function cryptoDecimals(n: number, code: string): number {
+  if (code.toUpperCase() === 'USDT') return 2;
+  const magnitude = Math.abs(n);
+  if (magnitude >= 1) return 4;
+  if (magnitude >= 0.01) return 6;
+  return 8;
+}
+
+function formatCoin(n: number, code: string): string {
+  const dp = cryptoDecimals(n, code);
+  const factor = 10 ** dp;
+  const floored = Math.floor((Number.isFinite(n) ? n : 0) * factor) / factor;
+  return `${floored.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })} ${code}`;
+}
+
 function formatUsdt(n: number): string {
-  const floored = Math.floor((Number.isFinite(n) ? n : 0) * 100) / 100;
-  return `${floored.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+  return formatCoin(n, 'USDT');
 }
 
 /**
@@ -33,9 +47,15 @@ function formatUsdt(n: number): string {
  * amount entry (step 1, on CryptoScreen) isn't crowded by a form the
  * customer hasn't earned yet. Same pattern TV/Electricity already use:
  * pick what you're paying for, THEN a fresh screen asks for the account.
+ *
+ * Every coin Buy supports can reach here now, not just USDT -- non-USDT
+ * sales swap to USDT inside the customer's own sub-account first (see
+ * migration 211), so the bank-account verification probe and the actual
+ * sale both still talk to Quidax in USDT terms underneath; this screen
+ * just displays the source coin the customer actually chose.
  */
 export default function CryptoSellBankScreen({ navigation, route }: any) {
-  const { sellUsdt, sellQuote } = route.params as { sellUsdt: number; sellQuote: CryptoSellQuote };
+  const { sellAmount, sellAsset, sellQuote } = route.params as { sellAmount: number; sellAsset: BuyAsset; sellQuote: CryptoSellQuote };
   const { authorize } = useTransactionAuth();
   const { theme } = useTheme();
   const styles = createStyles(theme);
@@ -70,11 +90,16 @@ export default function CryptoSellBankScreen({ navigation, route }: any) {
     setSellVerifyError(null);
   }, [sellBank, sellAccountNumber]);
 
+  // The probe always talks to Quidax in USDT terms (see
+  // crypto-sell-resolve-account) -- for a non-USDT sale that's the swap
+  // leg's estimate, not the source-coin amount the customer typed.
+  const probeUsdtAmount = sellAsset === 'USDT' ? sellAmount : sellQuote.usdtEquivalent ?? sellAmount;
+
   useEffect(() => {
     if (!sellBank || sellAccountNumber.length !== 10) return;
     const handle = setTimeout(async () => {
       setSellVerifyState('checking');
-      const res = await cryptoService.resolveSellAccount(sellUsdt, sellBank.code, sellAccountNumber);
+      const res = await cryptoService.resolveSellAccount(probeUsdtAmount, sellBank.code, sellAccountNumber, sellAsset);
       setSellVerifyState((current) => {
         if (current !== 'checking') return current;
         return res.success ? 'verified' : 'failed';
@@ -86,7 +111,7 @@ export default function CryptoSellBankScreen({ navigation, route }: any) {
       }
     }, 700);
     return () => clearTimeout(handle);
-  }, [sellBank, sellAccountNumber, sellUsdt]);
+  }, [sellBank, sellAccountNumber, probeUsdtAmount, sellAsset]);
 
   const sellAccountNumberValid = /^\d{10}$/.test(sellAccountNumber);
   const canSell = !!sellBank && sellAccountNumberValid && sellVerifyState === 'verified';
@@ -115,7 +140,7 @@ export default function CryptoSellBankScreen({ navigation, route }: any) {
       return;
     }
     setActionState('processing');
-    const result = await cryptoService.sell(sellUsdt, sellBank.code, sellBank.name, sellAccountNumber, authResult.token);
+    const result = await cryptoService.sell(sellAmount, sellBank.code, sellBank.name, sellAccountNumber, authResult.token, sellAsset);
     setSending(false);
     if (result.success) {
       setActionMessage(result.message ?? null);
@@ -124,7 +149,7 @@ export default function CryptoSellBankScreen({ navigation, route }: any) {
       setActionError(result.error || 'Sale failed. Please try again.');
       setActionState('failed');
     }
-  }, [canSell, sellBank, sellAccountNumber, sellNgnEstimate, sellUsdt, authorize, sending]);
+  }, [canSell, sellBank, sellAccountNumber, sellNgnEstimate, sellAmount, sellAsset, authorize, sending]);
 
   if (actionState !== 'idle') {
     return (
@@ -159,8 +184,14 @@ export default function CryptoSellBankScreen({ navigation, route }: any) {
           <View style={styles.recapCard}>
             <View style={styles.recapRow}>
               <Text style={styles.recapLabel}>Selling</Text>
-              <Text style={styles.recapValueStrong}>{formatUsdt(sellQuote.amount)}</Text>
+              <Text style={styles.recapValueStrong}>{formatCoin(sellQuote.amount, sellAsset)}</Text>
             </View>
+            {sellQuote.usdtEquivalent != null && (
+              <View style={styles.recapRow}>
+                <Text style={styles.recapLabel}>Converts to about</Text>
+                <Text style={styles.recapValue}>{formatUsdt(sellQuote.usdtEquivalent)}</Text>
+              </View>
+            )}
             <View style={styles.recapRow}>
               <Text style={styles.recapLabel}>{sellQuote.network.toUpperCase()} network fee</Text>
               <Text style={styles.recapValue}>{formatUsdt(sellQuote.networkFee)}</Text>

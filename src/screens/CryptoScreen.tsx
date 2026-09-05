@@ -267,7 +267,16 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
   }, [buyPollStartedAt]);
-  const [sellUsdt, setSellUsdt] = useState('');
+  // Two steps -- pick a coin, then amount -- same "commit to one thing at a
+  // time" shape Buy/Withdraw's own pick steps already use. Every coin Buy
+  // supports is sellable this way: non-USDT coins swap to USDT inside the
+  // customer's own sub-account first (internal, no destination-tag risk
+  // even for XRP), then the same off-ramp a direct USDT sale already uses
+  // runs unchanged on the resulting USDT. See migration 211. Owner
+  // decision, 2026-09-05.
+  const [sellStep, setSellStep] = useState<'pick' | 'amount'>('pick');
+  const [sellAsset, setSellAsset] = useState<BuyAsset>('USDT');
+  const [sellAmount, setSellAmount] = useState('');
   // Sell pays a bank account directly (off-ramp) — no separate verify step
   // for this first version; a name mismatch surfaces as an error after
   // tapping Sell, same as every other input on this screen already works.
@@ -390,14 +399,26 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
       navigation.navigate('CryptoWithdraw');
       return;
     }
+    if (t === 'sell') {
+      setSellStep('pick');
+      setSellAmount('');
+    }
     setTab(t);
   }, [navigation]);
 
-  const quidaxUsdt = quidaxWallets.find((w) => w.currency === 'USDT');
-  // Sell and Withdraw both spend the real balance held in the user's own
-  // Quidax sub-account — never the legacy `usdtBalance` ledger number,
-  // which only backs the not-yet-migrated Buy flow.
-  const quidaxUsdtBalance = quidaxUsdt ? Number(quidaxUsdt.balance) : null;
+  // Sell spends the real balance held in the user's own Quidax sub-account
+  // — never the legacy `usdtBalance` ledger number, which only backs the
+  // not-yet-migrated Buy flow. Generalizes to whichever coin Sell's picker
+  // step has selected; USDT is just the default.
+  const balanceOf = useCallback(
+    (asset: BuyAsset): number | null => {
+      const wallet = quidaxWallets.find((w) => w.currency === asset);
+      return wallet ? Number(wallet.balance) : null;
+    },
+    [quidaxWallets],
+  );
+  const quidaxUsdtBalance = balanceOf('USDT');
+  const sellBalance = balanceOf(sellAsset);
 
   // Only actual crypto belongs in the crypto total and asset list. Quidax
   // also returns its fiat NGN wallet; mixing that into `heldWallets` made
@@ -429,56 +450,81 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
       ? formatUsdt(totalCryptoUsdt)
       : '—';
 
-  const numericSellUsdt = parseFloat(sellUsdt);
+  const numericSellAmount = parseFloat(sellAmount);
+  // USDT keeps its own long-standing 1-2000 ceiling (a real Quidax/product
+  // limit). Every other asset has no fixed ceiling of its own here -- the
+  // real limit is 2000 USDT-equivalent, only knowable once the swap quote
+  // prices it, so this just requires a positive amount up front.
+  const sellAmountInRangeLocally = sellAsset === 'USDT'
+    ? Number.isFinite(numericSellAmount) && numericSellAmount >= 1 && numericSellAmount <= 2000
+    : Number.isFinite(numericSellAmount) && numericSellAmount > 0;
 
   useEffect(() => {
     setSellQuote(null);
     setSellQuoteError(null);
-    if (!Number.isFinite(numericSellUsdt) || numericSellUsdt < 1 || numericSellUsdt > 2000) {
+    if (!sellAmountInRangeLocally) {
       setSellQuoteLoading(false);
       return;
     }
     let cancelled = false;
     const handle = setTimeout(async () => {
       setSellQuoteLoading(true);
-      const result = await cryptoService.getSellQuote(numericSellUsdt);
+      const result = await cryptoService.getSellQuote(numericSellAmount, sellAsset);
       if (cancelled) return;
       setSellQuoteLoading(false);
       if (result.success && result.quote) setSellQuote(result.quote);
       else setSellQuoteError(result.error || 'Could not calculate the live network fee.');
     }, 400);
     return () => { cancelled = true; clearTimeout(handle); };
-  }, [numericSellUsdt]);
+  }, [numericSellAmount, sellAsset, sellAmountInRangeLocally]);
 
-  const sellNgnEstimate = sellRate && numericSellUsdt > 0 ? numericSellUsdt * sellRate : null;
+  // Instant, rough estimate shown before the official quote lands -- USDT
+  // uses the same live sellRate as before; every other coin uses its own
+  // live market price (already loaded for the wallet-hero display), which
+  // is the closest available estimate to what the internal swap leg would
+  // actually produce.
+  const sellEstimateRate = sellAsset === 'USDT' ? sellRate : (markets.find((m) => m.code === sellAsset)?.priceNgn ?? null);
+  const sellNgnEstimate = sellEstimateRate && numericSellAmount > 0 ? numericSellAmount * sellEstimateRate : null;
 
   // Bank/account details now live on CryptoSellBankScreen (step 2) — this
   // only gates whether the live quote is in a state worth proceeding from.
-  const canProceedSell = Number.isFinite(numericSellUsdt) && numericSellUsdt >= 1 && numericSellUsdt <= 2000
-    && sellQuote?.sufficient === true;
+  const canProceedSell = sellAmountInRangeLocally && sellQuote?.sufficient === true;
 
   const handleSellMax = useCallback(async () => {
-    if (quidaxUsdtBalance == null || quidaxUsdtBalance < 1) return;
+    if (sellBalance == null || sellBalance <= 0) return;
+    const cap = sellAsset === 'USDT' ? Math.min(2000, sellBalance) : sellBalance;
     setSellQuoteLoading(true);
-    const result = await cryptoService.getSellQuote(Math.min(2000, quidaxUsdtBalance));
+    const result = await cryptoService.getSellQuote(cap, sellAsset);
     setSellQuoteLoading(false);
     if (!result.success || !result.quote) {
       setSellQuoteError(result.error || 'Could not calculate the maximum sale amount.');
       return;
     }
-    const maximum = Math.floor(result.quote.maxSell * 1_000_000) / 1_000_000;
-    if (maximum < result.quote.minSell) {
-      setSellQuote(result.quote);
-      setSellQuoteError(`Your balance cannot cover the minimum ${formatUsdt(result.quote.minSell)} sale plus the ${formatUsdt(result.quote.networkFee)} network fee.`);
-      return;
+    if (sellAsset === 'USDT') {
+      const maximum = Math.floor(result.quote.maxSell * 1_000_000) / 1_000_000;
+      if (result.quote.minSell != null && maximum < result.quote.minSell) {
+        setSellQuote(result.quote);
+        setSellQuoteError(`Your balance cannot cover the minimum ${formatCoin(result.quote.minSell, sellAsset)} sale plus the ${formatCoin(result.quote.networkFee, sellAsset)} network fee.`);
+        return;
+      }
+      setSellAmount(String(maximum));
+    } else {
+      setSellAmount(String(sellBalance));
     }
-    setSellUsdt(String(maximum));
-  }, [quidaxUsdtBalance]);
+  }, [sellAsset, sellBalance]);
+
+  const handlePickSellAsset = useCallback((asset: BuyAsset) => {
+    setSellAsset(asset);
+    setSellAmount('');
+    setSellQuote(null);
+    setSellQuoteError(null);
+    setSellStep('amount');
+  }, []);
 
   const handleProceedToSell = useCallback(() => {
     if (!canProceedSell || !sellQuote) return;
-    navigation.navigate('CryptoSellBank', { sellUsdt: numericSellUsdt, sellQuote });
-  }, [canProceedSell, sellQuote, numericSellUsdt, navigation]);
+    navigation.navigate('CryptoSellBank', { sellAmount: numericSellAmount, sellAsset, sellQuote });
+  }, [canProceedSell, sellQuote, numericSellAmount, sellAsset, navigation]);
 
   // Polls the order live while the customer is on the processing screen, so
   // the purchase visibly lands the instant crypto-ramp-webhook (or the
@@ -1035,73 +1081,125 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
 
             {tab === 'sell' && kycVerified !== false && (
               <View onLayout={(e) => { sellSectionYRef.current = e.nativeEvent.layout.y; }}>
-                <Text style={styles.label}>Amount (USDT)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={sellUsdt}
-                  onChangeText={(t) => setSellUsdt(t.replace(/[^0-9.]/g, ''))}
-                  placeholder="e.g. 10"
-                  placeholderTextColor={theme.inkFaint}
-                  keyboardType="decimal-pad"
-                  onFocus={() => scrollSectionIntoView(sellSectionYRef)}
-                />
-                <View style={styles.sellBalanceRow}>
-                  <Text style={styles.hintText}>
-                    Available: {quidaxUsdtBalance != null ? formatUsdt(quidaxUsdtBalance) : '—'}
-                  </Text>
-                  <TouchableOpacity onPress={handleSellMax} disabled={sellQuoteLoading || quidaxUsdtBalance == null}>
-                    <Text style={styles.sellMaxText}>Sell Max</Text>
-                  </TouchableOpacity>
-                </View>
-                {sellNgnEstimate != null && (
-                  <Text style={styles.estimateText}>≈ {formatNaira(sellNgnEstimate)}</Text>
+                {sellStep === 'pick' && (
+                  <>
+                    <Text style={styles.label}>What are you selling?</Text>
+                    <Text style={styles.hintText}>Tap a coin to continue.</Text>
+                    <View style={styles.sellCoinList}>
+                      {(['USDT', 'BTC', 'ETH', 'SOL', 'XRP', 'TRX', 'LTC', 'DOGE', 'ADA'] as BuyAsset[]).map((a) => {
+                        const balance = balanceOf(a);
+                        const name = markets.find((m) => m.code === a)?.name ?? a;
+                        return (
+                          <TouchableOpacity
+                            key={a}
+                            style={styles.sellAssetRow}
+                            onPress={() => handlePickSellAsset(a)}
+                            activeOpacity={0.7}
+                          >
+                            <ProviderLogo
+                              source={CRYPTO_LOGOS[a]}
+                              fallbackLabel={name}
+                              fallbackColor={theme.brand}
+                              size={38}
+                              style={{ marginRight: Spacing.M }}
+                            />
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.sellCoinName}>{name}</Text>
+                              <Text style={styles.sellAssetRowSub}>
+                                {a} · balance {balance != null ? formatCoin(balance, a) : '—'}
+                              </Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={18} color={theme.inkFaint} />
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </>
                 )}
-                {sellQuoteLoading && (
-                  <View style={styles.checkingRow}>
-                    <ActivityIndicator size="small" color={theme.gold} />
-                    <Text style={styles.checkingText}>Checking live rate…</Text>
-                  </View>
-                )}
-                {sellQuote && (
-                  <View style={styles.sellQuoteCard}>
-                    <Text style={styles.sellQuoteText}>Amount to sell: {formatUsdt(sellQuote.amount)}</Text>
-                    {/* The network name comes from the quote rather than being
-                        hardcoded: it read "TRC20" even after selling moved to
-                        BEP20, so the customer was shown the wrong chain next to
-                        a real fee. */}
-                    <Text style={styles.sellQuoteText}>
-                      {sellQuote.network.toUpperCase()} network fee: {formatUsdt(sellQuote.networkFee)}
-                    </Text>
-                    <Text style={styles.sellQuoteTotal}>Total required: {formatUsdt(sellQuote.totalRequired)}</Text>
-                    {/* Quidax's own figure for what lands in the bank. The
-                        estimate above it is a market rate times the amount, so
-                        it cannot know about their processor fee and always
-                        reads high — a real 2 USDT sale showed ≈₦2,756 and paid
-                        ₦2,668. Shown only when their quote answered. */}
-                    {sellQuote.expectedNgn != null && (
-                      <Text style={styles.sellQuoteReceive}>
-                        You receive: {formatNaira(sellQuote.expectedNgn)}
+
+                {sellStep === 'amount' && (
+                  <>
+                    <TouchableOpacity style={styles.backLink} onPress={() => setSellStep('pick')}>
+                      <Ionicons name="chevron-back" size={16} color={theme.inkFaint} />
+                      <Text style={styles.backLinkText}>Change coin</Text>
+                    </TouchableOpacity>
+
+                    <Text style={styles.label}>Amount ({sellAsset})</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={sellAmount}
+                      onChangeText={(t) => setSellAmount(t.replace(/[^0-9.]/g, ''))}
+                      placeholder={sellAsset === 'USDT' ? 'e.g. 10' : 'e.g. 50'}
+                      placeholderTextColor={theme.inkFaint}
+                      keyboardType="decimal-pad"
+                      onFocus={() => scrollSectionIntoView(sellSectionYRef)}
+                    />
+                    <View style={styles.sellBalanceRow}>
+                      <Text style={styles.hintText}>
+                        Available: {sellBalance != null ? formatCoin(sellBalance, sellAsset) : '—'}
+                      </Text>
+                      <TouchableOpacity onPress={handleSellMax} disabled={sellQuoteLoading || sellBalance == null}>
+                        <Text style={styles.sellMaxText}>Sell Max</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {sellNgnEstimate != null && (
+                      <Text style={styles.estimateText}>≈ {formatNaira(sellNgnEstimate)}</Text>
+                    )}
+                    {sellQuoteLoading && (
+                      <View style={styles.checkingRow}>
+                        <ActivityIndicator size="small" color={theme.gold} />
+                        <Text style={styles.checkingText}>Checking live rate…</Text>
+                      </View>
+                    )}
+                    {sellQuote && (
+                      <View style={styles.sellQuoteCard}>
+                        <Text style={styles.sellQuoteText}>Amount to sell: {formatCoin(sellQuote.amount, sellAsset)}</Text>
+                        {sellQuote.usdtEquivalent != null && (
+                          <Text style={styles.sellQuoteText}>
+                            Converts to about {formatUsdt(sellQuote.usdtEquivalent)} first
+                          </Text>
+                        )}
+                        {/* The network name comes from the quote rather than being
+                            hardcoded: it read "TRC20" even after selling moved to
+                            BEP20, so the customer was shown the wrong chain next to
+                            a real fee. */}
+                        <Text style={styles.sellQuoteText}>
+                          {sellQuote.network.toUpperCase()} network fee: {formatUsdt(sellQuote.networkFee)}
+                        </Text>
+                        {sellAsset === 'USDT' && (
+                          <Text style={styles.sellQuoteTotal}>Total required: {formatUsdt(sellQuote.totalRequired)}</Text>
+                        )}
+                        {/* Quidax's own figure for what lands in the bank. The
+                            estimate above it is a market rate times the amount, so
+                            it cannot know about their processor fee and always
+                            reads high — a real 2 USDT sale showed ≈₦2,756 and paid
+                            ₦2,668. Shown only when their quote answered. */}
+                        {sellQuote.expectedNgn != null && (
+                          <Text style={styles.sellQuoteReceive}>
+                            You receive: {formatNaira(sellQuote.expectedNgn)}
+                          </Text>
+                        )}
+                      </View>
+                    )}
+                    {sellQuote && !sellQuote.sufficient && sellAsset === 'USDT' && (
+                      <Text style={styles.errorText}>
+                        You need {formatUsdt(sellQuote.totalRequired)}, but only {formatUsdt(sellQuote.available)} is available.
                       </Text>
                     )}
-                  </View>
-                )}
-                {sellQuote && !sellQuote.sufficient && (
-                  <Text style={styles.errorText}>
-                    You need {formatUsdt(sellQuote.totalRequired)}, but only {formatUsdt(sellQuote.available)} is available.
-                  </Text>
-                )}
-                {sellQuoteError && <Text style={styles.errorText}>{sellQuoteError}</Text>}
+                    {sellQuoteError && <Text style={styles.errorText}>{sellQuoteError}</Text>}
 
-                <TouchableOpacity
-                  style={[styles.primaryButton, !canProceedSell && styles.primaryButtonDisabled]}
-                  onPress={handleProceedToSell}
-                  disabled={!canProceedSell}
-                >
-                  <Text style={styles.primaryButtonText}>Proceed to Sell</Text>
-                </TouchableOpacity>
-                <Text style={styles.hintText}>
-                  {sellQuoteLoading ? 'Waiting for the live rate…' : 'Bank details are on the next screen.'}
-                </Text>
+                    <TouchableOpacity
+                      style={[styles.primaryButton, !canProceedSell && styles.primaryButtonDisabled]}
+                      onPress={handleProceedToSell}
+                      disabled={!canProceedSell}
+                    >
+                      <Text style={styles.primaryButtonText}>Proceed to Sell</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.hintText}>
+                      {sellQuoteLoading ? 'Waiting for the live rate…' : 'Bank details are on the next screen.'}
+                    </Text>
+                  </>
+                )}
               </View>
             )}
           </View>
@@ -1441,6 +1539,18 @@ function createStyles(theme: AppTheme) {
   buyProgressSubLabel: { ...Typography.CAPTION, color: theme.inkFaint },
   sellBalanceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sellMaxText: { ...Typography.BODY_SMALL, color: theme.brand, fontWeight: '700' },
+  sellCoinList: { gap: Spacing.XS },
+  sellAssetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.M,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.hairlineSoft,
+  },
+  sellCoinName: { ...Typography.BODY, color: theme.ink, fontWeight: '600' },
+  sellAssetRowSub: { ...Typography.CAPTION, color: theme.inkFaint, marginTop: 2 },
+  backLink: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.M },
+  backLinkText: { ...Typography.CAPTION, color: theme.inkFaint, marginLeft: 2 },
   // Deliberately visible rather than just a caption swap — the live fee
   // lookup used to update the numbers silently, which read as broken/laggy
   // rather than as something actually happening.

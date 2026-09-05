@@ -115,6 +115,7 @@ export interface CryptoActionResult {
 }
 
 export interface CryptoSellQuote {
+  asset: BuyAsset;
   amount: number;
   network: string;
   networkFee: number;
@@ -122,8 +123,17 @@ export interface CryptoSellQuote {
   available: number;
   sufficient: boolean;
   maxSell: number;
-  minSell: number;
-  maxLimit: number;
+  // Null for a non-USDT asset -- the real minimum comes from Quidax's own
+  // live swap-quote error (e.g. "Minimum TRX value should be above 3.02"),
+  // never a number KaysPay guesses ahead of time; there's no separate
+  // per-sale ceiling either, since the actual ₦/USDT-equivalent limit is
+  // checked once the swap quote is in.
+  minSell: number | null;
+  maxLimit: number | null;
+  /** How much USDT selling `amount` of a non-USDT asset is expected to
+   * produce (via the internal swap leg) — null for USDT itself, where
+   * amount already IS the USDT figure. */
+  usdtEquivalent: number | null;
   /** Naira Quidax says will actually land, net of their processor fee.
    * Null when their quote could not be read — fall back to the estimate. */
   expectedNgn: number | null;
@@ -410,10 +420,10 @@ export const cryptoService = {
     return (data.banks ?? []) as { code: string; name: string; logo?: string }[];
   },
 
-  async getSellQuote(cryptoAmount: number): Promise<{ success: boolean; quote?: CryptoSellQuote; error?: string }> {
+  async getSellQuote(cryptoAmount: number, asset: BuyAsset = 'USDT'): Promise<{ success: boolean; quote?: CryptoSellQuote; error?: string }> {
     try {
       const { data, error } = await withTimeout(
-        supabase.functions.invoke('crypto-sell-quote', { body: { crypto_amount: cryptoAmount } }),
+        supabase.functions.invoke('crypto-sell-quote', { body: { asset, crypto_amount: cryptoAmount } }),
       );
       if (error || !data?.success) {
         let message = data?.error || 'Could not calculate the live network fee.';
@@ -426,6 +436,7 @@ export const cryptoService = {
       return {
         success: true,
         quote: {
+          asset,
           amount: Number(data.amount),
           network: String(data.network || 'trc20'),
           networkFee: Number(data.network_fee),
@@ -433,8 +444,9 @@ export const cryptoService = {
           available: Number(data.available),
           sufficient: data.sufficient === true,
           maxSell: Number(data.max_sell),
-          minSell: Number(data.min_sell),
-          maxLimit: Number(data.max_limit),
+          minSell: data.min_sell != null ? Number(data.min_sell) : null,
+          maxLimit: data.max_limit != null ? Number(data.max_limit) : null,
+          usdtEquivalent: data.usdt_equivalent != null ? Number(data.usdt_equivalent) : null,
           expectedNgn: data.expected_ngn != null ? Number(data.expected_ngn) : null,
           processorFeeNgn: data.processor_fee_ngn != null ? Number(data.processor_fee_ngn) : null,
         },
@@ -493,11 +505,12 @@ export const cryptoService = {
     cryptoAmount: number,
     bankCode: string,
     accountNumber: string,
+    asset: BuyAsset = 'USDT',
   ): Promise<{ success: boolean; accountName?: string; error?: string }> {
     try {
       const { data, error } = await withTimeout(
         supabase.functions.invoke('crypto-sell-resolve-account', {
-          body: { crypto_amount: cryptoAmount, bank_code: bankCode, account_number: accountNumber },
+          body: { asset, crypto_amount: cryptoAmount, bank_code: bankCode, account_number: accountNumber },
         }),
       );
       if (error) {
@@ -512,11 +525,12 @@ export const cryptoService = {
   },
 
   async sell(
-    usdtAmount: number,
+    cryptoAmount: number,
     bankCode: string,
     bankName: string,
     accountNumber: string,
     authToken: string,
+    asset: BuyAsset = 'USDT',
   ): Promise<CryptoActionResult> {
     try {
       const idempotencyKey = newIdempotencyKey('crypto_sell');
@@ -524,8 +538,8 @@ export const cryptoService = {
         () => withTimeout(
           supabase.functions.invoke('crypto-sell', {
             body: {
-              asset: 'USDT',
-              crypto_amount: usdtAmount,
+              asset,
+              crypto_amount: cryptoAmount,
               bank_code: bankCode,
               bank_name: bankName,
               account_number: accountNumber,

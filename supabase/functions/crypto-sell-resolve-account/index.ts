@@ -80,6 +80,11 @@ serve(async (req: Request) => {
 
   const accountNumber = String(body.account_number || "").trim();
   const bankCode = String(body.bank_code || "").trim();
+  // Non-USDT: the caller passes the sell quote's ESTIMATED USDT-equivalent
+  // here (what the coin -> USDT swap leg is expected to produce), not a raw
+  // USDT amount the customer already holds -- see the balance-check skip
+  // below for why.
+  const asset = String(body.asset || "USDT").toUpperCase();
   const cryptoAmount = Number(body.crypto_amount);
   if (!/^\d{10}$/.test(accountNumber)) {
     return json({ success: false, error: "Enter a valid 10-digit account number." }, 400);
@@ -98,25 +103,32 @@ serve(async (req: Request) => {
       return json({ success: false, error: "Complete identity verification before selling crypto to a bank account." }, 403);
     }
 
-    // Do not create a throwaway off-ramp probe unless the requested sale is
-    // financially possible. Quidax charges the withdrawal/network fee on top
-    // of the amount being sold, so validating only `cryptoAmount` still lets a
-    // full-balance sale create an abandoned provider record.
-    const [wallets, withdrawalFee] = await Promise.all([
-      getSubAccountWallets(account.quidaxUserId),
-      getCryptoWithdrawalFee({ currency: "USDT", amount: cryptoAmount, network: USDT_NETWORK }),
-    ]);
-    const usdt = wallets.find((wallet) => wallet.currency.toLowerCase() === "usdt");
-    const available = Number(usdt?.balance ?? 0);
-    const totalRequired = cryptoAmount + withdrawalFee.fee;
-    if (!Number.isFinite(available) || available + 1e-8 < totalRequired) {
-      return json({
-        success: false,
-        error: `You need ${totalRequired.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")} USDT: ${cryptoAmount} USDT to sell plus ${withdrawalFee.fee} USDT network fee.`,
-        network_fee: withdrawalFee.fee,
-        total_required: totalRequired,
-        available: Number.isFinite(available) ? available : 0,
-      }, 400);
+    // For a non-USDT sale, this amount is the swap leg's ESTIMATE, not USDT
+    // the customer already holds -- checking it against their current USDT
+    // wallet balance would wrongly reject a real sale (they're selling XRP,
+    // say, not spending existing USDT). The source asset's own balance was
+    // already checked by crypto-sell-quote before the customer got here.
+    if (asset === "USDT") {
+      // Do not create a throwaway off-ramp probe unless the requested sale is
+      // financially possible. Quidax charges the withdrawal/network fee on top
+      // of the amount being sold, so validating only `cryptoAmount` still lets a
+      // full-balance sale create an abandoned provider record.
+      const [wallets, withdrawalFee] = await Promise.all([
+        getSubAccountWallets(account.quidaxUserId),
+        getCryptoWithdrawalFee({ currency: "USDT", amount: cryptoAmount, network: USDT_NETWORK }),
+      ]);
+      const usdt = wallets.find((wallet) => wallet.currency.toLowerCase() === "usdt");
+      const available = Number(usdt?.balance ?? 0);
+      const totalRequired = cryptoAmount + withdrawalFee.fee;
+      if (!Number.isFinite(available) || available + 1e-8 < totalRequired) {
+        return json({
+          success: false,
+          error: `You need ${totalRequired.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")} USDT: ${cryptoAmount} USDT to sell plus ${withdrawalFee.fee} USDT network fee.`,
+          network_fee: withdrawalFee.fee,
+          total_required: totalRequired,
+          available: Number.isFinite(available) ? available : 0,
+        }, 400);
+      }
     }
 
     const merchantReference = `probe${Date.now()}${crypto.randomUUID().slice(0, 8)}`;
