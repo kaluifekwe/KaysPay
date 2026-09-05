@@ -190,6 +190,7 @@ export default function CryptoSwapScreen({ navigation }: { navigation: any }) {
       <ResultStatusView
         status={actionState}
         headerTitle="Swap Crypto"
+        successLabel="Swap Successful"
         message={actionState === 'failed' ? actionError : actionMessage ?? undefined}
         onDone={() => {
           setActionMessage(null);
