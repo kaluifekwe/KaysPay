@@ -86,21 +86,41 @@ export function formatNaira(kobo: number): string {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 });
 }
 
+function formatCryptoAmount(micro: number, asset: string): string {
+  const code = asset.toUpperCase() || 'crypto';
+  // USDT is a dollar stablecoin, so 2dp reads naturally; a coin priced in
+  // thousands needs more places before the amount stops looking like zero.
+  const dp = code === 'USDT' ? 2 : 8;
+  const amount = micro / 1_000_000;
+  return `${amount.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })} ${code}`;
+}
+
 // A crypto deposit has no naira value at all, and a sell is denominated in
 // the coin until it settles — both store the real figure as metadata
 // crypto_micro and leave amount_ngn at 0. Rendering the naira column for
 // those printed "₦0" against a deposit that was actually 9.8 USDT, which
 // reads as a broken or empty record rather than the amount it is.
 export function formatTxAmount(row: Pick<TxRow, 'type' | 'amount_ngn' | 'metadata'>): string {
+  // crypto_swap has no single "amount" at all -- it converts one coin into
+  // another, so its metadata is shaped from_asset/from_crypto_micro/
+  // to_asset/to_crypto_micro (migration 212), not the crypto_micro/asset
+  // pair every other crypto type uses. Falling through to the generic
+  // check below found nothing and printed "₦0" for every swap.
+  if (row.type === 'crypto_swap') {
+    const meta = row.metadata as { from_asset?: string; from_crypto_micro?: number; to_asset?: string; to_crypto_micro?: number } | null | undefined;
+    const fromMicro = Number(meta?.from_crypto_micro ?? 0);
+    if (fromMicro > 0) {
+      const fromDisplay = formatCryptoAmount(fromMicro, String(meta?.from_asset || ''));
+      const toMicro = Number(meta?.to_crypto_micro ?? 0);
+      const toAsset = String(meta?.to_asset || '').toUpperCase() || 'crypto';
+      return toMicro > 0 ? `${fromDisplay} → ${formatCryptoAmount(toMicro, toAsset)}` : `${fromDisplay} → ${toAsset}`;
+    }
+  }
+
   const meta = row.metadata as { crypto_micro?: number; asset?: string } | null | undefined;
   const micro = Number(meta?.crypto_micro ?? 0);
   if (row.amount_ngn === 0 && micro > 0) {
-    const asset = String(meta?.asset || '').toUpperCase() || 'crypto';
-    // USDT is a dollar stablecoin, so 2dp reads naturally; a coin priced in
-    // thousands needs more places before the amount stops looking like zero.
-    const dp = asset === 'USDT' ? 2 : 8;
-    const amount = micro / 1_000_000;
-    return `${amount.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })} ${asset}`;
+    return formatCryptoAmount(micro, String(meta?.asset || ''));
   }
   return formatNaira(row.amount_ngn);
 }
