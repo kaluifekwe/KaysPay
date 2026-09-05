@@ -120,7 +120,7 @@ export default function CryptoBuyScreen({ navigation }: { navigation: any }) {
     }, []),
   );
 
-  const [step, setStep] = useState<'pick' | 'amount'>('pick');
+  const [step, setStep] = useState<'guide' | 'pick' | 'amount'>('guide');
   const [markets, setMarkets] = useState<MarketCoin[]>([]);
   const [marketsLoading, setMarketsLoading] = useState(true);
   const [coinSearch, setCoinSearch] = useState('');
@@ -325,6 +325,36 @@ export default function CryptoBuyScreen({ navigation }: { navigation: any }) {
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {step === 'guide' && (
+            <View>
+              <View style={styles.guideCard}>
+                <View style={styles.guideIconWrap}>
+                  <Ionicons name="information-circle" size={24} color={theme.brand} />
+                </View>
+                <Text style={styles.guideTitle}>How buying crypto works</Text>
+                <Text style={styles.guideSubtitle}>A quick walkthrough before your first purchase.</Text>
+                {[
+                  'Select the cryptocurrency you want',
+                  'Enter the amount in naira (minimum ₦10,000)',
+                  'Continue and enter your transaction PIN',
+                  'A one-time account number appears — transfer the exact amount shown',
+                  "Tap \"Done, I have transferred\"",
+                  'Wait 2–3 minutes — your crypto lands automatically',
+                ].map((text, index) => (
+                  <View key={index} style={styles.guideStepRow}>
+                    <View style={styles.guideStepNumber}>
+                      <Text style={styles.guideStepNumberText}>{index + 1}</Text>
+                    </View>
+                    <Text style={styles.guideStepText}>{text}</Text>
+                  </View>
+                ))}
+              </View>
+              <TouchableOpacity style={styles.primaryButton} onPress={() => setStep('pick')} activeOpacity={0.85}>
+                <Text style={styles.primaryButtonText}>I understand, continue</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {step === 'pick' && (
             <View>
               <View style={styles.search}>
@@ -730,6 +760,36 @@ function createStyles(theme: AppTheme) {
     checkboxMark: { color: theme.background, fontSize: 14, fontWeight: '700' },
     checkLabel: { ...Typography.CAPTION, color: theme.ink, flex: 1 },
 
+    guideCard: {
+      backgroundColor: theme.surfaceRaised,
+      borderWidth: 1,
+      borderColor: theme.hairline,
+      borderRadius: Spacing.CARD_RADIUS,
+      padding: Spacing.CARD_PADDING,
+    },
+    guideIconWrap: {
+      width: 44,
+      height: 44,
+      borderRadius: 12,
+      backgroundColor: theme.brandSoft,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: Spacing.M,
+    },
+    guideTitle: { ...Typography.CARD_TITLE, color: theme.ink, marginBottom: 4 },
+    guideSubtitle: { ...Typography.BODY, color: theme.inkMuted, marginBottom: Spacing.L },
+    guideStepRow: { flexDirection: 'row', marginBottom: Spacing.M },
+    guideStepNumber: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: theme.brandSoft,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: Spacing.S,
+    },
+    guideStepNumberText: { ...Typography.CAPTION, color: theme.brand, fontWeight: '700' },
+    guideStepText: { ...Typography.BODY, color: theme.ink, flex: 1 },
     primaryButton: {
       height: Spacing.BUTTON_HEIGHT_PRIMARY,
       backgroundColor: theme.brand,
