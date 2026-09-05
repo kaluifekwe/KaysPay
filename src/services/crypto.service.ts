@@ -13,8 +13,13 @@ import { safeErrorMessage } from '../utils/errorMessages';
 // (the customer picks TRC20/ERC20/BEP20); every other asset here withdraws
 // over its own single native chain, so WITHDRAW_SINGLE_NETWORK_ASSETS
 // carries no network choice for the customer to make.
-export type CryptoAsset = 'USDT' | 'BTC' | 'ETH' | 'SOL';
-export const WITHDRAW_SINGLE_NETWORK_ASSETS: SwapAssetCode[] = ['BTC', 'ETH', 'SOL'];
+export type CryptoAsset = 'USDT' | 'BTC' | 'ETH' | 'SOL' | 'TRX' | 'LTC' | 'DOGE' | 'ADA';
+// XRP is deliberately not here yet -- Quidax's withdrawal API has a real
+// destination-tag field for it (fund_uid2), and a wrong/missing tag can
+// send funds to an exchange's shared wallet with no way to trace them
+// back. That needs its own tag-input UI and its own review before
+// Withdraw supports it. Owner decision, 2026-09-05.
+export const WITHDRAW_SINGLE_NETWORK_ASSETS: SwapAssetCode[] = ['BTC', 'ETH', 'SOL', 'TRX', 'LTC', 'DOGE', 'ADA'];
 export type CryptoNetwork = 'TRC20' | 'ERC20' | 'BEP20';
 
 // Coins Buy supports beyond USDT — kept in sync with the curated list in
@@ -67,10 +72,20 @@ const ADDRESS_PATTERNS: Record<CryptoNetwork, RegExp> = {
 // SOL: base58, no format-check beyond length (32-44 chars) -- a real
 // checksum needs Solana's own curve validation, out of scope for a client
 // regex; server-side Quidax still rejects a malformed address either way.
+// TRX: same address format as TRC20 USDT -- Tron addresses aren't per-asset.
+// LTC: legacy P2PKH (L...), P2SH (M... post-2017, 3... pre-2017 shared with
+// BTC's own format), native SegWit bech32 (ltc1...).
+// DOGE: base58, D-prefixed, same length range as BTC/LTC legacy addresses.
+// ADA: Shelley-era bech32 only (addr1...) -- length varies by payload
+// (plain vs staking-key-bearing), so this is a loose format check like SOL's.
 const SINGLE_NETWORK_ADDRESS_PATTERNS: Partial<Record<CryptoAsset, RegExp>> = {
   BTC: /^(1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{25,90})$/,
   ETH: /^0x[a-fA-F0-9]{40}$/,
   SOL: /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
+  TRX: /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
+  LTC: /^(L[a-km-zA-HJ-NP-Z1-9]{25,34}|[M3][a-km-zA-HJ-NP-Z1-9]{25,34}|ltc1[a-z0-9]{25,90})$/,
+  DOGE: /^D[a-km-zA-HJ-NP-Z1-9]{25,34}$/,
+  ADA: /^addr1[a-z0-9]{20,103}$/,
 };
 
 export function isValidCryptoAddress(asset: CryptoAsset, network: CryptoNetwork | '', address: string): boolean {

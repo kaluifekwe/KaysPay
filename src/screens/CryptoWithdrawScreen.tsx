@@ -62,6 +62,10 @@ const ASSET_NAMES: Record<CryptoAsset, string> = {
   BTC: 'Bitcoin',
   ETH: 'Ethereum',
   SOL: 'Solana',
+  TRX: 'Tron',
+  LTC: 'Litecoin',
+  DOGE: 'Dogecoin',
+  ADA: 'Cardano',
 };
 const WITHDRAWABLE_ASSETS = ['USDT', ...WITHDRAW_SINGLE_NETWORK_ASSETS] as CryptoAsset[];
 

@@ -32,11 +32,22 @@ export const USDT_NETWORKS: Record<string, AssetNetworkConfig> = {
 };
 
 // Assets withdrawn over their own single native chain -- extended one at a
-// time (BTC first, then ETH/SOL), each verified against Quidax before being
-// added here. Quidax's own NetworkType union (confirmed via its SDK docs) is
-// 'btc'|'bep20'|'erc20'|'trc20'|'doge'|'polygon'|'solana'|'none' -- there is
-// no separate 'eth' network value, since Ethereum mainnet IS the erc20
-// network; Solana's network value is the word 'solana', not 'sol'.
+// time (BTC first, then ETH/SOL, then TRX/LTC/DOGE/ADA), each verified
+// against Quidax before being added here. Quidax's own NetworkType union
+// (confirmed via its SDK docs, and TRX/LTC/DOGE/ADA additionally confirmed
+// live against the merchant account's own /users/me/wallets response,
+// 2026-09-05) is 'btc'|'bep20'|'erc20'|'trc20'|'doge'|'polygon'|'solana'|
+// 'cardano'|'ltc'|'none' -- there is no separate 'eth' network value, since
+// Ethereum mainnet IS the erc20 network; Solana's network value is the word
+// 'solana', not 'sol'; TRX's own native network is 'trc20' (the same value
+// USDT-on-Tron uses -- Tron only has the one chain either way).
+//
+// XRP is deliberately NOT included here yet: Quidax's withdrawal endpoint
+// has a real "destination tag" field (fund_uid2) for it, and a wrong or
+// missing tag can send funds to an exchange's shared wallet with no way to
+// trace them back -- that needs its own UI (a tag field, shown only for
+// XRP) and its own careful review before going live, not a drive-by add
+// alongside these four simpler, tag-free assets. Owner decision, 2026-09-05.
 export const SINGLE_NETWORK_ASSETS: Record<string, AssetNetworkConfig> = {
   BTC: {
     quidaxCurrency: "btc",
@@ -54,6 +65,33 @@ export const SINGLE_NETWORK_ASSETS: Record<string, AssetNetworkConfig> = {
     // Base58 length check only -- a real checksum needs Solana's own curve
     // validation. Quidax's own address validation is still the real backstop.
     addressPattern: /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
+  },
+  TRX: {
+    quidaxCurrency: "trx",
+    quidaxNetwork: "trc20",
+    // Same address format as TRC20 USDT -- Tron addresses aren't per-asset.
+    addressPattern: /^T[1-9A-HJ-NP-Za-km-z]{33}$/,
+  },
+  LTC: {
+    quidaxCurrency: "ltc",
+    quidaxNetwork: "ltc",
+    // Legacy P2PKH (L...), P2SH (M... post-2017, 3... pre-2017 shared with
+    // BTC's own format), native SegWit bech32 (ltc1...).
+    addressPattern: /^(L[a-km-zA-HJ-NP-Z1-9]{25,34}|[M3][a-km-zA-HJ-NP-Z1-9]{25,34}|ltc1[a-z0-9]{25,90})$/,
+  },
+  DOGE: {
+    quidaxCurrency: "doge",
+    quidaxNetwork: "doge",
+    addressPattern: /^D[a-km-zA-HJ-NP-Z1-9]{25,34}$/,
+  },
+  ADA: {
+    quidaxCurrency: "ada",
+    quidaxNetwork: "cardano",
+    // Shelley-era bech32 addresses only (addr1...) -- length varies by
+    // payload (plain vs staking-key-bearing), so this is a loose format
+    // check, same spirit as SOL's above. Quidax's own validation is the
+    // real backstop.
+    addressPattern: /^addr1[a-z0-9]{20,103}$/,
   },
 };
 
@@ -101,6 +139,10 @@ export const DUST_FLOOR: Record<string, number> = {
   BTC: 0.0001,
   ETH: 0.001,
   SOL: 0.01,
+  TRX: 1,
+  LTC: 0.01,
+  DOGE: 10,
+  ADA: 5,
 };
 
 /**
