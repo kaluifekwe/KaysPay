@@ -7,6 +7,7 @@ import { notifyCryptoBuyCompleted } from "../_shared/crypto-buy-settle.ts";
 import { deriveVerifiedQuidaxIdentity } from "../_shared/crypto-account.ts";
 import { executeUsdtOffRampWithdrawal, openUsdtOffRampSale } from "../_shared/crypto-sell-offramp.ts";
 import { notifyCryptoSwapCompleted, notifyCryptoSwapFailed } from "../_shared/crypto-swap-notify.ts";
+import { notifyCryptoSellSwapFailed } from "../_shared/crypto-sell-notify.ts";
 import { redactSecrets } from "../_shared/redact.ts";
 
 // Receives Quidax's webhook deliveries and settles everything that Quidax
@@ -330,7 +331,35 @@ serve(async (req: Request) => {
         if (failedRow) {
           await notifyCryptoSwapFailed(supabase, { userId: failedRow.user_id, fromAsset: failedRow.from_asset, toAsset: failedRow.to_asset });
         } else {
-          await supabase.rpc("fail_crypto_sell", { p_swap_id: swapId, p_reason: "swap_failed" });
+          // Sell-via-swap's leg 1 (migration 211) failing ASYNCHRONOUSLY --
+          // confirmSwapQuotation itself didn't throw (that's already handled
+          // synchronously in crypto-sell/index.ts), but Quidax's own webhook
+          // reported failure later. Nothing was ever missing here before:
+          // this branch fell straight through to the OLD, pre-migration-211
+          // fail_crypto_sell RPC, which can't match a sell-via-swap row's
+          // metadata shape at all -- the sale just stayed 'pending' forever
+          // with no notification, the same silently-stuck class of bug Buy
+          // had. The source coin never left the sub-account either way, so
+          // this reassures rather than escalates.
+          const { data: sellSwapTxId } = await supabase.rpc("fail_crypto_sell_swap_pending", {
+            p_swap_quotation_id: swapId,
+            p_reason: "swap_failed",
+          });
+          if (sellSwapTxId) {
+            const { data: sellTx } = await supabase
+              .from("transactions")
+              .select("user_id, metadata")
+              .eq("id", sellSwapTxId)
+              .maybeSingle();
+            if (sellTx) {
+              await notifyCryptoSellSwapFailed(supabase, {
+                userId: sellTx.user_id,
+                asset: String(sellTx.metadata?.asset || "").toUpperCase() || "crypto",
+              });
+            }
+          } else {
+            await supabase.rpc("fail_crypto_sell", { p_swap_id: swapId, p_reason: "swap_failed" });
+          }
         }
       }
     }
