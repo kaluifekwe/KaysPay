@@ -1,8 +1,10 @@
 import { useCallback, useState } from 'react';
 import { callAdmin, AdminApiError } from '../lib/adminApi';
+import ContactPhone from '../components/ContactPhone';
+import { formatPhoneForAdmin } from '../lib/phone';
 
 interface Match { id: string; full_name: string | null; phone: string | null; created_at: string; }
-interface UserDetail extends Match { email: string | null; wallet_balance_kobo: number | null; wallet_locked_kobo: number | null; kyc_status: string; last_active: string | null; transaction_count: number; }
+interface UserDetail extends Match { email: string | null; wallet_balance_kobo: number | null; wallet_locked_kobo: number | null; kyc_status: string; last_active: string | null; transaction_count: number; funding_hold_count: number; funding_hold_kobo: number; }
 type ActivityCategory = '' | 'account' | 'financial' | 'security' | 'service' | 'admin';
 interface ActivityEvent {
   event_key: string; occurred_at: string; category: Exclude<ActivityCategory, ''>;
@@ -76,7 +78,7 @@ export default function UserLookupPage() {
   const openDetail = async (userId: string) => {
     setError(null); setLoading(true); setActivities([]); setFilters(EMPTY_FILTERS); setAppliedFilters(EMPTY_FILTERS);
     try {
-      const response = await callAdmin<{ user: UserDetail }>('admin-user-lookup', { query: { user_id: userId } });
+      const response = await callAdmin<{ user: UserDetail }>('admin-user-lookup', { query: { user_id: userId, source: 'user_lookup' } });
       setDetail(response.user); await loadActivity(userId, EMPTY_FILTERS);
     } catch (detailError) { setError(detailError instanceof AdminApiError ? detailError.message : 'Could not load user'); }
     finally { setLoading(false); }
@@ -102,7 +104,7 @@ export default function UserLookupPage() {
       {matches.length > 0 && <div className="card table-scroll"><table>
         <thead><tr><th>Name</th><th>Phone</th><th>Joined</th><th /></tr></thead>
         <tbody>{matches.map((match) => <tr key={match.id}>
-          <td>{match.full_name || '—'}</td><td>{match.phone || '—'}</td>
+          <td>{match.full_name || '—'}</td><td>{formatPhoneForAdmin(match.phone)}</td>
           <td>{new Date(match.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
           <td><button className="secondary" onClick={() => void openDetail(match.id)}>View</button></td>
         </tr>)}</tbody>
@@ -117,9 +119,10 @@ export default function UserLookupPage() {
       </div>
       {deletedAt && <div className="error-text" style={{ marginBottom: 16 }}>Account deleted on {new Date(deletedAt).toLocaleString('en-GB')}. Retained records are read-only.</div>}
       <div className="card table-scroll"><table><tbody>
-        <tr><td className="muted">Phone</td><td>{detail.phone || '—'}</td><td className="muted">Email</td><td>{detail.email || '—'}</td></tr>
+        <tr><td className="muted">Phone</td><td><ContactPhone phone={detail.phone} /></td><td className="muted">Email</td><td>{detail.email || '—'}</td></tr>
         <tr><td className="muted">Wallet balance</td><td>{formatNaira(detail.wallet_balance_kobo)}</td><td className="muted">Locked amount</td><td>{formatNaira(detail.wallet_locked_kobo)}</td></tr>
         <tr><td className="muted">KYC status</td><td><span className={`badge ${detail.kyc_status === 'verified' ? 'enabled' : 'pending'}`}>{detail.kyc_status}</span></td><td className="muted">Transactions</td><td>{detail.transaction_count}</td></tr>
+        <tr><td className="muted">Funding on KYC hold</td><td>{formatNaira(detail.funding_hold_kobo)}</td><td className="muted">Held deposits</td><td>{detail.funding_hold_count}</td></tr>
         <tr><td className="muted">Joined</td><td>{new Date(detail.created_at).toLocaleString('en-GB')}</td><td className="muted">Last active</td><td>{detail.last_active ? new Date(detail.last_active).toLocaleString('en-GB') : '—'}</td></tr>
       </tbody></table></div>
 
