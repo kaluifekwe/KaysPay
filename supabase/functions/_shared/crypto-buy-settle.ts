@@ -106,6 +106,23 @@ export async function settleCryptoBuySuccess(
     return;
   }
 
+  if (order.metadata?.quidax_swap_id) {
+    // A swap leg was already started for this order (record_crypto_buy_swap_pending
+    // already ran once). Status stays 'pending' for this order's ENTIRE leg-2
+    // lifecycle -- it only ever advances via the swap_transaction.complete/.failed
+    // webhook -- so a lost webhook leaves it looking IDENTICAL to "leg 2 never
+    // started" to every caller of this function, including crypto-buy-reconcile
+    // (which re-requeries leg 1, sees it forever "completed" once paid, and would
+    // otherwise call this again). Confirmed live 2026-09-05: exactly this
+    // sequence minted a second, real swap for an order whose first swap had
+    // already silently succeeded -- a genuine duplicate conversion with no
+    // transaction row to show for it. Bailing out here instead just leaves the
+    // order pending for a proper swap-status reconcile to catch, rather than
+    // risking another real conversion on top of one that may have already run.
+    console.warn(`${logPrefix}: swap already started for ${merchantReference} (quidax_swap_id=${order.metadata.quidax_swap_id}), not starting another`);
+    return;
+  }
+
   try {
     const { data: account } = await supabase
       .from("crypto_accounts")
