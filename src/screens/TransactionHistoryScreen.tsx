@@ -151,7 +151,10 @@ const groupTransactionsByDate = (transactions: TransactionItem[]): DateGroup[] =
 const formatTimestamp = formatDateTimeShort;
 
 const TransactionHistoryScreen: React.FC = () => {
-  useSensitiveScreenProtection();
+  // Temporarily disabled at the owner's request (2026-09-05) so a display
+  // bug here can actually be screenshotted and reported. Re-enable once
+  // that's done.
+  // useSensitiveScreenProtection();
   const navigation = useNavigation();
   const { theme } = useTheme();
   const styles = createStyles(theme);
