@@ -11,16 +11,34 @@ import { findSwapAsset } from "./crypto-assets.ts";
  */
 export async function notifyCryptoBuyCompleted(
   supabase: SupabaseClient,
-  params: { userId: string; asset: string; amount: number; destinationType?: string | null },
+  params: {
+    userId: string;
+    asset: string;
+    amount: number;
+    destinationType?: string | null;
+    /** Set only when this Buy's swap leg failed and it settled as USDT
+     * instead of the coin actually requested (see fail_crypto_buy_swap,
+     * migration 127) -- names that coin so the notification explains the
+     * substitution instead of reading like an ordinary completed purchase.
+     * A customer who paid for XRP and got a generic "Crypto delivered:
+     * 10.67 USDT" message has no way to tell those two cases apart. */
+    substitutedFromAsset?: string;
+  },
 ): Promise<void> {
   const destination = params.destinationType === "external_wallet" ? "your external wallet" : "your KaysPay Wallet";
   const amountDisplay = String(Math.round(params.amount * 1_000_000) / 1_000_000);
+  const body = params.substitutedFromAsset
+    ? `We couldn't complete your ${params.substitutedFromAsset} purchase's final step, so ${amountDisplay} ${params.asset} (the same value) landed in ${destination} instead. You can buy ${params.substitutedFromAsset} again with it, or sell it for Naira anytime.`
+    : `${amountDisplay} ${params.asset} has landed in ${destination}.`;
   const { error } = await supabase.from("notifications").insert({
     user_id: params.userId,
-    title: "Crypto delivered",
-    body: `${amountDisplay} ${params.asset} has landed in ${destination}.`,
+    title: params.substitutedFromAsset ? "Crypto delivered as USDT" : "Crypto delivered",
+    body,
     type: "transaction",
-    data: { kind: "crypto_buy_completed" },
+    data: {
+      kind: "crypto_buy_completed",
+      ...(params.substitutedFromAsset ? { substituted_from_asset: params.substitutedFromAsset } : {}),
+    },
   });
   if (error) console.error("notifyCryptoBuyCompleted: insert failed:", error.message);
 }
@@ -123,15 +141,16 @@ export async function settleCryptoBuySuccess(
       });
       // The swap never happened, but leg 1's USDT already did — this still
       // settles 'completed' (see fail_crypto_buy_swap), just delivered as
-      // USDT instead of the coin the customer picked. Same notification as
-      // any other completed Buy so they aren't left checking the app to
-      // find out their money landed.
+      // USDT instead of the coin the customer picked. Names the originally
+      // requested coin so the notification explains the substitution
+      // instead of reading like an ordinary completed purchase.
       if (settledTxId) {
         await notifyCryptoBuyCompleted(supabase, {
           userId: order.user_id,
           asset: "USDT",
           amount: receivedUsdt,
           destinationType: order.metadata?.destination_type,
+          substitutedFromAsset: targetAsset,
         });
       }
     }

@@ -288,6 +288,7 @@ serve(async (req: Request) => {
             asset: "USDT",
             amount: settledMicro / 1_000_000,
             destinationType: buyTx.metadata?.destination_type,
+            substitutedFromAsset: String(buyTx.metadata?.asset || "").toUpperCase() || undefined,
           });
         }
       } else {
