@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { callAdmin, AdminApiError } from '../lib/adminApi';
-import { formatFundingProvider, formatTxAmount, SERVICES, TxRow } from '../lib/transactions';
+import { formatFundingProvider, formatTxAmount, SERVICES, truncateAddress, TxRow } from '../lib/transactions';
 import TransactionDetailModal from '../components/TransactionDetailModal';
 import { useHidden, HIDDEN_MASK } from '../lib/hidden';
 
@@ -190,7 +190,7 @@ export default function TransactionsPage() {
                     ? formatFundingProvider(r.funding_provider)
                     : <>{recipientsHidden && !CRYPTO_TYPES.has(r.type)
                         ? (r.recipient_phone ? HIDDEN_MASK : '—')
-                        : (r.recipient_phone || '—')}{r.network ? ` (${r.network})` : ''}</>}</td>
+                        : (r.recipient_phone ? (r.type === 'crypto_withdraw' ? truncateAddress(r.recipient_phone) : r.recipient_phone) : '—')}{r.network ? ` (${r.network})` : ''}</>}</td>
                   <td>{formatTxAmount(r)}</td>
                   <td>{(() => {
                     const status = r.service_refunds?.length ? 'refunded' : r.status;

@@ -86,6 +86,16 @@ export function formatNaira(kobo: number): string {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 });
 }
 
+// A withdrawal's recipient_phone column actually holds an external wallet
+// address (see crypto-withdraw's record_crypto_withdrawal_pending), which
+// runs 34-42+ characters and reads as unreadable noise in the transactions
+// table. Same truncation shape the customer app already uses for addresses
+// (CryptoWithdrawScreen). The full address is still visible in the detail
+// modal on click -- this only shortens the list view.
+export function truncateAddress(value: string): string {
+  return value.length > 16 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value;
+}
+
 function formatCryptoAmount(micro: number, asset: string): string {
   const code = asset.toUpperCase() || 'crypto';
   // USDT is a dollar stablecoin, so 2dp reads naturally; a coin priced in
