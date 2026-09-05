@@ -364,18 +364,35 @@ export interface QuidaxSwapTransactionListItem extends QuidaxSwapTransaction {
  * id, which crypto-sell never captures or stores — only the quotation id
  * is on hand, so this lists recent transactions and the caller matches on
  * quotationId instead.
+ *
+ * Must pass per_page/page explicitly, same as getSubAccounts above --
+ * confirmed live 2026-09-05 that calling this endpoint with no query
+ * params returns an EMPTY list even when real swap history exists (a real
+ * bug here, caught only because this function had never actually been
+ * exercised until then: a stuck swap looked identical to "no history at
+ * all" instead of surfacing the real, completed transaction underneath).
  */
 export async function listSwapTransactions(quidaxUserId: string): Promise<QuidaxSwapTransactionListItem[]> {
-  const { status, data } = await callQuidax(`/users/${encodeURIComponent(quidaxUserId)}/swap_transactions`);
-  if (status >= 400 || data?.status !== "success") {
-    throw new QuidaxError(data?.message || "Could not fetch swap history", status);
+  const results: QuidaxSwapTransactionListItem[] = [];
+  let page = 1;
+  for (let guard = 0; guard < 20; guard++) {
+    const { status, data, headers } = await callQuidax(`/users/${encodeURIComponent(quidaxUserId)}/swap_transactions?per_page=100&page=${page}`, "GET");
+    if (status >= 400 || data?.status !== "success") {
+      throw new QuidaxError(data?.message || "Could not fetch swap history", status);
+    }
+    results.push(...(data.data ?? []).map((t: any) => ({
+      id: String(t.id),
+      status: String(t.status),
+      receivedAmount: t.received_amount != null ? String(t.received_amount) : null,
+      quotationId: String(t.swap_quotation?.id ?? ""),
+    })));
+    const nextPage = headers.get("x-next-page");
+    if (!nextPage) break;
+    const parsed = Number(nextPage);
+    if (!Number.isFinite(parsed) || parsed <= 0 || parsed === page) break;
+    page = parsed;
   }
-  return (data.data ?? []).map((t: any) => ({
-    id: String(t.id),
-    status: String(t.status),
-    receivedAmount: t.received_amount != null ? String(t.received_amount) : null,
-    quotationId: String(t.swap_quotation?.id ?? ""),
-  }));
+  return results;
 }
 
 /**

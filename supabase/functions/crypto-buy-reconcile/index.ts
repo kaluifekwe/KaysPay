@@ -1,7 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { adminClient, verifyCronSecret, withJobLock } from "../_shared/auth.ts";
 import { isQuidaxRampConfigured, QuidaxRampError, requeryOnRamp } from "../_shared/quidax-ramp-client.ts";
-import { settleCryptoBuySuccess } from "../_shared/crypto-buy-settle.ts";
+import { notifyCryptoBuyCompleted, settleCryptoBuySuccess } from "../_shared/crypto-buy-settle.ts";
+import { isQuidaxConfigured, listSwapTransactions } from "../_shared/quidax-client.ts";
+import { notifyCryptoSwapCompleted } from "../_shared/crypto-swap-notify.ts";
 
 // Safety net for a buy_transaction.* webhook that never arrives — every
 // other money flow in this app has a reconcile sweep (foreign-number,
@@ -62,6 +64,11 @@ const UNPAID_PENDING_CLOSE_MS = 24 * 60 * 60 * 1000;
 // delivered hours later is not slow, it is stuck, and it is the one case
 // worth waking someone for.
 const PAID_IN_FLIGHT_ALERT_MS = 2 * 60 * 60 * 1000;
+
+// Floor for the swap-leg sweep below — separate from the Ramp-leg floor
+// above since a swap normally settles in seconds, not minutes.
+const SWAP_STUCK_FLOOR_MS = 10 * 60 * 1000;
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
@@ -245,7 +252,151 @@ serve(async (req: Request) => {
       }
     }
 
-    return { checked: stuck?.length ?? 0, completed, failed, notPaid, stillPending, escalated, skipped };
+    // Safety net for a LOST swap_transaction.complete/.failed webhook --
+    // separate from everything above, which only ever reconciles leg 1
+    // (the Ramp NGN -> USDT order). A non-USDT Buy's leg 2 (the swap) and a
+    // customer-initiated Swap (migration 212) both settle entirely inside
+    // the sub-account with no off-ramp step, so both can be safely
+    // auto-completed here once Quidax's own swap history confirms they
+    // really landed -- confirmed live 2026-09-05 against a real stuck pair
+    // (one Buy leg 2, one Swap) that had both actually succeeded on
+    // Quidax's side while sitting 'pending' in our own database, because
+    // the completion webhook never arrived.
+    //
+    // Folded into this same function rather than a new one: the project
+    // was at its 100-function deploy cap with zero free slots when this was
+    // built (2026-09-05) -- same reasoning as merging crypto-swap-quote
+    // into crypto-swap earlier that day.
+    let swapCompleted = 0, buySwapCompleted = 0, sellLegEscalated = 0, swapSkipped = 0, swapStillPending = 0;
+
+    if (isQuidaxConfigured()) {
+      const swapFloor = new Date(Date.now() - SWAP_STUCK_FLOOR_MS).toISOString();
+
+      const [{ data: stuckBuySwaps }, { data: stuckSwaps }, { data: stuckSellLegs }] = await Promise.all([
+        supabase.from("transactions").select("id, user_id, metadata")
+          .eq("status", "pending").eq("type", "crypto_buy")
+          .not("metadata->>quidax_swap_id", "is", null)
+          .lte("created_at", swapFloor).limit(50),
+        supabase.from("transactions").select("id, user_id, metadata")
+          .eq("status", "pending").eq("type", "crypto_swap")
+          .lte("created_at", swapFloor).limit(50),
+        supabase.from("transactions").select("id, created_at, metadata")
+          .eq("status", "pending").eq("type", "crypto_sell")
+          .eq("metadata->>phase", "awaiting_swap")
+          .lte("created_at", swapFloor).limit(50),
+      ]);
+
+      // Grouped so each user's Quidax swap history is fetched once, not
+      // once per stuck row -- a busy account could otherwise multiply this
+      // into many redundant calls per sweep.
+      const byUser = new Map<string, { buys: typeof stuckBuySwaps; swaps: typeof stuckSwaps }>();
+      for (const tx of stuckBuySwaps ?? []) {
+        if (!byUser.has(tx.user_id)) byUser.set(tx.user_id, { buys: [], swaps: [] });
+        byUser.get(tx.user_id)!.buys!.push(tx);
+      }
+      for (const tx of stuckSwaps ?? []) {
+        if (!byUser.has(tx.user_id)) byUser.set(tx.user_id, { buys: [], swaps: [] });
+        byUser.get(tx.user_id)!.swaps!.push(tx);
+      }
+
+      for (const [userId, group] of byUser) {
+        const { data: account } = await supabase
+          .from("crypto_accounts")
+          .select("quidax_user_id")
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (!account) { swapSkipped += (group.buys?.length ?? 0) + (group.swaps?.length ?? 0); continue; }
+
+        let history;
+        try {
+          history = await listSwapTransactions(account.quidax_user_id);
+        } catch (e) {
+          console.error(`crypto-buy-reconcile: listSwapTransactions failed for user ${userId}:`, e instanceof Error ? e.message : String(e));
+          swapSkipped += (group.buys?.length ?? 0) + (group.swaps?.length ?? 0);
+          continue;
+        }
+
+        for (const tx of group.buys ?? []) {
+          const swapId = String((tx.metadata as any)?.quidax_swap_id || "");
+          const match = history.find((h) => h.quotationId === swapId);
+          if (!match || match.status !== "completed" || !match.receivedAmount) { swapStillPending++; continue; }
+
+          const { data: buyTxId, error: buyError } = await supabase.rpc("complete_crypto_buy_swap", {
+            p_swap_id: swapId,
+            p_crypto_micro: Math.round(Number(match.receivedAmount) * 1_000_000),
+          });
+          if (buyError) {
+            console.error(`crypto-buy-reconcile: complete_crypto_buy_swap failed for ${tx.id}:`, buyError.message);
+            swapSkipped++;
+            continue;
+          }
+          if (buyTxId) {
+            buySwapCompleted++;
+            const { data: buyTx } = await supabase.from("transactions").select("user_id, metadata").eq("id", buyTxId).maybeSingle();
+            if (buyTx) {
+              await notifyCryptoBuyCompleted(supabase, {
+                userId: buyTx.user_id,
+                asset: String((tx.metadata as any)?.asset || "").toUpperCase(),
+                amount: Number(match.receivedAmount),
+                destinationType: buyTx.metadata?.destination_type,
+              });
+            }
+          }
+        }
+
+        for (const tx of group.swaps ?? []) {
+          const swapId = String((tx.metadata as any)?.swap_quotation_id || "");
+          const match = history.find((h) => h.quotationId === swapId);
+          if (!match || match.status !== "completed" || !match.receivedAmount) { swapStillPending++; continue; }
+
+          const { data: swapRows, error: swapError } = await supabase.rpc("complete_crypto_swap", {
+            p_swap_quotation_id: swapId,
+            p_to_crypto_micro: Math.round(Number(match.receivedAmount) * 1_000_000),
+          });
+          if (swapError) {
+            console.error(`crypto-buy-reconcile: complete_crypto_swap failed for ${tx.id}:`, swapError.message);
+            swapSkipped++;
+            continue;
+          }
+          const swapRow = swapRows?.[0];
+          if (swapRow) {
+            swapCompleted++;
+            await notifyCryptoSwapCompleted(supabase, {
+              userId: swapRow.user_id,
+              fromAsset: swapRow.from_asset,
+              toAsset: swapRow.to_asset,
+              fromAmount: Number(swapRow.from_crypto_micro) / 1_000_000,
+              toAmount: Number(match.receivedAmount),
+            });
+          }
+        }
+      }
+
+      // Sell-via-swap's leg 1 is deliberately NOT auto-completed here --
+      // finishing it safely means re-running the off-ramp-opening sequence
+      // crypto-quidax-webhook already owns (attach bank account, confirm,
+      // withdraw), and duplicating that here risks a second real bank
+      // payout attempt on top of one that may have already gone out.
+      // Escalated instead so a human can inspect it directly.
+      for (const tx of stuckSellLegs ?? []) {
+        sellLegEscalated++;
+        await supabase.rpc("record_monitoring_alert", {
+          p_fingerprint: `crypto_sell_swap_leg_stuck_${tx.id}`,
+          p_type: "crypto_sell_swap_leg_stuck",
+          p_severity: "warning",
+          p_details: {
+            transaction_id: tx.id,
+            swap_quotation_id: (tx.metadata as any)?.swap_quotation_id ?? null,
+            age_minutes: Math.floor((Date.now() - new Date(tx.created_at as string).getTime()) / 60_000),
+          },
+        });
+      }
+    }
+
+    return {
+      checked: stuck?.length ?? 0, completed, failed, notPaid, stillPending, escalated, skipped,
+      swap_sweep: { buySwapCompleted, swapCompleted, sellLegEscalated, swapStillPending, swapSkipped },
+    };
   });
 
   return json(result);
