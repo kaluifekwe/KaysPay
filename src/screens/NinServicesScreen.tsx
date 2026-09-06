@@ -13,6 +13,7 @@ import {
   Alert,
   Keyboard,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
@@ -621,37 +622,44 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   // still enforce the switch server-side regardless of what this shows.
   const [modificationAvailable, setModificationAvailable] = useState(false);
 
-  useEffect(() => {
-    ninService.getServicePricing().then((result) => {
-      if (!result) {
-        // Network hiccup — fail open rather than hiding a working feature.
-        setModificationAvailable(true);
-        return;
-      }
-      const { prices, ninModificationEnabled } = result;
-      setModificationAvailable(ninModificationEnabled);
-      // If the fetch resolves after the user already tapped into a now-hidden
-      // tab (a slow-network race, not the normal case), don't strand them on
-      // a screen whose segmented button just disappeared out from under them.
-      if (!ninModificationEnabled) {
-        setMode((current) => (current === 'modify' ? 'verify' : current));
-      }
-      if (prices.nin_verify_regular || prices.nin_verify_card) {
-        setSlipTiers([
-          { id: 'regular', name: 'Regular Slip', valueKobo: (prices.nin_verify_regular ?? DEFAULT_SLIP_TIERS[0].valueKobo / 100) * 100 },
-          { id: 'card', name: 'Card', valueKobo: (prices.nin_verify_card ?? DEFAULT_SLIP_TIERS[1].valueKobo / 100) * 100 },
-        ]);
-      }
-      if (prices.bvn_verify_regular || prices.bvn_verify_card) {
-        setBvnSlipTiers([
-          { id: 'regular', name: 'Regular Slip', valueKobo: (prices.bvn_verify_regular ?? DEFAULT_BVN_SLIP_TIERS[0].valueKobo / 100) * 100 },
-          { id: 'card', name: 'Card', valueKobo: (prices.bvn_verify_card ?? DEFAULT_BVN_SLIP_TIERS[1].valueKobo / 100) * 100 },
-        ]);
-      }
-      if (prices.nin_validation) setValidatePrice(prices.nin_validation);
-      if (prices.nin_modification) setModifyPrice(prices.nin_modification);
-    });
-  }, []);
+  // Re-checked on every focus, not just on mount — React Navigation keeps
+  // this screen alive in memory after you navigate away from it, so a
+  // mount-only fetch would keep showing whatever price was live the first
+  // time you ever opened this screen in the current app session, even after
+  // an admin changes it and you come back in.
+  useFocusEffect(
+    useCallback(() => {
+      ninService.getServicePricing().then((result) => {
+        if (!result) {
+          // Network hiccup — fail open rather than hiding a working feature.
+          setModificationAvailable(true);
+          return;
+        }
+        const { prices, ninModificationEnabled } = result;
+        setModificationAvailable(ninModificationEnabled);
+        // If the fetch resolves after the user already tapped into a now-hidden
+        // tab (a slow-network race, not the normal case), don't strand them on
+        // a screen whose segmented button just disappeared out from under them.
+        if (!ninModificationEnabled) {
+          setMode((current) => (current === 'modify' ? 'verify' : current));
+        }
+        if (prices.nin_verify_regular || prices.nin_verify_card) {
+          setSlipTiers([
+            { id: 'regular', name: 'Regular Slip', valueKobo: (prices.nin_verify_regular ?? DEFAULT_SLIP_TIERS[0].valueKobo / 100) * 100 },
+            { id: 'card', name: 'Card', valueKobo: (prices.nin_verify_card ?? DEFAULT_SLIP_TIERS[1].valueKobo / 100) * 100 },
+          ]);
+        }
+        if (prices.bvn_verify_regular || prices.bvn_verify_card) {
+          setBvnSlipTiers([
+            { id: 'regular', name: 'Regular Slip', valueKobo: (prices.bvn_verify_regular ?? DEFAULT_BVN_SLIP_TIERS[0].valueKobo / 100) * 100 },
+            { id: 'card', name: 'Card', valueKobo: (prices.bvn_verify_card ?? DEFAULT_BVN_SLIP_TIERS[1].valueKobo / 100) * 100 },
+          ]);
+        }
+        if (prices.nin_validation) setValidatePrice(prices.nin_validation);
+        if (prices.nin_modification) setModifyPrice(prices.nin_modification);
+      });
+    }, []),
+  );
 
   // Verify state
   const [nin, setNin] = useState('');
