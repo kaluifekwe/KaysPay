@@ -29,6 +29,7 @@ import { ninService, NinRecord, BvnRecord, NinModificationType } from '../servic
 import { useTransactionAuth } from '../components/TransactionAuthProvider';
 import { analytics } from '../services/analytics.service';
 import { useSensitiveScreenProtection } from '../hooks/useSensitiveScreenProtection';
+import { useCachedData } from '../hooks/useCachedData';
 import ResultStatusView from '../components/ResultStatusView';
 import { sharePdf, downloadPdf } from '../utils/pdf';
 
@@ -603,63 +604,63 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<Mode>('verify');
 
-  // Live pricing (see admin-pricing-controls / migration 112) — starts on
-  // today's shipped defaults so the screen never renders blank/zero, then
-  // gets overridden once the fetch resolves. A failed fetch just keeps the
-  // defaults, matching the server's own fallback behaviour, so this can
-  // never leave a screen broken.
-  const [slipTiers, setSlipTiers] = useState(DEFAULT_SLIP_TIERS);
-  const [bvnSlipTiers, setBvnSlipTiers] = useState(DEFAULT_BVN_SLIP_TIERS);
-  const [validatePrice, setValidatePrice] = useState(DEFAULT_VALIDATE_PRICE);
-  const [modifyPrice, setModifyPrice] = useState(DEFAULT_MODIFY_PRICE);
-  // Whether the "NIN Modification" tab shows at all — driven by the admin's
-  // nin_modification kill switch (migration 113), read fresh on open so
-  // toggling it off hides the whole tab instead of only rejecting the
-  // submit. Starts hidden (not defaulted true) so a currently-disabled
-  // feature doesn't flash into view before the fetch below confirms it's
-  // off; the fetch's failure branch below still fails open to true so a
-  // network hiccup never hides a working feature. nin-modify/nin-validate
-  // still enforce the switch server-side regardless of what this shows.
-  const [modificationAvailable, setModificationAvailable] = useState(false);
-
-  // Re-checked on every focus, not just on mount — React Navigation keeps
-  // this screen alive in memory after you navigate away from it, so a
-  // mount-only fetch would keep showing whatever price was live the first
-  // time you ever opened this screen in the current app session, even after
-  // an admin changes it and you come back in.
-  useFocusEffect(
-    useCallback(() => {
-      ninService.getServicePricing().then((result) => {
-        if (!result) {
-          // Network hiccup — fail open rather than hiding a working feature.
-          setModificationAvailable(true);
-          return;
-        }
-        const { prices, ninModificationEnabled } = result;
-        setModificationAvailable(ninModificationEnabled);
-        // If the fetch resolves after the user already tapped into a now-hidden
-        // tab (a slow-network race, not the normal case), don't strand them on
-        // a screen whose segmented button just disappeared out from under them.
-        if (!ninModificationEnabled) {
-          setMode((current) => (current === 'modify' ? 'verify' : current));
-        }
-        if (prices.nin_verify_regular || prices.nin_verify_card) {
-          setSlipTiers([
-            { id: 'regular', name: 'Regular Slip', valueKobo: (prices.nin_verify_regular ?? DEFAULT_SLIP_TIERS[0].valueKobo / 100) * 100 },
-            { id: 'card', name: 'Card', valueKobo: (prices.nin_verify_card ?? DEFAULT_SLIP_TIERS[1].valueKobo / 100) * 100 },
-          ]);
-        }
-        if (prices.bvn_verify_regular || prices.bvn_verify_card) {
-          setBvnSlipTiers([
-            { id: 'regular', name: 'Regular Slip', valueKobo: (prices.bvn_verify_regular ?? DEFAULT_BVN_SLIP_TIERS[0].valueKobo / 100) * 100 },
-            { id: 'card', name: 'Card', valueKobo: (prices.bvn_verify_card ?? DEFAULT_BVN_SLIP_TIERS[1].valueKobo / 100) * 100 },
-          ]);
-        }
-        if (prices.nin_validation) setValidatePrice(prices.nin_validation);
-        if (prices.nin_modification) setModifyPrice(prices.nin_modification);
-      });
-    }, []),
+  // Live pricing (see admin-pricing-controls / migration 112). Previously
+  // started on the app's hardcoded shipped defaults and overrode them once
+  // the fetch resolved — but that meant every fresh visit to this screen
+  // briefly showed a possibly-wrong constant (baked into the app binary,
+  // last correct whenever this build shipped) until the network call
+  // finished, which on a slow connection could last long enough to look
+  // exactly like a stale price that never updates. Now backed by
+  // useCachedData: the fallback shown before/between fetches is the last
+  // REAL price this device actually confirmed (global scope — pricing is
+  // the same for every customer, not per-account), never a hardcoded guess.
+  const fetchServicePricingOrThrow = useCallback(async () => {
+    const result = await ninService.getServicePricing();
+    if (!result) throw new Error('Could not load pricing');
+    return result;
+  }, []);
+  const { data: pricingData, error: fetchPricingError, refresh: refreshPricing } = useCachedData(
+    'nin_bvn_service_pricing', fetchServicePricingOrThrow, { scope: 'global' },
   );
+  // Re-checked on every focus, not just on mount — see useFocusEffect below,
+  // which calls this. useCachedData itself only auto-loads once per mount.
+  useFocusEffect(useCallback(() => { void refreshPricing(); }, [refreshPricing]));
+
+  const slipTiers = useMemo(() => {
+    const prices = pricingData?.prices;
+    if (!prices || (!prices.nin_verify_regular && !prices.nin_verify_card)) return DEFAULT_SLIP_TIERS;
+    return [
+      { id: 'regular' as const, name: 'Regular Slip', valueKobo: (prices.nin_verify_regular ?? DEFAULT_SLIP_TIERS[0].valueKobo / 100) * 100 },
+      { id: 'card' as const, name: 'Card', valueKobo: (prices.nin_verify_card ?? DEFAULT_SLIP_TIERS[1].valueKobo / 100) * 100 },
+    ];
+  }, [pricingData]);
+  const bvnSlipTiers = useMemo(() => {
+    const prices = pricingData?.prices;
+    if (!prices || (!prices.bvn_verify_regular && !prices.bvn_verify_card)) return DEFAULT_BVN_SLIP_TIERS;
+    return [
+      { id: 'regular' as const, name: 'Regular Slip', valueKobo: (prices.bvn_verify_regular ?? DEFAULT_BVN_SLIP_TIERS[0].valueKobo / 100) * 100 },
+      { id: 'card' as const, name: 'Card', valueKobo: (prices.bvn_verify_card ?? DEFAULT_BVN_SLIP_TIERS[1].valueKobo / 100) * 100 },
+    ];
+  }, [pricingData]);
+  const validatePrice = pricingData?.prices.nin_validation || DEFAULT_VALIDATE_PRICE;
+  const modifyPrice = pricingData?.prices.nin_modification || DEFAULT_MODIFY_PRICE;
+  // Whether the "NIN Modification" tab shows at all — driven by the admin's
+  // nin_modification kill switch (migration 113). Starts hidden (not
+  // defaulted true) so a currently-disabled feature doesn't flash into view
+  // before pricingData resolves; a fetch that fails outright (nothing ever
+  // cached) fails open to true so a network hiccup never hides a working
+  // feature. nin-modify/nin-validate still enforce the switch server-side
+  // regardless of what this shows.
+  const modificationAvailable = pricingData ? pricingData.ninModificationEnabled : !!fetchPricingError;
+
+  // If the fetch resolves after the user already tapped into a now-hidden
+  // tab (a slow-network race, not the normal case), don't strand them on a
+  // screen whose segmented button just disappeared out from under them.
+  useEffect(() => {
+    if (pricingData && !pricingData.ninModificationEnabled) {
+      setMode((current) => (current === 'modify' ? 'verify' : current));
+    }
+  }, [pricingData]);
 
   // Verify state
   const [nin, setNin] = useState('');
