@@ -659,7 +659,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                   {renderFieldIcon('pricetag-outline')}
                   <TextInput
                     style={styles.input}
-                    placeholder="Have a creator's code? Enter it here"
+                    placeholder="Have a promo code? Enter it here"
                     placeholderTextColor={theme.inkMuted}
                     value={promoCode}
                     onChangeText={setPromoCode}
