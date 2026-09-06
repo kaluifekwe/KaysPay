@@ -12,7 +12,7 @@ import {
   ScrollView,
   Image,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { authService } from '../services/auth.service';
 import { supabase } from '../lib/supabase';
@@ -72,6 +72,7 @@ interface RegistrationScreenProps {
 export default function RegistrationScreen({ navigation }: RegistrationScreenProps) {
   const { theme } = useTheme();
   const styles = createStyles(theme);
+  const insets = useSafeAreaInsets();
   const [step, setStep] = useState<1 | 2>(1);
 
   // Step 1
@@ -472,7 +473,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
         <ScrollView
           ref={scrollRef}
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, step === 2 && styles.scrollContentWithFooter]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -689,21 +690,6 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                 </View>
               </TouchableOpacity>
 
-              <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
-                <TouchableOpacity
-                  style={[styles.createButton, (!isStep2Valid || submitting) && styles.createButtonDisabled]}
-                  onPress={handleCreateAccount}
-                  disabled={!isStep2Valid || submitting}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.createButtonText}>
-                    {submitting ? 'Creating account...' : 'Create account'}
-                  </Text>
-                  {!submitting && (
-                    <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={styles.createButtonArrowIcon} />
-                  )}
-                </TouchableOpacity>
-              </Animated.View>
             </View>
           )}
 
@@ -719,6 +705,33 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
             <Text style={styles.termsLink}>Privacy Policy</Text>.
           </Text>
         </ScrollView>
+
+        {/* Step 2 has grown enough fields (password, PIN x2, promo code, the
+            marketing checkbox) that "Create account" could sit below the
+            fold with nothing on screen hinting a scroll is needed. Pinned
+            outside the ScrollView so it's visible the moment Step 2 loads,
+            regardless of how much content is above it. Step 1 is short
+            enough that this isn't needed there, so it keeps its own inline
+            "Continue" button unchanged. */}
+        {step === 2 && (
+          <View style={[styles.stickyFooter, { paddingBottom: 14 + insets.bottom }]}>
+            <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
+              <TouchableOpacity
+                style={[styles.createButton, (!isStep2Valid || submitting) && styles.createButtonDisabled]}
+                onPress={handleCreateAccount}
+                disabled={!isStep2Valid || submitting}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.createButtonText}>
+                  {submitting ? 'Creating account...' : 'Create account'}
+                </Text>
+                {!submitting && (
+                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={styles.createButtonArrowIcon} />
+                )}
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -750,6 +763,13 @@ function createStyles(theme: AppTheme) {
   progressLabel: { fontSize: 11, color: theme.inkMuted, fontWeight: '500' },
   scrollView: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingBottom: 40 },
+  // Extra clearance so the login link/terms text at the bottom of the
+  // scroll never sits behind the fixed footer button (Step 2 only).
+  scrollContentWithFooter: { paddingBottom: 110 },
+  stickyFooter: {
+    paddingHorizontal: 16, paddingTop: 10, paddingBottom: 14,
+    backgroundColor: theme.background, borderTopWidth: 1, borderTopColor: theme.border,
+  },
   formCard: {
     backgroundColor: theme.surface, borderRadius: 16, padding: 20,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
