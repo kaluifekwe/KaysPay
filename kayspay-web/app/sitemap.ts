@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { posts } from "./blog/posts";
 
 export const dynamic = "force-static";
 
@@ -29,14 +30,22 @@ const paths = [
   "contact",
   "privacy",
   "delete-account",
+  "blog",
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const lastModified = new Date();
-  return paths.map((path) => ({
+  const staticEntries: MetadataRoute.Sitemap = paths.map((path) => ({
     url: `https://kayspay.com.ng/${path ? `${path}/` : ""}`,
     lastModified,
     changeFrequency: path ? "monthly" : "weekly",
     priority: path ? 0.7 : 1,
   }));
+  const postEntries: MetadataRoute.Sitemap = Object.entries(posts).map(([slug, post]) => ({
+    url: `https://kayspay.com.ng/blog/${slug}/`,
+    lastModified: new Date(post.date),
+    changeFrequency: "monthly",
+    priority: 0.6,
+  }));
+  return [...staticEntries, ...postEntries];
 }
