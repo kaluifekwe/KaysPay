@@ -20,6 +20,7 @@ import IncidentsPage from './pages/IncidentsPage';
 import BusinessIntelligencePage from './pages/BusinessIntelligencePage';
 import MfaPage from './pages/MfaPage';
 import CryptoRecoveryPage from './pages/CryptoRecoveryPage';
+import CreatorsPage from './pages/CreatorsPage';
 
 function Shell() {
   const { role, session } = useAuth();
@@ -33,6 +34,7 @@ function Shell() {
           <NavLink to="/" end>Dashboard</NavLink>
           <NavLink to="/onboarding">Onboarding</NavLink>
           {role === 'super_admin' && <NavLink to="/campaigns">Campaigns</NavLink>}
+          {role === 'super_admin' && <NavLink to="/creators">Creators</NavLink>}
           <NavLink to="/operations">Operations</NavLink>
           <NavLink to="/incidents">Incident Centre</NavLink>
           <NavLink to="/business-intelligence">Business Intelligence</NavLink>
@@ -55,6 +57,7 @@ function Shell() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/onboarding" element={<OnboardingPage />} />
           {role === 'super_admin' && <Route path="/campaigns" element={<CampaignsPage />} />}
+          {role === 'super_admin' && <Route path="/creators" element={<CreatorsPage />} />}
           <Route path="/operations" element={<OperationsPage />} />
           <Route path="/incidents" element={<IncidentsPage />} />
           <Route path="/business-intelligence" element={<BusinessIntelligencePage />} />

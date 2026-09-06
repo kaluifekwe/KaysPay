@@ -9,6 +9,9 @@ import { draftCampaignWithGroq, isGroqConfigured } from "../_shared/groq-client.
 const SEGMENTS = new Set(["registered_not_verified","verified_kyc_incomplete","kyc_completed_not_funded","funded_not_purchased","inactive"]);
 const json = (body: unknown,status=200) => new Response(JSON.stringify(body),{status,headers:{...corsHeaders(),"Content-Type":"application/json"}});
 const clean = (value: unknown,max: number) => typeof value === "string" ? value.trim().slice(0,max) : "";
+// Creator/promo code, e.g. "JOHN10" -- readable and typeable by a customer,
+// case-insensitive at the database level (promo_codes_code_unique index).
+const PROMO_CODE_PATTERN = /^[A-Za-z0-9_-]{3,32}$/;
 
 serve(async (req) => {
   const cors=handleCors(req); if(cors) return cors;
@@ -16,6 +19,17 @@ serve(async (req) => {
   try { admin=await requireAdmin(req,req.method==="POST"?"super_admin":"support"); }
   catch(error){ if(error instanceof AdminAuthError)return json({error:error.message},error.status); return json({error:"Unauthorized"},401); }
   const db=adminClient();
+
+  // Creator promo codes -- a second, unrelated admin surface folded into
+  // this same function to stay under Supabase's 100-function project cap
+  // (same reason the wallet-correction debit was folded into admin-refund).
+  // Kept behind its own ?resource= query param so the existing campaigns GET
+  // below is completely unaffected when this isn't present.
+  if(req.method==="GET" && new URL(req.url).searchParams.get("resource")==="promo_codes"){
+    const {data,error}=await db.rpc("admin_list_promo_codes");
+    if(error)return json({error:"Could not load promo codes"},500);
+    return json({success:true,promo_codes:data});
+  }
 
   if(req.method==="GET"){
     const [{data:campaigns,error},segments]=await Promise.all([
@@ -29,6 +43,27 @@ serve(async (req) => {
   if(req.method!=="POST")return json({error:"Method not allowed"},405);
   let body:Record<string,unknown>; try{body=await req.json();}catch{return json({error:"Invalid JSON"},400);}
   const action=body.action;
+  if(action==="create_promo_code"){
+    const code=clean(body.code,32).toUpperCase();
+    const creatorName=clean(body.creator_name,80);
+    if(!PROMO_CODE_PATTERN.test(code))return json({error:"Code must be 3-32 letters, numbers, - or _"},400);
+    if(creatorName.length<2)return json({error:"Enter the creator's name"},400);
+    const {data,error}=await db.from("promo_codes").insert({code,creator_name:creatorName,created_by:admin.userId}).select("id").single();
+    if(error){
+      const message=error.message?.includes("promo_codes_code_unique")?"That code is already in use.":"Could not create the code";
+      return json({error:message},error.message?.includes("promo_codes_code_unique")?409:500);
+    }
+    await db.from("admin_actions").insert({admin_user_id:admin.userId,action_type:"promo_code_created",target_type:"promo_codes",target_id:data.id,metadata:{code,creator_name:creatorName}});
+    return json({success:true,id:data.id},201);
+  }
+  if(action==="toggle_promo_code"){
+    const id=clean(body.id,40); const active=body.active===true;
+    if(!/^[0-9a-f-]{36}$/i.test(id))return json({error:"Invalid code"},400);
+    const {data,error}=await db.from("promo_codes").update({active}).eq("id",id).select("code").maybeSingle();
+    if(error||!data)return json({error:"Could not update the code"},500);
+    await db.from("admin_actions").insert({admin_user_id:admin.userId,action_type:active?"promo_code_activated":"promo_code_deactivated",target_type:"promo_codes",target_id:id,metadata:{code:data.code}});
+    return json({success:true});
+  }
   if(action==="generate"){
     const prompt=clean(body.prompt,1000);
     const insights=await Promise.all([...SEGMENTS].map(async rawSegment=>{

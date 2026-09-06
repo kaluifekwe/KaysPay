@@ -104,6 +104,11 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
   const [submitting, setSubmitting] = useState(false);
   const [marketingEmailOptIn, setMarketingEmailOptIn] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  // Optional creator/promo code, attributed permanently at signup (see
+  // redeem_promo_code, migration 219). Never blocks account creation --
+  // a wrong or empty code is simply not recorded, not an error the user
+  // needs to fix before continuing.
+  const [promoCode, setPromoCode] = useState('');
 
   const buttonScale = useRef(new Animated.Value(1)).current;
   const networkAnim = useRef(new Animated.Value(0)).current;
@@ -333,6 +338,20 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
       } catch {
         // ignore — the stash + ensurePinSaved after email verify still guard it
       }
+
+      // Best-effort, same reasoning as the PIN save below: needs the
+      // refreshed session above for auth.uid() to resolve inside the RPC. A
+      // wrong or empty code is not an error state -- redeem_promo_code
+      // itself never throws for that, and this must never block or delay
+      // account creation, which has already succeeded by this point.
+      if (promoCode.trim()) {
+        try {
+          await supabase.rpc('redeem_promo_code', { p_code: promoCode.trim() });
+        } catch {
+          // ignore — not worth retrying or surfacing; the code just won't be attributed
+        }
+      }
+
       let pinSaved = false;
       let lastPinError: string | undefined;
       for (let attempt = 0; attempt < 4 && !pinSaved; attempt++) {
@@ -632,6 +651,25 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                 {renderLabel('Confirm transaction PIN')}
                 {renderPinRow(confirmPin, setConfirmPin, confirmPinRefs)}
                 {renderError(pinError)}
+              </View>
+
+              <View style={styles.fieldContainer}>
+                {renderLabel('Promo code (optional)')}
+                <View style={[styles.inputWrapper, getFieldStyle(false, false, focusedField === 'promoCode')]}>
+                  {renderFieldIcon('pricetag-outline')}
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Have a creator's code? Enter it here"
+                    placeholderTextColor={theme.inkMuted}
+                    value={promoCode}
+                    onChangeText={setPromoCode}
+                    onFocus={() => setFocusedField('promoCode')}
+                    onBlur={() => setFocusedField(null)}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    returnKeyType="done"
+                  />
+                </View>
               </View>
 
               <TouchableOpacity
