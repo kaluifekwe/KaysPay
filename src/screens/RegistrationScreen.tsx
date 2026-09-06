@@ -103,7 +103,6 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
   useSensitiveScreenProtection(showPassword || showConfirmPassword);
 
   const [submitting, setSubmitting] = useState(false);
-  const [marketingEmailOptIn, setMarketingEmailOptIn] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
   // Optional creator/promo code, attributed permanently at signup (see
   // redeem_promo_code, migration 219). Never blocks account creation --
@@ -289,7 +288,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
       const result = await authService.signUpWithEmail(email.trim().toLowerCase(), password, {
         full_name: fullName.trim(),
         phone: formattedPhone || null,
-        marketing_email_opt_in: marketingEmailOptIn,
+        marketing_email_opt_in: false,
       });
 
       if (!result.success) {
@@ -673,23 +672,6 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                 </View>
               </View>
 
-              <TouchableOpacity
-                style={styles.marketingConsentRow}
-                onPress={() => setMarketingEmailOptIn((value) => !value)}
-                activeOpacity={0.75}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: marketingEmailOptIn }}
-                accessibilityLabel="Receive occasional KaysPay product and onboarding emails"
-              >
-                <View style={[styles.marketingCheckbox, marketingEmailOptIn && styles.marketingCheckboxChecked]}>
-                  {marketingEmailOptIn && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
-                </View>
-                <View style={styles.marketingConsentCopy}>
-                  <Text style={styles.marketingConsentTitle}>Email me helpful KaysPay updates</Text>
-                  <Text style={styles.marketingConsentDescription}>Optional. Receive occasional onboarding tips and product offers. You can unsubscribe at any time.</Text>
-                </View>
-              </TouchableOpacity>
-
             </View>
           )}
 
@@ -812,12 +794,6 @@ function createStyles(theme: AppTheme) {
   createButtonDisabled: { opacity: 0.6 },
   createButtonText: { fontFamily: 'Helvetica-Bold', fontSize: 16, color: '#FFFFFF' },
   createButtonArrowIcon: { marginLeft: 8 },
-  marketingConsentRow: { minHeight: 52, flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16, paddingVertical: 4 },
-  marketingCheckbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 1.5, borderColor: theme.border, alignItems: 'center', justifyContent: 'center', marginRight: 12, marginTop: 1 },
-  marketingCheckboxChecked: { backgroundColor: theme.brand, borderColor: theme.brand },
-  marketingConsentCopy: { flex: 1 },
-  marketingConsentTitle: { fontSize: 13, fontWeight: '600', color: theme.ink, marginBottom: 3 },
-  marketingConsentDescription: { fontSize: 11, lineHeight: 16, color: theme.inkMuted },
   loginLink: { alignItems: 'center', marginTop: 20, marginBottom: 20 },
   loginLinkText: { fontSize: 14, color: theme.inkMuted },
   loginLinkBold: { color: theme.brand, fontWeight: '700', textDecorationLine: 'underline' },
