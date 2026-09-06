@@ -4,7 +4,6 @@ import { getAuthUser, adminClient, enforceRateLimit } from "../_shared/auth.ts";
 import {
   isVtuNaijaConfigured,
   normalizeVTUNaijaQueryResult,
-  queryVTUNaijaDataTransaction,
   queryVTUNaijaTransaction,
 } from "../_shared/vtunaija-client.ts";
 
@@ -16,7 +15,7 @@ function json(body: unknown, status = 200) {
 }
 
 // On-demand settlement of a SINGLE pending VTUAfrica order, so the result
-// screen can flip to Successful/Failed the moment VTUAfrica confirms â€?instead
+// screen can flip to Successful/Failed the moment VTUAfrica confirms ï¿½?instead
 // of waiting for the periodic vtuafrica-reconcile sweep. Same settle rules as
 // that sweep (complete only on explicit success, refund only on explicit
 // failure, otherwise leave pending), just scoped to one order the CALLER owns
@@ -51,7 +50,7 @@ serve(async (req: Request) => {
   }
 
   // Load the order and confirm it belongs to the caller. Never trust a
-  // transaction id alone â€?a user may only settle their OWN order.
+  // transaction id alone ï¿½?a user may only settle their OWN order.
   const { data: tx } = await supabase
     .from("transactions")
     .select("id, user_id, status, type, metadata")
@@ -60,7 +59,7 @@ serve(async (req: Request) => {
 
   if (!tx || tx.user_id !== user.id) return json({ error: "Not found" }, 404);
 
-  // Already terminal â€?report it straight back (client stops polling).
+  // Already terminal ï¿½?report it straight back (client stops polling).
   if (tx.status === "completed") return json({ status: "completed" });
   if (tx.status === "failed" || tx.status === "refunded") return json({ status: "failed" });
   if (tx.status !== "pending") return json({ status: tx.status });
@@ -79,11 +78,13 @@ serve(async (req: Request) => {
 
   if (provider !== "vtunaija" || !isVtuNaijaConfigured()) return json({ status: "pending" });
 
-  const queryId = metadata?.provider_transaction_id ?? ref;
+  // VTUnaija's query endpoint is keyed by the same `request-id` value WE
+  // submitted at purchase time (idempotency_key) â€” provider_transaction_id
+  // is a separate, provider-assigned id from the purchase response and was
+  // never a valid query key.
+  const queryId = ref;
   try {
-    const result = tx.type === "data"
-      ? await queryVTUNaijaDataTransaction(queryId)
-      : await queryVTUNaijaTransaction(queryId);
+    const result = await queryVTUNaijaTransaction(queryId);
     const normalized = normalizeVTUNaijaQueryResult(result);
 
     if (normalized.outcome === "success") {

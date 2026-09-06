@@ -5,7 +5,6 @@ import { hasSeparatedFailureConfirmation } from "../_shared/provider-failure-con
 import {
   normalizeVTUNaijaQueryResult,
   queryVTUNaijaTransaction,
-  queryVTUNaijaDataTransaction,
   isVtuNaijaConfigured,
 } from "../_shared/vtunaija-client.ts";
 
@@ -26,16 +25,14 @@ const STALE_ESCALATION_MS = 24 * 60 * 60 * 1000;
 // never guesses, and never touches a transaction whose provider isn't
 // 'vtunaija'.
 //
-// Query-endpoint pairing assumption (NOT yet confirmed with a live forced-
-// timeout test): airtime -> queryTransaction (transaction_id), data ->
-// queryDataTransaction (datarequest_id) — the naming ("datarequest_id" reads
-// as "any data request", not implementation-specific to one data endpoint)
-// suggests this pairing holds even though our data purchases go through
-// /data/, not /internetbundles/. A wrong guess here is safe, not silently
-// wrong: an unrecognized/error query response is classified "unknown" and
-// stays pending for the next sweep — it can never cause a false
-// complete/refund. Verify this pairing with a real forced-timeout test
-// before relying on it at scale.
+// Query endpoint confirmed via VTUnaija's own documentation, 2026-09-06: one
+// unified transactionquery/index.php covers every service type (airtime,
+// data, bill, exam_pin), keyed by the same `request-id` value WE submitted
+// at purchase time (idempotency_key) — see queryVTUNaijaTransaction's
+// docstring. This replaces two previously separate, unconfirmed endpoint
+// guesses that never matched the real API and produced unrecognizable
+// ("ambiguous") responses — e.g. the two Kuriyetu Umar orders stuck with
+// "VT ambiguous code" that prompted re-checking this against the real docs.
 
 serve(async (req: Request) => {
   if (!verifyCronSecret(req)) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
@@ -73,14 +70,13 @@ serve(async (req: Request) => {
     let escalated = 0;
 
     for (const tx of pending || []) {
-      const requestId = tx.metadata?.idempotency_key;
-      const queryId = tx.metadata?.provider_transaction_id ?? requestId;
+      // The query endpoint is keyed by our own request-id (idempotency_key),
+      // not provider_transaction_id — see the confirmed docs note above.
+      const queryId = tx.metadata?.idempotency_key;
       if (!queryId) continue;
 
       try {
-        const queried = tx.type === "data"
-          ? await queryVTUNaijaDataTransaction(queryId)
-          : await queryVTUNaijaTransaction(queryId);
+        const queried = await queryVTUNaijaTransaction(queryId);
         const normalized = normalizeVTUNaijaQueryResult(queried);
 
         if (normalized.outcome === "success") {
@@ -106,13 +102,51 @@ serve(async (req: Request) => {
             } }).eq("id", tx.id).eq("status", "pending");
             stillPending++;
           }
+        } else if (normalized.outcome === "processing") {
+          // A real, documented in-flight state (see the confirmed-docs note
+          // above) — the provider is actively telling us this order isn't
+          // resolved yet, which reads very differently to a human than
+          // "unknown" (we have no idea what this order even is). Never
+          // refund on it; just record it and let the next sweep re-check.
+          const checkedAt = new Date().toISOString();
+          await supabase.from("transactions").update({ metadata: {
+            ...tx.metadata,
+            provider_failure_confirmation: null,
+            last_reconcile_check: {
+              at: checkedAt,
+              outcome: "processing",
+              provider_message: (normalized.message || "(provider returned no message)").slice(0, 200),
+            },
+          } }).eq("id", tx.id).eq("status", "pending");
+          stillPending++;
+
+          // VTU services are normally near-instant, so "processing" for over
+          // a day is still worth a human look — just tagged distinctly from
+          // the "unknown" alert below so the note reflects what's really
+          // known (the provider confirms it's working, not that we're lost).
+          const ageMs = Date.now() - new Date(tx.created_at as string).getTime();
+          if (ageMs > STALE_ESCALATION_MS) {
+            escalated++;
+            await supabase.rpc("record_monitoring_alert", {
+              p_fingerprint: `vtu_stuck_processing_${tx.id}`,
+              p_type: "vtu_stuck_unresolved",
+              p_severity: "warning",
+              p_details: {
+                transaction_id: tx.id,
+                type: tx.type,
+                age_hours: Math.floor(ageMs / 3_600_000),
+                provider_message: (normalized.message || "").slice(0, 200),
+                note: "Provider still reports this as processing after 24h+. Customer was debited before the provider call.",
+              },
+            });
+          }
         } else {
-          // "unknown" covers two very different provider answers: the query
-          // itself failed or the order is not found (it likely never landed),
-          // versus the order genuinely still processing. Only the first is
-          // safe to refund, so record what the provider actually said —
-          // without it every stuck order looks identical and nobody can
-          // decide. This is a note for humans; nothing here refunds on it.
+          // "unknown" means the response didn't match any recognized
+          // vocabulary at all (query failed, order not found, malformed
+          // shape) — never safe to refund on its own, so record what the
+          // provider actually said without it every stuck order looks
+          // identical and nobody can decide. This is a note for humans;
+          // nothing here refunds on it.
           const checkedAt = new Date().toISOString();
           await supabase.from("transactions").update({ metadata: {
             ...tx.metadata,

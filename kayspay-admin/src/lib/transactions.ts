@@ -19,7 +19,7 @@ export interface TxRow {
   service_refunds?: { reason: string; origin: string; created_at: string }[];
   refund_verification?: {
     provider: string;
-    outcome: 'success' | 'failed' | 'unknown';
+    outcome: 'success' | 'failed' | 'processing' | 'unknown';
     query_reference: string;
     provider_transaction_id: string | null;
     message: string;

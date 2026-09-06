@@ -27,7 +27,12 @@ export interface NormalizedVTUNaijaResult {
   serial: string | null;
 }
 
-export type VTUNaijaOutcome = "success" | "failed" | "unknown";
+// "processing" is a real, documented in-flight state for the QUERY endpoint
+// (transactionquery/index.php) — separate from "unknown", which means the
+// provider gave us nothing recognizable at all. Purchase responses
+// (vtunaijaOutcome below) still only ever resolve to success/failed/unknown —
+// VTUnaija's purchase docs show no async state, only the query endpoint does.
+export type VTUNaijaOutcome = "success" | "failed" | "processing" | "unknown";
 
 export type VTUNaijaFailureCategory =
   | "gateway_unavailable"
@@ -181,12 +186,27 @@ export function vtunaijaOutcome(result: any): VTUNaijaOutcome {
  * Never use the top-level retrieval status to settle money. A successful
  * lookup can contain a failed transaction. Unexpected/missing nested data is
  * deliberately "unknown" so reconciliation leaves the wallet untouched.
+ *
+ * "processing"/"pending" are real, documented values for data.status (see
+ * query_transaction_api_documentation.php, confirmed 2026-09-06) — distinct
+ * from "unknown", which means the response didn't match any recognized
+ * vocabulary at all. Both leave the wallet untouched; the difference is
+ * purely for the human deciding a refund: "still actively working" reads
+ * very differently from "we have no idea what this order even is".
  */
 export function normalizeVTUNaijaQueryResult(result: any): NormalizedVTUNaijaQueryResult {
+  // The query endpoint's own top-level retrieval-status vocabulary is
+  // DIFFERENT from the purchase endpoints' (normalizeVTUNaijaResult above):
+  // confirmed live 2026-09-06 — a successful lookup returns
+  // status:"true"/Status:"completed", and a failed lookup (e.g. "not found")
+  // returns status:"fail"/Status:"failed" (per the docs' own example). This
+  // was originally written checking for "success"/"successful" instead,
+  // which never matched — every real query result fell through to "unknown"
+  // regardless of the actual transaction status nested inside `data`.
   const retrievalStatusCap = String(result?.Status ?? "").trim().toLowerCase();
   const retrievalStatusLower = String(result?.status ?? "").trim().toLowerCase();
   const retrievalSucceeded =
-    retrievalStatusCap === "successful" || retrievalStatusLower === "success";
+    retrievalStatusCap === "completed" || retrievalStatusLower === "true";
   const data = retrievalSucceeded && result?.data && typeof result.data === "object"
     ? result.data
     : null;
@@ -195,6 +215,7 @@ export function normalizeVTUNaijaQueryResult(result: any): NormalizedVTUNaijaQue
   const outcome: VTUNaijaOutcome =
     transactionStatus === "successful" || transactionStatus === "success" ? "success" :
     transactionStatus === "failed" || transactionStatus === "fail" ? "failed" :
+    transactionStatus === "processing" || transactionStatus === "pending" ? "processing" :
     "unknown";
 
   const value = (input: unknown): string | null => {
@@ -214,23 +235,21 @@ export function normalizeVTUNaijaQueryResult(result: any): NormalizedVTUNaijaQue
 }
 
 /**
- * Settles an ambiguous airtime order by querying VTUnaija's own record of it —
- * used only by reconcile/on-demand-verify logic, NEVER by the purchase path
- * (which must not resubmit /topup/ itself; see callVTUNaija's docstring).
+ * Settles an ambiguous order by querying VTUnaija's own record of it — used
+ * only by reconcile/on-demand-verify logic, NEVER by the purchase path
+ * (which must not resubmit a purchase endpoint itself; see callVTUNaija's
+ * docstring). One unified endpoint covers every service type (airtime, data,
+ * cable TV, electricity, exam pins) — confirmed via
+ * query_transaction_api_documentation.php, 2026-09-06 — keyed by the same
+ * `request-id` value sent at purchase time (our own idempotency key; see
+ * vtu-purchase's newRequestId()), not a provider-assigned id. This replaces
+ * two previously-separate, unconfirmed endpoint guesses
+ * (queryTransaction/queryDataTransaction) that never matched VTUnaija's real
+ * API and produced unrecognizable ("ambiguous") responses.
  */
-export function queryVTUNaijaTransaction(transactionId: string): Promise<any> {
+export function queryVTUNaijaTransaction(requestId: string): Promise<any> {
   return callVTUNaija(
-    `/queryTransaction/index.php?transaction_id=${encodeURIComponent(transactionId)}`,
-    {},
-    20000,
-    "GET",
-  );
-}
-
-/** Same as queryVTUNaijaTransaction, but for data-bundle orders (VTUnaija uses a distinct endpoint + query param for these). */
-export function queryVTUNaijaDataTransaction(datarequestId: string): Promise<any> {
-  return callVTUNaija(
-    `/queryDataTransaction/index.php?datarequest_id=${encodeURIComponent(datarequestId)}`,
+    `/transactionquery/index.php?request-id=${encodeURIComponent(requestId)}`,
     {},
     20000,
     "GET",

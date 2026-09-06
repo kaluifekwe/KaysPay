@@ -9,7 +9,6 @@ import { corsHeaders, handleCors } from "../_shared/cors.ts";
 import {
   isVtuNaijaConfigured,
   normalizeVTUNaijaQueryResult,
-  queryVTUNaijaDataTransaction,
   queryVTUNaijaTransaction,
 } from "../_shared/vtunaija-client.ts";
 
@@ -45,7 +44,7 @@ interface TxRow {
 const PROVIDER_VERIFIED_TYPES = new Set(["airtime", "data", "bill", "exam_pin"]);
 
 type ProviderVerification = {
-  outcome: "success" | "failed" | "unknown";
+  outcome: "success" | "failed" | "processing" | "unknown";
   provider: string;
   queryReference: string;
   providerTransactionId: string | null;
@@ -58,7 +57,13 @@ async function verifyProviderOutcome(tx: TxRow): Promise<ProviderVerification> {
   const providerTransactionId = tx.metadata?.provider_transaction_id
     ? String(tx.metadata.provider_transaction_id)
     : null;
-  const queryReference = providerTransactionId || idempotencyKey;
+  // VTUnaija's query endpoint is keyed by the same `request-id` value WE
+  // submitted at purchase time (idempotency_key) — providerTransactionId is
+  // a separate, provider-assigned id from the purchase response and was
+  // never a valid query key. Kept as a last-resort fallback only for the
+  // rare row missing an idempotency_key (see vtunaija-client.ts's
+  // queryVTUNaijaTransaction docstring).
+  const queryReference = idempotencyKey || providerTransactionId || "";
 
   if (!provider || !queryReference) {
     return { outcome: "unknown", provider: provider || "unknown", queryReference, providerTransactionId, message: "Missing provider query reference" };
@@ -68,9 +73,7 @@ async function verifyProviderOutcome(tx: TxRow): Promise<ProviderVerification> {
     if (!isVtuNaijaConfigured()) {
       return { outcome: "unknown", provider, queryReference, providerTransactionId, message: "Provider verification is not configured" };
     }
-    const result = tx.type === "data"
-      ? await queryVTUNaijaDataTransaction(queryReference)
-      : await queryVTUNaijaTransaction(queryReference);
+    const result = await queryVTUNaijaTransaction(queryReference);
     const normalized = normalizeVTUNaijaQueryResult(result);
     return {
       outcome: normalized.outcome,
