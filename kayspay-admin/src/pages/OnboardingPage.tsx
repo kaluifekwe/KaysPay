@@ -20,6 +20,7 @@ interface LifecycleReminderReport {
 }
 interface OnboardingReport {
   cohort: { start: string; end: string; installations: number };
+  returning_login_installations: number;
   conversion: Record<string, number | null>;
   stages: FunnelStage[];
   timing: Record<string, number | null>;
@@ -247,6 +248,9 @@ export default function OnboardingPage() {
 
       <div className="card">
         <div className="row between section-heading"><div><h3>Onboarding funnel</h3><p className="muted">One count per installation. Drop-off compares each step with the previous step.</p></div></div>
+        {report.returning_login_installations > 0 && <p className="muted" style={{ marginTop: -8, marginBottom: 14 }}>
+          Plus {report.returning_login_installations.toLocaleString()} installation{report.returning_login_installations === 1 ? '' : 's'} that reached Home by logging into an existing account, not counted in the signup steps below.
+        </p>}
         <div className="funnel-list">
           {stageRows.map((item) => <div className="funnel-row" key={item.key}>
             <div className="funnel-stage"><strong>{STAGE_LABELS[item.key] || humanize(item.key)}</strong><span>{item.count.toLocaleString()} installations</span></div>
