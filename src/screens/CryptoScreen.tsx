@@ -182,7 +182,12 @@ export default function CryptoScreen({ navigation, route }: CryptoScreenProps) {
 
   useFocusEffect(
     useCallback(() => {
-      kycService.getStatus().then((s) => setKycVerified(s.verified)).catch(() => setKycVerified(false));
+      kycService.getStatus().then((s) => {
+        // A failed check (network blip) isn't a confirmed "not verified" —
+        // don't let a timeout slam this tab's gate shut once we've already
+        // seen this account genuinely verified.
+        setKycVerified((prev) => (s.checkFailed && prev === true ? true : s.verified));
+      });
     }, []),
   );
   // Defense in depth for the admin's Crypto kill switch: Home already

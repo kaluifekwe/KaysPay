@@ -30,24 +30,27 @@ export const virtualAccountService = {
    */
   async getAllMine(): Promise<Record<VirtualAccountProvider, VirtualAccount | null>> {
     const empty: Record<VirtualAccountProvider, VirtualAccount | null> = { flutterwave: null, paystack: null };
-    try {
-      const { data: { user } } = await withTimeout(supabase.auth.getUser());
-      if (!user) return empty;
-      const { data } = await withTimeout(
-        (async () => supabase
-          .from('virtual_accounts')
-          .select('provider, account_number, bank_name, account_name')
-          .eq('user_id', user.id))(),
-      );
-      for (const row of data ?? []) {
-        if (row.account_number && (row.provider === 'flutterwave' || row.provider === 'paystack')) {
-          empty[row.provider as VirtualAccountProvider] = row as VirtualAccount;
-        }
+    const { data: { user } } = await withTimeout(supabase.auth.getUser());
+    if (!user) return empty;
+    const { data, error } = await withTimeout(
+      (async () => supabase
+        .from('virtual_accounts')
+        .select('provider, account_number, bank_name, account_name')
+        .eq('user_id', user.id))(),
+    );
+    // Thrown (timeout) or returned errors both propagate now instead of
+    // being swallowed into "no accounts" — this is only ever called via
+    // useCachedData (WalletFundingScreen), which exists specifically to
+    // catch a failure here and keep showing the last-known-good account
+    // list instead of wrongly telling an already-provisioned user they
+    // still need to create one.
+    if (error) throw error;
+    for (const row of data ?? []) {
+      if (row.account_number && (row.provider === 'flutterwave' || row.provider === 'paystack')) {
+        empty[row.provider as VirtualAccountProvider] = row as VirtualAccount;
       }
-      return empty;
-    } catch {
-      return empty;
     }
+    return empty;
   },
 
   /**

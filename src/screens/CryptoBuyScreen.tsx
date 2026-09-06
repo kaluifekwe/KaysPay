@@ -110,7 +110,12 @@ export default function CryptoBuyScreen({ navigation }: { navigation: any }) {
   const [kycVerified, setKycVerified] = useState<boolean | null>(null);
   useFocusEffect(
     useCallback(() => {
-      kycService.getStatus().then((s) => setKycVerified(s.verified)).catch(() => setKycVerified(false));
+      kycService.getStatus().then((s) => {
+        // A failed check (network blip) isn't a confirmed "not verified" —
+        // don't let a timeout slam this gate shut once we've already seen
+        // this account genuinely verified.
+        setKycVerified((prev) => (s.checkFailed && prev === true ? true : s.verified));
+      });
     }, []),
   );
   const [serviceEnabled, setServiceEnabled] = useState(true);

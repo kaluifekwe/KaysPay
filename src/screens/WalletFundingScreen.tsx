@@ -73,13 +73,13 @@ const WalletFundingScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   useFocusEffect(
     useCallback(() => {
-      kycService
-        .getStatus()
-        .then((s) => {
-          setKycVerified(s.verified);
-          setVerifiedNin(s.verifiedNin);
-        })
-        .catch(() => setKycVerified(false));
+      kycService.getStatus().then((s) => {
+        // A failed check (network blip) is not the same as a confirmed
+        // "not verified" — once we've genuinely seen verified === true,
+        // don't let a later timeout slam the gate shut on this account.
+        setKycVerified((prev) => (s.checkFailed && prev === true ? true : s.verified));
+        if (!s.checkFailed) setVerifiedNin(s.verifiedNin);
+      });
     }, []),
   );
   // Shows the last-known balance immediately (even on a bad connection),

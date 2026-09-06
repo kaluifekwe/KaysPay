@@ -11,6 +11,12 @@ export interface KycStatus {
    *  accepts either identifier interchangeably, so callers never need to
    *  know which one this actually is. */
   verifiedNin?: string;
+  /** Set when the status couldn't actually be checked (network/timeout) —
+   *  `verified` is just the safe default in that case, not a real answer.
+   *  Callers that gate on `verified === false` should check this first and
+   *  keep whatever they last knew instead of treating a blip as a genuine
+   *  "not verified" (see WalletFundingScreen/CryptoScreen/CryptoBuyScreen). */
+  checkFailed?: boolean;
 }
 
 export interface KycVerifyResult {
@@ -43,7 +49,9 @@ export const kycService = {
         verifiedNin: data.nin || data.bvn || undefined,
       };
     } catch {
-      return { verified: false };
+      // Couldn't reach the server (timeout/dropped connection) — not the
+      // same thing as a confirmed "not verified". See checkFailed above.
+      return { verified: false, checkFailed: true };
     }
   },
 
