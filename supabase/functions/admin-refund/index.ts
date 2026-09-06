@@ -19,6 +19,8 @@ function json(body: unknown, status = 200) {
   });
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 // Types where the transaction row represents a single debit from
 // wallets.balance (never a credit, never a second balance) �?the only
 // types where refund_service_transaction / refund_completed_service_transaction
@@ -106,6 +108,51 @@ serve(async (req) => {
   } catch (error) {
     const e = error instanceof RequestBodyError ? error : new RequestBodyError(400, "Invalid request body");
     return json({ error: e.message }, e.status);
+  }
+
+  // Second, unrelated action folded into this function to stay under
+  // Supabase's 100-function project cap (same reason crypto-swap's quote
+  // mode was merged into crypto-swap itself) -- manually debits a wallet for
+  // money that already moved outside the normal in-app flow (e.g. a customer
+  // funded the wallet for a crypto purchase, paid by bank transfer and never
+  // completed, and support already refunded them manually). Returns before
+  // any of the transaction-refund logic below runs; a request without
+  // `target` set falls through to that existing behavior completely
+  // unchanged. See admin_wallet_correction, migration 218.
+  if (body.target === "wallet_correction") {
+    const userId = String(body.user_id || "");
+    const amountKobo = Math.round(Number(body.amount_kobo));
+    const correctionReason = String(body.reason || "").trim().slice(0, 500);
+    if (!UUID_PATTERN.test(userId)) return json({ error: "Invalid user_id" }, 400);
+    if (!Number.isFinite(amountKobo) || amountKobo <= 0) return json({ error: "Enter a valid amount" }, 400);
+    if (correctionReason.length < 5) return json({ error: "A reason (at least 5 characters) is required" }, 400);
+
+    const db = adminClient();
+    const { data, error } = await db.rpc("admin_wallet_correction", {
+      p_admin_user_id: admin.userId,
+      p_user_id: userId,
+      p_amount_kobo: amountKobo,
+      p_reason: correctionReason,
+    });
+    if (error) {
+      const message = error.message?.includes("INSUFFICIENT_BALANCE")
+        ? "This customer's wallet doesn't have that much available."
+        : error.message?.includes("WALLET_NOT_FOUND")
+        ? "Could not find this customer's wallet."
+        : "Could not complete the correction.";
+      return json({ error: message }, 400);
+    }
+
+    await db.from("admin_actions").insert({
+      admin_user_id: admin.userId,
+      action_type: "wallet_manual_correction",
+      target_type: "users",
+      target_id: userId,
+      reason: correctionReason,
+      metadata: { amount_kobo: amountKobo, transaction_id: data?.transaction_id, new_balance_kobo: data?.new_balance },
+    });
+
+    return json({ success: true, transaction_id: data?.transaction_id, new_balance_kobo: data?.new_balance });
   }
 
   const transactionId = String(body.transaction_id || "");

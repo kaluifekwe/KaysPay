@@ -50,6 +50,19 @@ export default function UserLookupPage() {
   const [loading, setLoading] = useState(false);
   const [activityLoading, setActivityLoading] = useState(false);
 
+  // Manual wallet correction (see admin_wallet_correction, migration 218) --
+  // for money that already moved outside the normal in-app flow, e.g. a
+  // customer funded the wallet for a crypto purchase (paid by bank transfer,
+  // never from the wallet), it never went through, and support already
+  // refunded them manually. Deliberately not pre-filled/capped at the
+  // current balance -- the server-side RPC already refuses to take a wallet
+  // negative, so this stays a plain free-entry field.
+  const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [correctionAmount, setCorrectionAmount] = useState('');
+  const [correctionReason, setCorrectionReason] = useState('');
+  const [correctionBusy, setCorrectionBusy] = useState(false);
+  const [correctionError, setCorrectionError] = useState<string | null>(null);
+
   const loadActivity = useCallback(async (userId: string, requestedFilters: ActivityFilters, before: string | null = null) => {
     setActivityLoading(true); setError(null);
     try {
@@ -77,6 +90,7 @@ export default function UserLookupPage() {
 
   const openDetail = async (userId: string) => {
     setError(null); setLoading(true); setActivities([]); setFilters(EMPTY_FILTERS); setAppliedFilters(EMPTY_FILTERS);
+    setCorrectionOpen(false); setCorrectionAmount(''); setCorrectionReason(''); setCorrectionError(null);
     try {
       const response = await callAdmin<{ user: UserDetail }>('admin-user-lookup', { query: { user_id: userId, source: 'user_lookup' } });
       setDetail(response.user); await loadActivity(userId, EMPTY_FILTERS);
@@ -92,6 +106,27 @@ export default function UserLookupPage() {
   const clearFilters = async () => {
     if (!detail) return;
     setFilters(EMPTY_FILTERS); setAppliedFilters(EMPTY_FILTERS); await loadActivity(detail.id, EMPTY_FILTERS);
+  };
+
+  const submitCorrection = async () => {
+    if (!detail) return;
+    setCorrectionError(null);
+    const naira = Number(correctionAmount);
+    if (!Number.isFinite(naira) || naira <= 0) { setCorrectionError('Enter a valid amount'); return; }
+    if (correctionReason.trim().length < 5) { setCorrectionError('A reason (at least 5 characters) is required'); return; }
+    setCorrectionBusy(true);
+    try {
+      await callAdmin('admin-refund', {
+        method: 'POST',
+        body: { target: 'wallet_correction', user_id: detail.id, amount_kobo: Math.round(naira * 100), reason: correctionReason.trim() },
+      });
+      setCorrectionOpen(false); setCorrectionAmount(''); setCorrectionReason('');
+      await openDetail(detail.id); // refresh balance + activity from the server rather than patch local state
+    } catch (correctionErr) {
+      setCorrectionError(correctionErr instanceof AdminApiError ? correctionErr.message : 'Could not complete the correction');
+    } finally {
+      setCorrectionBusy(false);
+    }
   };
 
   return <div>
@@ -120,11 +155,31 @@ export default function UserLookupPage() {
       {deletedAt && <div className="error-text" style={{ marginBottom: 16 }}>Account deleted on {new Date(deletedAt).toLocaleString('en-GB')}. Retained records are read-only.</div>}
       <div className="card table-scroll"><table><tbody>
         <tr><td className="muted">Phone</td><td><ContactPhone phone={detail.phone} /></td><td className="muted">Email</td><td>{detail.email || '—'}</td></tr>
-        <tr><td className="muted">Wallet balance</td><td>{formatNaira(detail.wallet_balance_kobo)}</td><td className="muted">Locked amount</td><td>{formatNaira(detail.wallet_locked_kobo)}</td></tr>
+        <tr><td className="muted">Wallet balance</td><td>{formatNaira(detail.wallet_balance_kobo)} <button className="secondary" style={{ marginLeft: 10, padding: '2px 10px', fontSize: 12 }} onClick={() => setCorrectionOpen((open) => !open)}>{correctionOpen ? 'Cancel' : 'Remove funds'}</button></td><td className="muted">Locked amount</td><td>{formatNaira(detail.wallet_locked_kobo)}</td></tr>
         <tr><td className="muted">KYC status</td><td><span className={`badge ${detail.kyc_status === 'verified' ? 'enabled' : 'pending'}`}>{detail.kyc_status}</span></td><td className="muted">Transactions</td><td>{detail.transaction_count}</td></tr>
         <tr><td className="muted">Funding on KYC hold</td><td>{formatNaira(detail.funding_hold_kobo)}</td><td className="muted">Held deposits</td><td>{detail.funding_hold_count}</td></tr>
         <tr><td className="muted">Joined</td><td>{new Date(detail.created_at).toLocaleString('en-GB')}</td><td className="muted">Last active</td><td>{detail.last_active ? new Date(detail.last_active).toLocaleString('en-GB') : '—'}</td></tr>
-      </tbody></table></div>
+      </tbody></table>
+      {correctionOpen && <div style={{ padding: '14px 16px', borderTop: '1px solid var(--border)' }}>
+        <p className="muted" style={{ marginTop: 0, marginBottom: 10, fontSize: 12.5 }}>
+          Manually removes naira from this customer's wallet balance for money that already moved outside the app (e.g. a manual bank refund for a crypto purchase that never went through). Cannot exceed what's actually in the wallet. Recorded as an audited transaction and admin action.
+        </p>
+        <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <div className="field" style={{ marginBottom: 0, width: 160 }}>
+            <label>Amount (₦)</label>
+            <input type="number" min="0" step="0.01" value={correctionAmount} onChange={(e) => setCorrectionAmount(e.target.value)} disabled={correctionBusy} />
+          </div>
+          <div className="field" style={{ marginBottom: 0, flex: 1, minWidth: 240 }}>
+            <label>Reason</label>
+            <input value={correctionReason} onChange={(e) => setCorrectionReason(e.target.value)} disabled={correctionBusy} placeholder="e.g. Manually refunded ₦25,000 via bank transfer for a failed crypto purchase" />
+          </div>
+          <button className="primary" style={{ marginTop: 20 }} disabled={correctionBusy} onClick={() => void submitCorrection()}>
+            {correctionBusy ? 'Removing…' : 'Confirm removal'}
+          </button>
+        </div>
+        {correctionError && <div className="error-text" style={{ marginTop: 8 }}>{correctionError}</div>}
+      </div>}
+      </div>
 
       <div className="activity-heading"><h2>Activity Timeline</h2><p className="muted">Server-recorded customer, financial, security, service, and admin events.</p></div>
       <div className="activity-filters">
