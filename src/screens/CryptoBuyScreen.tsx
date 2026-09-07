@@ -22,9 +22,6 @@ import { formatNaira } from '../utils/formatCurrency';
 import { storageHelpers, StorageKeys } from '../lib/mmkv';
 import {
   cryptoService,
-  isValidCryptoAddress,
-  CRYPTO_NETWORKS,
-  type CryptoNetwork,
   type BuyAsset,
   type MarketCoin,
 } from '../services/crypto.service';
@@ -134,18 +131,10 @@ export default function CryptoBuyScreen({ navigation }: { navigation: any }) {
 
   const [selectedBuyAsset, setSelectedBuyAsset] = useState<BuyAsset | null>(null);
   const [buyNgn, setBuyNgn] = useState('');
-  const [buyToExternal, setBuyToExternal] = useState(false);
-  const [buyDestNetwork, setBuyDestNetwork] = useState<CryptoNetwork>('TRC20');
-  const [buyDestAddress, setBuyDestAddress] = useState('');
-  const [buyDestVerified, setBuyDestVerified] = useState(false);
   const [buyLoading, setBuyLoading] = useState(false);
 
   const [actionState, setActionState] = useState<ResultStatus | 'idle'>('idle');
   const [actionError, setActionError] = useState('');
-
-  useEffect(() => {
-    setBuyDestVerified(false);
-  }, [buyDestAddress, buyDestNetwork]);
 
   const loadMarkets = useCallback(async () => {
     setMarketsLoading(true);
@@ -177,7 +166,6 @@ export default function CryptoBuyScreen({ navigation }: { navigation: any }) {
   const handlePickBuyAsset = useCallback((code: BuyAsset) => {
     setSelectedBuyAsset(code);
     setBuyNgn('');
-    setBuyToExternal(false);
     setStep('amount');
   }, []);
 
@@ -196,28 +184,20 @@ export default function CryptoBuyScreen({ navigation }: { navigation: any }) {
     .sort((a, b) => (coinFilter === 'gainers' ? (b.change24hPct ?? 0) - (a.change24hPct ?? 0) : 0));
 
   const numericBuyNgn = parseFloat(buyNgn);
-  const buyDestAddressValid = buyDestAddress.trim().length > 0 && isValidCryptoAddress('USDT', buyDestNetwork, buyDestAddress);
-  const buyDestAddressError = buyDestAddress.trim().length > 0 && !buyDestAddressValid
-    ? `This doesn't look like a valid ${buyDestNetwork} address.`
-    : null;
   const buyBelowMin = buyLimits != null && numericBuyNgn > 0 && numericBuyNgn < buyLimits.minNgn;
   const buyAboveMax = buyLimits != null && numericBuyNgn > 0 && numericBuyNgn > buyLimits.maxNgn;
   const canBuy = !!selectedBuyAsset && Number.isFinite(numericBuyNgn) && numericBuyNgn > 0
-    && !buyBelowMin && !buyAboveMax
-    && (!buyToExternal || (buyDestAddressValid && buyDestVerified));
+    && !buyBelowMin && !buyAboveMax;
 
   const handleBuy = useCallback(async () => {
     if (!canBuy || !selectedBuyAsset || buyLoading) return;
     // Disabled BEFORE the PIN/biometric step, not after it -- same discipline
     // as every other purchase screen in this app.
     setBuyLoading(true);
-    const subtitle = buyToExternal
-      ? `To ${buyDestNetwork} wallet ${buyDestAddress.trim()}`
-      : 'To your KaysPay Wallet';
     const authResult = await authorize({
       title: `Confirm ${selectedBuyAsset} Purchase`,
       amount: numericBuyNgn || undefined,
-      subtitle,
+      subtitle: 'To your KaysPay Wallet',
       // Buy is paid by bank transfer straight to Quidax's one-time account
       // -- it never debits the KaysPay wallet -- so a wallet-balance check
       // here is comparing against the wrong number entirely.
@@ -228,12 +208,7 @@ export default function CryptoBuyScreen({ navigation }: { navigation: any }) {
       return;
     }
     void analytics.track('crypto_buy_started', { outcome: 'started' });
-    const result = await cryptoService.buy(
-      selectedBuyAsset,
-      numericBuyNgn,
-      authResult.token,
-      buyToExternal ? { network: buyDestNetwork, address: buyDestAddress.trim() } : undefined,
-    );
+    const result = await cryptoService.buy(selectedBuyAsset, numericBuyNgn, authResult.token);
     setBuyLoading(false);
     if (result.success && result.payment) {
       // Hand off to CryptoScreen, which still owns the payment-instructions
@@ -254,7 +229,7 @@ export default function CryptoBuyScreen({ navigation }: { navigation: any }) {
       setActionError(result.error || 'Purchase failed. Please try again.');
       setActionState('failed');
     }
-  }, [canBuy, selectedBuyAsset, buyLoading, numericBuyNgn, buyToExternal, buyDestNetwork, buyDestAddress, authorize, navigation]);
+  }, [canBuy, selectedBuyAsset, buyLoading, numericBuyNgn, authorize, navigation]);
 
   if (actionState !== 'idle') {
     return (
@@ -496,73 +471,18 @@ export default function CryptoBuyScreen({ navigation }: { navigation: any }) {
                 </Text>
               )}
 
-              {selectedMarket?.stablecoin ? (
-                <>
-                  <TouchableOpacity
-                    style={styles.destinationToggleRow}
-                    onPress={() => setBuyToExternal((v) => !v)}
-                    activeOpacity={0.75}
-                  >
-                    <View style={[styles.checkbox, buyToExternal && styles.checkboxChecked]}>
-                      {buyToExternal && <Text style={styles.checkboxMark}>✓</Text>}
-                    </View>
-                    <Text style={styles.checkLabel}>Send to a different wallet instead of my KaysPay Wallet</Text>
-                  </TouchableOpacity>
-
-                  {buyToExternal && (
-                    <View>
-                      <Text style={styles.label}>Network</Text>
-                      <View style={styles.networkRow}>
-                        {CRYPTO_NETWORKS.map((n) => (
-                          <TouchableOpacity
-                            key={n.key}
-                            style={[styles.networkChip, buyDestNetwork === n.key && styles.networkChipSelected]}
-                            onPress={() => setBuyDestNetwork(n.key)}
-                          >
-                            <Text style={[styles.networkChipText, buyDestNetwork === n.key && styles.networkChipTextSelected]}>
-                              {n.label}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-
-                      <Text style={styles.label}>Wallet Address</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={buyDestAddress}
-                        onChangeText={setBuyDestAddress}
-                        placeholder={`Paste your ${buyDestNetwork} address`}
-                        placeholderTextColor={theme.inkFaint}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                      />
-                      {buyDestAddressError && <Text style={styles.errorText}>{buyDestAddressError}</Text>}
-
-                      {buyDestAddressValid && (
-                        <View style={styles.confirmBox}>
-                          <Text style={styles.confirmWarning}>
-                            This is riskier than a withdrawal: the USDT is delivered straight out of this purchase, with
-                            no KaysPay balance to recover it from if the address or network is wrong.
-                          </Text>
-                          <TouchableOpacity style={styles.checkRow} onPress={() => setBuyDestVerified((v) => !v)}>
-                            <View style={[styles.checkbox, buyDestVerified && styles.checkboxChecked]}>
-                              {buyDestVerified && <Text style={styles.checkboxMark}>✓</Text>}
-                            </View>
-                            <Text style={styles.checkLabel}>I've checked this address and network are correct</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </View>
-                  )}
-                </>
-              ) : (
-                <View style={styles.confirmBox}>
-                  <Text style={styles.confirmText}>
-                    Delivered to your KaysPay Wallet. The exact amount of {selectedBuyAsset} you receive is
-                    confirmed once your transfer is priced.
-                  </Text>
-                </View>
-              )}
+              <View style={styles.confirmBox}>
+                <Text style={styles.confirmText}>
+                  Delivered to your KaysPay Wallet. The exact amount of {selectedBuyAsset} you receive is
+                  confirmed once your transfer is priced.
+                </Text>
+              </View>
+              <View style={styles.confirmBox}>
+                <Text style={styles.confirmText}>
+                  Want it sent elsewhere? Buy first, then use <Text style={styles.confirmTextStrong}>Withdraw</Text> from
+                  your wallet — one consistent way to move any coin out, every time.
+                </Text>
+              </View>
 
               <TouchableOpacity
                 style={[styles.primaryButton, (!canBuy || buyLoading) && styles.primaryButtonDisabled]}
@@ -727,19 +647,6 @@ function createStyles(theme: AppTheme) {
     },
     errorText: { ...Typography.ERROR, color: theme.down, marginTop: Spacing.S },
 
-    destinationToggleRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.L },
-    networkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.S },
-    networkChip: {
-      paddingHorizontal: Spacing.M,
-      paddingVertical: Spacing.S,
-      borderRadius: 16,
-      borderWidth: 1,
-      borderColor: theme.hairline,
-    },
-    networkChipSelected: { backgroundColor: theme.brandSoft, borderColor: theme.brand },
-    networkChipText: { ...Typography.CAPTION, color: theme.inkMuted, fontWeight: '600' },
-    networkChipTextSelected: { color: theme.brand },
-
     confirmBox: {
       backgroundColor: theme.surfaceRaised,
       borderWidth: 1,
@@ -749,21 +656,7 @@ function createStyles(theme: AppTheme) {
       marginTop: Spacing.L,
     },
     confirmText: { ...Typography.BODY, color: theme.ink },
-    confirmWarning: { ...Typography.CAPTION, color: theme.gold, marginTop: Spacing.S },
-    checkRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.M },
-    checkbox: {
-      width: 22,
-      height: 22,
-      borderRadius: 6,
-      borderWidth: 2,
-      borderColor: theme.brand,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginRight: Spacing.M,
-    },
-    checkboxChecked: { backgroundColor: theme.brand },
-    checkboxMark: { color: theme.background, fontSize: 14, fontWeight: '700' },
-    checkLabel: { ...Typography.CAPTION, color: theme.ink, flex: 1 },
+    confirmTextStrong: { fontWeight: '700', color: theme.ink },
 
     guideCard: {
       backgroundColor: theme.surfaceRaised,
