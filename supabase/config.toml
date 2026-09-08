@@ -36,6 +36,16 @@ verify_jwt = false
 [functions.crypto-ramp-webhook]
 verify_jwt = false
 
+# Dual-purpose (2026-09-08): also serves the vtunaija-reconcile CRON sweep
+# below, which still requires its own x-cron-secret header in-code
+# (verifyCronSecret) — turning verify_jwt off here only removes the
+# redundant outer layer for that path, exactly like note #2 below describes.
+# VTUnaija's webhook deliveries carry no JWT at all, so this must be false
+# for their POSTs to reach the in-code HMAC signature check instead of being
+# rejected before our code ever runs (the crypto-ramp-webhook mistake above).
+[functions.vtunaija-reconcile]
+verify_jwt = false
+
 # --- Cron-only: JWT + separate x-cron-secret check ---
 [functions.vtunaija-data-catalog]
 verify_jwt = true
@@ -122,9 +132,6 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.crypto-sell-reconcile]
-verify_jwt = true
-
-[functions.vtunaija-reconcile]
 verify_jwt = true
 
 [functions.fx-sync]
