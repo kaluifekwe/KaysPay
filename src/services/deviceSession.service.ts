@@ -31,9 +31,21 @@ async function invoke(body: Record<string, unknown>) {
 
 export type DeviceSession = { id: string; device_name: string; platform: string; last_active_at: string; created_at: string; revoked_at: string | null; is_current: boolean };
 
+/**
+ * Some OEMs (Xiaomi/Redmi in particular) report an internal marketing code
+ * as Device.modelName (e.g. "23053RN02Y") rather than anything a customer
+ * would recognize -- expo-device has no friendlier field to fall back to.
+ * Prefixing with the manufacturer at least makes the "new device signed in"
+ * security email identify a brand, not just a cryptic string.
+ */
+function deviceDisplayName(): string {
+  if (Device.manufacturer && Device.modelName) return `${Device.manufacturer} ${Device.modelName}`;
+  return Device.modelName || `${Platform.OS} device`;
+}
+
 export const deviceSessionService = {
   async register() {
-    return invoke({ action: 'register', device_id: await deviceId(), device_name: Device.modelName || `${Platform.OS} device`, platform: Platform.OS });
+    return invoke({ action: 'register', device_id: await deviceId(), device_name: deviceDisplayName(), platform: Platform.OS });
   },
   async list(): Promise<DeviceSession[]> { return (await invoke({ action: 'list' }))?.sessions ?? []; },
   async revoke(id: string): Promise<boolean> { return (await invoke({ action: 'revoke', id }))?.success === true; },
