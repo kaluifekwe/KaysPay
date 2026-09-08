@@ -18,7 +18,7 @@ import { Typography } from '../constants/typography';
 import { Spacing } from '../constants/spacing';
 import { AppTheme } from '../constants/theme';
 import { useTheme } from '../components/ThemeProvider';
-import { formatNaira } from '../utils/formatCurrency';
+import { formatNaira, formatUSD } from '../utils/formatCurrency';
 import { storageHelpers, StorageKeys } from '../lib/mmkv';
 import {
   cryptoService,
@@ -125,6 +125,10 @@ export default function CryptoBuyScreen({ navigation }: { navigation: any }) {
   const [step, setStep] = useState<'guide' | 'pick' | 'amount'>('guide');
   const [markets, setMarkets] = useState<MarketCoin[]>([]);
   const [marketsLoading, setMarketsLoading] = useState(true);
+  // USDT tracks the US dollar 1:1, so this one rate converts ANY coin's own
+  // NGN price (or an NGN amount the customer typed) into a $ figure -- no
+  // per-coin USD price needed from the server.
+  const [usdtNgnRate, setUsdtNgnRate] = useState<number | null>(null);
   const [coinSearch, setCoinSearch] = useState('');
   const [coinFilter, setCoinFilter] = useState<CoinFilter>('popular');
   const [buyLimits, setBuyLimits] = useState<{ minNgn: number; maxNgn: number } | null>(null);
@@ -142,11 +146,18 @@ export default function CryptoBuyScreen({ navigation }: { navigation: any }) {
     setMarketsLoading(false);
     if (result) {
       setMarkets(result.coins);
+      if (result.usdtNgnRate != null && result.usdtNgnRate > 0) setUsdtNgnRate(result.usdtNgnRate);
       // Display-only: a real purchase always re-prices server-side, so a
       // stale cached price here can never cost anyone anything.
       storageHelpers.setObject(StorageKeys.CRYPTO_MARKETS_CACHE, result.coins);
     }
   }, []);
+
+  /** null while the rate hasn't loaded yet -- callers hide the $ figure rather than guessing. */
+  const toUsd = useCallback(
+    (ngn: number) => (usdtNgnRate ? ngn / usdtNgnRate : null),
+    [usdtNgnRate],
+  );
 
   useEffect(() => {
     // Paints the coin list instantly from the last live fetch (any screen
@@ -372,6 +383,7 @@ export default function CryptoBuyScreen({ navigation }: { navigation: any }) {
                 <View style={styles.coinList}>
                   {visibleMarkets.map((m) => {
                     const up = (m.change24hPct ?? 0) >= 0;
+                    const usdPrice = toUsd(m.priceNgn);
                     return (
                       <TouchableOpacity
                         key={m.code}
@@ -395,7 +407,10 @@ export default function CryptoBuyScreen({ navigation }: { navigation: any }) {
                           <Sparkline open={m.openNgn} low={m.lowNgn} high={m.highNgn} last={m.priceNgn} up={up} upColor={theme.up} downColor={theme.down} />
                         </View>
                         <View style={styles.coinRight}>
-                          <Text style={styles.coinPrice}>{formatNaira(m.priceNgn)}</Text>
+                          <Text style={styles.coinPrice}>{usdPrice != null ? formatUSD(usdPrice) : formatNaira(m.priceNgn)}</Text>
+                          {usdPrice != null && (
+                            <Text style={styles.coinPriceSecondary}>{formatNaira(m.priceNgn)}</Text>
+                          )}
                           {m.change24hPct != null && (
                             <Text style={[styles.coinChange, { color: up ? theme.up : theme.down }]}>
                               {up ? '+' : ''}{m.change24hPct.toFixed(2)}%
@@ -460,6 +475,9 @@ export default function CryptoBuyScreen({ navigation }: { navigation: any }) {
                 placeholderTextColor={theme.inkFaint}
                 keyboardType="decimal-pad"
               />
+              {numericBuyNgn > 0 && toUsd(numericBuyNgn) != null && (
+                <Text style={styles.usdHint}>≈ {formatUSD(toUsd(numericBuyNgn)!)}</Text>
+              )}
               {buyBelowMin && buyLimits && (
                 <Text style={styles.errorText}>
                   Minimum purchase is {formatNaira(buyLimits.minNgn)}.
@@ -606,6 +624,7 @@ function createStyles(theme: AppTheme) {
     coinTicker: { ...Typography.CAPTION, fontFamily: MONO, color: theme.inkFaint },
     coinRight: { alignItems: 'flex-end' },
     coinPrice: { ...Typography.BODY, fontFamily: MONO, color: theme.ink, fontWeight: '600' },
+    coinPriceSecondary: { ...Typography.CAPTION, fontFamily: MONO, color: theme.inkFaint, marginTop: 1 },
     coinChange: { ...Typography.CAPTION, fontFamily: MONO, fontWeight: '600', marginTop: 2 },
 
     backLink: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.M },
@@ -635,6 +654,7 @@ function createStyles(theme: AppTheme) {
 
     label: { ...Typography.SECTION_HEADING, color: theme.ink, marginTop: Spacing.M, marginBottom: Spacing.M },
     hintText: { ...Typography.CAPTION, color: theme.inkMuted, marginTop: Spacing.M },
+    usdHint: { ...Typography.CAPTION, fontFamily: MONO, color: theme.brand, fontWeight: '600', marginTop: Spacing.S },
     input: {
       height: Spacing.INPUT_HEIGHT,
       borderWidth: Spacing.INPUT_BORDER_WIDTH,
