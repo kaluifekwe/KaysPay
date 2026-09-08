@@ -597,7 +597,6 @@ const MODIFY_SECTION_INFO: Record<ModifySection, string> = {
 };
 
 export default function NinServicesScreen({ navigation }: NinServicesScreenProps) {
-  useSensitiveScreenProtection();
   const { authorize } = useTransactionAuth();
   const { theme } = useTheme();
   const styles = createStyles(theme);
@@ -690,6 +689,14 @@ export default function NinServicesScreen({ navigation }: NinServicesScreenProps
   const [bvnError, setBvnError] = useState('');
   const [bvnRecord, setBvnRecord] = useState<BvnRecord | null>(null);
   const [selectedBvnTier, setSelectedBvnTier] = useState<BvnSlipTier>('regular');
+
+  // Only the verified-result card actually shows the person's NIN/BVN,
+  // DOB, gender and phone -- protect just that, not the form entry or
+  // error states, so a failed lookup can still be screenshotted and sent
+  // to support (a blanket screen-wide block was silently preventing that).
+  useSensitiveScreenProtection(
+    (mode === 'verify' && verifyState === 'result') || (mode === 'bvn' && bvnState === 'result'),
+  );
 
   // Modify (NIN correction) state
   const [modifyType, setModifyType] = useState<NinModificationType>('name');
