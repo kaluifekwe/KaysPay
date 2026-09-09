@@ -101,6 +101,12 @@ export const posts: Record<string, BlogPost> = {
           "Your NIN and BVN are sensitive precisely because they unlock identity verification — treat them the same way you'd treat a password. Only ever enter them inside an official app you trust, never over WhatsApp, social media DMs, or a phone call from someone claiming to be from your bank or a government office. A legitimate request will come through the app itself, not a message asking you to \"confirm\" your number to an agent.",
         ],
       },
+      {
+        heading: "Verify yours free in KaysPay",
+        paragraphs: [
+          "KaysPay lets you verify either your NIN or your BVN directly in the app, at no cost — it's the same check described above, just done in a minute from your phone. Verifying is also what unlocks funding your wallet through your own dedicated account number, plus buying and selling crypto. Once verified, you never have to re-enter it for another service — it's a one-time step that opens the rest of the app up.",
+        ],
+      },
     ],
   },
   "why-is-my-transaction-pending": {
@@ -138,6 +144,12 @@ export const posts: Record<string, BlogPost> = {
         heading: "What happens if it just sits there",
         paragraphs: [
           "A transaction that stays unresolved doesn't just get forgotten — it's re-checked against the provider on a schedule until a real outcome is reached, rather than being left in limbo indefinitely. In the rare case something genuinely needs a human to look at it, that's exactly what that follow-up process is for.",
+        ],
+      },
+      {
+        heading: "Not every app handles this the same way",
+        paragraphs: [
+          "The frustrating version of \"pending\" is the one with no visible history and no automatic refund — money gone, no record of why, no idea if it's coming back. KaysPay keeps every purchase in your transaction history with its real status, refunds a genuine failure automatically without you having to ask, and keeps re-checking anything unresolved instead of dropping it. If a stuck purchase elsewhere is what brought you here, that's the actual difference worth knowing about before it happens again.",
         ],
       },
       {
