@@ -40,6 +40,7 @@ import ProviderLogo from '../components/ProviderLogo';
 import { PickedContact } from '../services/contacts.service';
 import { NETWORK_LOGOS } from '../utils/providerLogos';
 import { isRestrictedPlanName } from '../utils/planWarnings';
+import { kycService } from '../services/kyc.service';
 
 interface DataScreenProps {
   navigation: any;
@@ -142,6 +143,20 @@ export default function DataScreen({ navigation }: DataScreenProps) {
   // it ever felt like it accumulated. Now it only spends when the user
   // explicitly opts in on this screen.
   const [useCashback, setUseCashback] = useState(false);
+
+  // The server (debit_for_service, migration 222) is the real gate and blocks
+  // this regardless of what the client shows — this is purely so an
+  // unverified user lands on a clear next step instead of a purchase that
+  // silently fails at the last second. Same defense-in-depth reasoning
+  // CryptoBuyScreen documents for its own KYC check.
+  const [kycVerified, setKycVerified] = useState<boolean | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      kycService.getStatus().then((s) => {
+        setKycVerified((prev) => (s.checkFailed && prev === true ? true : s.verified));
+      });
+    }, []),
+  );
 
   useFocusEffect(useCallback(() => {
     let cancelled = false;
@@ -369,6 +384,39 @@ export default function DataScreen({ navigation }: DataScreenProps) {
     if (!selectedBundle) return 'Choose a data bundle to continue';
     return null;
   }, [buyState, phoneNumber, effectiveNetwork, selectedBundle]);
+
+  if (kycVerified === false) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <View style={styles.scrollContent}>
+          <TouchableOpacity
+            style={styles.backButton}
+            activeOpacity={0.6}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.backText}>{'<'}</Text>
+          </TouchableOpacity>
+          <Text style={styles.title}>Buy Data</Text>
+          <View style={styles.kycGate}>
+            <View style={styles.kycGateIconWrap}>
+              <Ionicons name="shield-checkmark-outline" size={28} color={theme.brand} />
+            </View>
+            <Text style={styles.kycGateTitle}>Verify Your Identity</Text>
+            <Text style={styles.kycGateSubtitle}>
+              Buying data requires identity verification. Verify your NIN or BVN to continue — it only takes a minute.
+            </Text>
+            <TouchableOpacity
+              style={[styles.primaryButton, styles.kycGateButton]}
+              onPress={() => navigation.navigate('Kyc', { requiredFor: 'buy data' })}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.primaryButtonText}>Verify Now</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (buyState === 'success') {
     return (
@@ -790,6 +838,30 @@ function createStyles(theme: AppTheme) {
   },
   section: {
     marginBottom: Spacing.XL,
+  },
+  kycGate: {
+    alignItems: 'center',
+    paddingTop: Spacing.XL,
+    paddingHorizontal: Spacing.M,
+  },
+  kycGateIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: theme.brandSoft,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.M,
+  },
+  kycGateTitle: { ...Typography.CARD_TITLE, color: theme.ink, marginBottom: Spacing.S },
+  kycGateSubtitle: {
+    ...Typography.BODY,
+    color: theme.inkMuted,
+    textAlign: 'center',
+    marginBottom: Spacing.L,
+  },
+  kycGateButton: {
+    width: '100%',
   },
   label: {
     ...Typography.SECTION_HEADING,
