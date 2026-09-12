@@ -5,5 +5,11 @@
     "module": "esnext",
     "moduleResolution": "bundler"
   },
-  "exclude": ["supabase/functions"]
+  "exclude": [
+    "supabase/functions",
+    "kayspay-admin",
+    "kayspay-advert",
+    "kayspay-web",
+    ".tmp"
+  ]
 }
