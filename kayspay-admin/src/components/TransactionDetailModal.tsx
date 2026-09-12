@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { callAdmin, AdminApiError } from '../lib/adminApi';
-import { formatFundingProvider, isRefundable, formatNaira, formatTxAmount, serviceLabelForType, TxRow } from '../lib/transactions';
+import { failureInfo, formatFundingProvider, isRefundable, formatNaira, formatTxAmount, serviceLabelForType, TxRow } from '../lib/transactions';
 import { useAuth } from '../AuthContext';
 import ContactPhone from './ContactPhone';
 
@@ -99,6 +99,16 @@ export default function TransactionDetailModal({
                   <tr><td className="muted">Refunded</td><td>{new Date(transaction.service_refunds[0].created_at).toLocaleString('en-GB')}</td></tr>
                 </>
               )}
+              {(() => {
+                const failure = failureInfo(transaction);
+                if (!failure) return null;
+                return (
+                  <>
+                    <tr><td className="muted">Why it failed</td><td><strong>{failure.reason}</strong></td></tr>
+                    {failure.provider && <tr><td className="muted">Provider</td><td>{failure.provider}</td></tr>}
+                  </>
+                );
+              })()}
               {transaction.refund_verification && (
                 <>
                   <tr><td className="muted">Provider verification</td><td><strong>{transaction.refund_verification.outcome}</strong></td></tr>

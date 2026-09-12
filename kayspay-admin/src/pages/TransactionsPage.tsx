@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { callAdmin, AdminApiError } from '../lib/adminApi';
-import { formatFundingProvider, formatTxAmount, SERVICES, truncateAddress, TxRow } from '../lib/transactions';
+import { failureInfo, formatFundingProvider, formatTxAmount, SERVICES, truncateAddress, TxRow } from '../lib/transactions';
 import TransactionDetailModal from '../components/TransactionDetailModal';
 import { useHidden, HIDDEN_MASK } from '../lib/hidden';
 
@@ -202,9 +202,20 @@ export default function TransactionsPage() {
                     // breaking when it was not.
                     const notPaid = status === 'failed'
                       && (r.metadata as { failure_reason?: string } | null)?.failure_reason === 'not_paid';
-                    return notPaid
-                      ? <span className="badge pending" title="Payment account was issued but the customer never transferred">not paid</span>
-                      : <span className={`badge ${status}`}>{status}</span>;
+                    if (notPaid) {
+                      return <span className="badge pending" title="Payment account was issued but the customer never transferred">not paid</span>;
+                    }
+                    const failure = failureInfo(r);
+                    return (
+                      <>
+                        <span className={`badge ${status}`}>{status}</span>
+                        {failure && (
+                          <div className="muted" style={{ fontSize: 11, marginTop: 2 }} title={failure.provider ? `From ${failure.provider}` : undefined}>
+                            {failure.reason}
+                          </div>
+                        )}
+                      </>
+                    );
                   })()}</td>
                   <td className="muted">{r.type === 'wallet_fund'
                     ? (r.funding_reference || '—')

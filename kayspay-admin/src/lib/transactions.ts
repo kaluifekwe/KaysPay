@@ -27,6 +27,19 @@ export interface TxRow {
   } | null;
 }
 
+// Surfaces why a purchase actually failed -- previously only readable by
+// querying the database directly (metadata.failure_reason/provider are
+// already returned by admin-transactions, just never shown anywhere in the
+// UI). 'not_paid' is the abandoned-checkout sentinel, which already has its
+// own dedicated badge -- not a real failure reason to display here.
+export function failureInfo(row: Pick<TxRow, 'metadata'>): { reason: string; provider: string | null } | null {
+  const meta = row.metadata as { failure_reason?: unknown; provider?: unknown } | null | undefined;
+  const reason = meta?.failure_reason;
+  if (typeof reason !== 'string' || !reason || reason === 'not_paid') return null;
+  const provider = typeof meta?.provider === 'string' ? meta.provider : null;
+  return { reason, provider };
+}
+
 export function formatFundingProvider(provider: string | null | undefined): string {
   if (!provider) return '—';
   if (provider.toLowerCase() === 'paystack') return 'Paystack';
