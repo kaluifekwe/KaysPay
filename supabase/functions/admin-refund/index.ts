@@ -250,7 +250,21 @@ serve(async (req) => {
   if (!tx) return json({ error: "Transaction not found" }, 404);
 
   if (tx.type === "crypto_withdraw" && tx.status === "pending") {
-    const { error: rpcError } = await db.rpc("refund_crypto_withdrawal", { p_tx_id: transactionId, p_reason: reason });
+    // refund_crypto_withdrawal (retired) credited the local crypto_balances
+    // ledger, which the live withdrawal flow never debits -- Quidax's
+    // sub-account is the source of truth, settled here by
+    // settle_crypto_withdrawal instead. It never moves anything back from
+    // Quidax on its own: a withdrawal that already left the sub-account
+    // needs a real Quidax-side reversal, confirmed separately, before this
+    // is truly resolved -- this just marks the local record correctly so
+    // it stops being reported as still-pending. Found by a Strix pentest
+    // scan, 2026-09-12.
+    const { error: rpcError } = await db.rpc("settle_crypto_withdrawal", {
+      p_reference: String(tx.metadata?.quidax_reference || ""),
+      p_succeeded: false,
+      p_txid: null,
+      p_reason: reason,
+    });
     if (rpcError) return json({ error: "Crypto withdrawal refund failed" }, 500);
   } else if (SIMPLE_REFUNDABLE_TYPES.has(tx.type) && tx.status === "pending") {
     // Eligible: the service debit is still unresolved.
@@ -332,7 +346,13 @@ serve(async (req) => {
     .eq("id", transactionId)
     .maybeSingle<{ status: string; metadata: Record<string, unknown> }>();
 
-  if (after?.status !== "refunded" || after.metadata?.refunded !== true) {
+  // crypto_withdraw settles to 'failed' via settle_crypto_withdrawal (there
+  // is no local balance to mark "refunded" -- see the comment above), every
+  // other type settles to 'refunded' as before.
+  const settled = tx.type === "crypto_withdraw"
+    ? after?.status === "failed"
+    : after?.status === "refunded" && after.metadata?.refunded === true;
+  if (!settled) {
     return json({ error: "Refund could not be completed — it may have already been resolved" }, 409);
   }
 
