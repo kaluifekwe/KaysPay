@@ -26,8 +26,14 @@ jobs:
         run: npm ci
       - name: Type-check app
         run: npm run typecheck
-      - name: Audit production dependencies
-        run: npm run security:audit
+      # Dropped as a CI gate (2026-09-12): npm audit --audit-level=high has
+      # no allowlist mechanism, so it can never pass while image-size/uuid
+      # exist -- both already triaged and deliberately deferred (see
+      # .osv-scanner.toml), transitive Metro/xcode/@expo/ngrok build-tooling
+      # deps with no compatible upstream fix yet. The osv-scan job below
+      # supersedes this: broader ecosystem coverage, and it correctly
+      # recognizes those two as accepted risk instead of failing on them
+      # forever. `npm run security:audit` still exists to run by hand.
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
