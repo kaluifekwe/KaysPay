@@ -155,6 +155,86 @@ serve(async (req) => {
     return json({ success: true, transaction_id: data?.transaction_id, new_balance_kobo: data?.new_balance });
   }
 
+  // Third, unrelated action folded in here for the same 100-function-cap
+  // reason as wallet_correction above. Deletes a customer's personal/KYC
+  // data on request while leaving their transaction history untouched (see
+  // admin_delete_customer_account, migration 221, and the published policy
+  // at kayspay-web/public/delete-account/index.html). The DB-side RPC runs
+  // first and blocks on its own if the wallet still holds funds or has a
+  // hold in flight, so nothing here can lock a customer out of an account
+  // that still needs their attention. Disabling the Auth login afterward is
+  // best-effort: the destructive DB deletion already happened either way,
+  // so a failure here is surfaced rather than silently swallowed.
+  if (body.target === "delete_account") {
+    const userId = String(body.user_id || "");
+    const deletionReason = String(body.reason || "").trim().slice(0, 500);
+    const confirmBalanceHandled = body.confirm_balance_handled === true;
+    if (!UUID_PATTERN.test(userId)) return json({ error: "Invalid user_id" }, 400);
+    if (deletionReason.length < 5) return json({ error: "A reason (at least 5 characters) is required" }, 400);
+
+    const db = adminClient();
+    const { data: authUser, error: lookupError } = await db.auth.admin.getUserById(userId);
+    if (lookupError || !authUser?.user) return json({ error: "Could not find this customer's account" }, 404);
+
+    const { data, error: rpcError } = await db.rpc("admin_delete_customer_account", {
+      p_admin_user_id: admin.userId,
+      p_user_id: userId,
+      p_reason: deletionReason,
+      p_confirm_balance_handled: confirmBalanceHandled,
+    });
+
+    if (rpcError) {
+      const message = rpcError.message || "";
+      if (message.includes("USER_NOT_FOUND")) return json({ error: "Could not find this customer's account" }, 404);
+      if (message.includes("ADMIN_ACCOUNT_NOT_DELETABLE")) {
+        return json({ error: "Administrator accounts must be offboarded (removed from Admins) before deletion." }, 403);
+      }
+      if (message.includes("ALREADY_DELETED")) return json({ error: "This account has already been deleted" }, 409);
+      if (message.includes("WALLET_LOCKED_FUNDS")) {
+        return json({ error: "This customer has a transaction in progress. Try again once it settles." }, 409);
+      }
+      if (message.includes("WALLET_BALANCE_NOT_ZERO")) {
+        return json({
+          error: "This customer's wallet still has a balance. Confirm how it was handled before deleting the account.",
+          code: "WALLET_BALANCE_NOT_ZERO",
+        }, 409);
+      }
+      return json({ error: "Could not delete this account" }, 500);
+    }
+
+    const placeholderEmail = `deleted-${userId}@kayspay.invalid`;
+    const { error: authError } = await db.auth.admin.updateUserById(userId, {
+      email: placeholderEmail,
+      email_confirm: true,
+      phone: null,
+      user_metadata: {},
+      ban_duration: "876000h",
+    });
+
+    await db.from("admin_actions").insert({
+      admin_user_id: admin.userId,
+      action_type: "account_deletion",
+      target_type: "users",
+      target_id: userId,
+      reason: deletionReason,
+      metadata: {
+        confirm_balance_handled: confirmBalanceHandled,
+        balance_cleared_kobo: data?.balance_cleared_kobo ?? 0,
+        login_disabled: !authError,
+      },
+    });
+
+    if (authError) {
+      return json({
+        success: true,
+        warning: "Account data was deleted, but the login could not be disabled. Retry to finish disabling it.",
+        summary: data,
+      }, 200);
+    }
+
+    return json({ success: true, summary: data });
+  }
+
   const transactionId = String(body.transaction_id || "");
   const reason = String(body.reason || "").trim().slice(0, 500);
   if (!transactionId) return json({ error: "transaction_id required" }, 400);
