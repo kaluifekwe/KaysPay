@@ -1,0 +1,25 @@
+# OSV-Scanner ignore list. Empty for now -- add an [[IgnoredVulns]] block only
+# after a specific finding has actually been triaged (confirmed unreachable /
+# build-tooling-only / no upstream fix yet), same discipline as the
+# image-size/uuid CVEs deliberately left unpatched after the 2026-08-20 Strix
+# scan (see memory: kayspay-pentest-strix). Never bulk-ignore to silence noise.
+#
+
+# Triaged 2026-08-20 (Strix scan kayspay_a687), re-confirmed 2026-09-12 by
+# OSV-Scanner locally. Both are transitive deps of Metro/xcode/@expo/ngrok --
+# build-tooling only, never shipped in the runtime app bundle. Forcing an
+# override would jump image-size 1.x->2.x and uuid 7.x->11.x (major version
+# jumps Metro/xcode's internals were never tested against). Revisit once
+# Expo ships a version that bumps these internally (checked via
+# `npm view expo@<version> dependencies`).
+[[IgnoredVulns]]
+id = "GHSA-5p2g-fcmc-qvqq"
+reason = "image-size, transitive Metro/xcode build-tooling dep only, not in the shipped app bundle. No compatible upstream fix yet."
+
+[[IgnoredVulns]]
+id = "GHSA-w3rx-r6r6-pgpr"
+reason = "image-size, transitive Metro/xcode build-tooling dep only, not in the shipped app bundle. No compatible upstream fix yet."
+
+[[IgnoredVulns]]
+id = "GHSA-w5hq-g745-h8pq"
+reason = "uuid, transitive Metro/@expo/ngrok build-tooling dep only, not in the shipped app bundle. No compatible upstream fix yet."

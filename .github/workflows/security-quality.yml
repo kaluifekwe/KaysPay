@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Gitleaks needs full history, not just the merge commit.
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -36,13 +38,10 @@ jobs:
       - name: Exercise local resilience harness
         run: npm run load:test -- --requests=3000 --concurrency=100
 
-      - name: Reject committed credentials
-        shell: bash
-        run: |
-          if git grep -nE '(BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|postgres(ql)?://[^[:space:]]+:[^[:space:]]+@|sk_(live|test)_[A-Za-z0-9]{16,})' -- ':!package-lock.json'; then
-            echo 'Potential committed credential detected.' >&2
-            exit 1
-          fi
+      - name: Scan for committed secrets (Gitleaks)
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Enforce read-only financial monitor
         shell: bash
@@ -53,3 +52,46 @@ jobs:
             echo 'Financial monitor must never invoke a money-movement function.' >&2
             exit 1
           fi
+
+      - name: Enforce admin functions check requireAdmin
+        shell: bash
+        run: |
+          missing=0
+          for f in supabase/functions/admin-*/index.ts; do
+            # admin-bootstrap is the one legitimate exception: it creates the
+            # FIRST super_admin, so requireAdmin (which needs an existing
+            # admin_users row) is a chicken-and-egg impossibility there. It
+            # gates on an explicitly allowlisted user ID instead
+            # (isBootstrapOperator) -- see that file's own comment.
+            [ "$f" = "supabase/functions/admin-bootstrap/index.ts" ] && continue
+            if ! grep -q 'requireAdmin(' "$f"; then
+              echo "Missing requireAdmin() call: $f" >&2
+              missing=1
+            fi
+          done
+          exit $missing
+
+  semgrep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Community security rules (blocking)
+        run: semgrep scan --config=p/security-audit --config=p/javascript --config=p/typescript --error
+      - name: KaysPay-specific rules (informational)
+        if: always()
+        run: semgrep scan --config=.semgrep/kayspay-rules.yml
+
+  osv-scan:
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.5.0"
+    with:
+      scan-args: |-
+        --recursive
+        --config=.osv-scanner.toml
+        ./

@@ -1,0 +1,35 @@
+rules:
+  - id: no-raw-error-object-logged
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >
+      Logging a raw caught error/exception object can leak provider responses,
+      tokens, or raw payloads into server logs. Wrap it with redactSecrets()
+      from supabase/functions/_shared/redact.ts, or log a fixed message instead
+      (see console.error("analytics-ingest failed") for the established pattern).
+    patterns:
+      - pattern-either:
+          - pattern: console.error($ERR)
+          - pattern: console.log($ERR)
+      - metavariable-regex:
+          metavariable: $ERR
+          regex: '^(error|err|e)$'
+    paths:
+      include:
+        - /supabase/functions/**
+
+  - id: sensitive-field-in-log
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >
+      Do not log NIN, BVN, or PIN values directly. These are regulated PII and
+      must never appear in server or client logs, and never be echoed back into
+      chat/output either.
+    patterns:
+      - pattern-either:
+          - pattern: console.log(...,$X.nin,...)
+          - pattern: console.log(...,$X.bvn,...)
+          - pattern: console.log(...,$X.pin_hash,...)
+          - pattern: console.error(...,$X.nin,...)
+          - pattern: console.error(...,$X.bvn,...)
+          - pattern: console.error(...,$X.pin_hash,...)
