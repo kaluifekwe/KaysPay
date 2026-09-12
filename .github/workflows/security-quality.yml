@@ -74,15 +74,30 @@ jobs:
   semgrep:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container:
-      image: semgrep/semgrep
+    permissions:
+      contents: read
+      security-events: write # needed to upload SARIF to the Security tab
     steps:
       - uses: actions/checkout@v4
+      # Installed via pip rather than the semgrep/semgrep container image so
+      # this job stays a normal runner -- github/codeql-action/upload-sarif
+      # below is a JS action and needs a Node runtime, which that image
+      # doesn't have.
+      - name: Install Semgrep
+        run: pip install semgrep
       - name: Community security rules (blocking)
         run: semgrep scan --config=p/security-audit --config=p/javascript --config=p/typescript --error
       - name: KaysPay-specific rules (informational)
         if: always()
         run: semgrep scan --config=.semgrep/kayspay-rules.yml
+      - name: Generate SARIF for the Security tab
+        if: always()
+        run: semgrep scan --config=p/security-audit --config=p/javascript --config=p/typescript --config=.semgrep/kayspay-rules.yml --sarif --output=semgrep.sarif
+      - name: Upload SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
 
   osv-scan:
     permissions:
