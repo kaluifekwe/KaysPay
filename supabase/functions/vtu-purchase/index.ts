@@ -604,10 +604,15 @@ serve(async (req: Request) => {
   // a fresh PIN entry for no real reason. Checking here first means a
   // retry of an already-resolved (or already in-flight) request costs
   // nothing: no token spent, no provider call repeated.
+  // Scoped to the caller: without this, an authenticated user who supplies
+  // someone else's idempotency key gets that user's stored result back --
+  // exam PINs, meter tokens -- straight out of `metadata`, no provider call
+  // or debit needed. Found by a Strix pentest scan, 2026-09-12.
   const { data: existingTx } = await supabase
     .from("transactions")
     .select("id, status, amount_ngn, metadata")
     .eq("metadata->>idempotency_key", requestId)
+    .eq("user_id", user.id)
     .maybeSingle();
 
   if (existingTx) {
@@ -836,6 +841,9 @@ serve(async (req: Request) => {
     }
     if (msg.includes("WALLET_NOT_FOUND")) {
       return json({ success: false, error: "Wallet not found" });
+    }
+    if (msg.includes("KYC_NOT_VERIFIED")) {
+      return json({ success: false, error: "Complete your identity verification to continue.", code: "KYC_REQUIRED" });
     }
     return json({ success: false, error: "Could not start transaction" }, 500);
   }

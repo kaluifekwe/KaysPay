@@ -33,10 +33,10 @@ function newIdempotencyKey() {
 
 /**
  * Re-fetches the CURRENT live price for a specific package straight from
- * the provider â€?the client only ever sends an opaque plan id, never a
+ * the provider ï¿½?the client only ever sends an opaque plan id, never a
  * price. This is the same "never trust client-supplied price" principle as
  * every other purchase in this app, just applied to a live-fetched catalog
- * instead of a static one (there's no static eSIM catalog â€?100+ countries
+ * instead of a static one (there's no static eSIM catalog ï¿½?100+ countries
  * with several plans each isn't practical to hardcode).
  */
 async function resolveCurrentPrice(
@@ -131,7 +131,7 @@ serve(async (req: Request) => {
   }
 
   // Require server-verified proof the PIN/biometric step-up just ran for
-  // THIS request â€?a valid JWT alone is not enough to move money.
+  // THIS request ï¿½?a valid JWT alone is not enough to move money.
   const authorized = await consumeAuthToken(supabase, user.id, body.auth_token);
   if (!authorized) {
     return json({
@@ -163,16 +163,21 @@ serve(async (req: Request) => {
   const amountKobo = usdToNgnKobo(current.priceUSD, fxRate);
   const requestId = String(body.idempotency_key || newIdempotencyKey());
 
-  // Idempotency short-circuit BEFORE any provider call â€?found by the
+  // Idempotency short-circuit BEFORE any provider call ï¿½?found by the
   // 2026-08-20 Strix pentest (vuln-0015): Airalo's order endpoint has no
   // provider-side idempotency of its own (a retried request creates a
   // genuinely new order), so without this, a replayed request with the
   // same idempotency_key debited the wallet once but ordered a SECOND real
   // eSIM. Same pattern vtu-purchase already uses.
+  // Also scoped to the caller: without this, another authenticated user
+  // supplying this key back gets the real ICCID/QR/install URL straight out
+  // of `metadata` -- someone else's eSIM. Found by a Strix pentest scan,
+  // 2026-09-12.
   const { data: existingTx } = await supabase
     .from("transactions")
     .select("id, status, amount_ngn, metadata")
     .eq("metadata->>idempotency_key", requestId)
+    .eq("user_id", user.id)
     .maybeSingle();
 
   if (existingTx) {
@@ -230,6 +235,9 @@ serve(async (req: Request) => {
     if (msg.includes("WALLET_NOT_FOUND")) {
       return json({ success: false, error: "Wallet not found" });
     }
+    if (msg.includes("KYC_NOT_VERIFIED")) {
+      return json({ success: false, error: "Complete your identity verification to continue.", code: "KYC_REQUIRED" });
+    }
     return json({ success: false, error: "Could not start transaction" }, 500);
   }
 
@@ -255,9 +263,9 @@ serve(async (req: Request) => {
       p_order_id: String(orderData?.id ?? ""),
     });
 
-    // Enrich the transaction metadata (service role, metadata only â€?no money
+    // Enrich the transaction metadata (service role, metadata only ï¿½?no money
     // columns touched). Two purposes: (a) persist the delivered eSIM so the
-    // customer can re-open its QR any time from Transaction History â€?the
+    // customer can re-open its QR any time from Transaction History ï¿½?the
     // order response is the ONLY place these appear; (b) record our REAL
     // Airalo cost (after the 20% reseller discount) for postpaid-invoice
     // reconciliation and true-margin reporting.
