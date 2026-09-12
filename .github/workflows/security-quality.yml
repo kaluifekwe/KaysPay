@@ -90,7 +90,14 @@ jobs:
       # show in this job's own log either way.
 
   osv-scan:
+    # Full permission set kept even though upload-sarif is now false --
+    # trimming this to just contents:read caused a startup_failure (the
+    # whole workflow failed to even schedule jobs, confirmed via a real
+    # run). The reusable workflow likely needs actions:read/security-events
+    # internally regardless of whether the upload step itself runs.
     permissions:
+      actions: read
+      security-events: write
       contents: read
     uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.5.0"
     with:
