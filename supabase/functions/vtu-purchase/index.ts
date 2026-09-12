@@ -1035,7 +1035,7 @@ serve(async (req: Request) => {
           p_reason: "Provider reported that this data plan does not exist",
         });
         if (disabled === true) {
-          await supabase.rpc("record_monitoring_alert", {
+          const { data: shouldEmail } = await supabase.rpc("record_monitoring_alert", {
             p_fingerprint: `vtunaija_plan_${plan.availability.planId.replace(/[^a-z0-9_-]/gi, "_").toLowerCase()}`,
             p_type: "vtu_plan_auto_disabled",
             p_severity: "warning",
@@ -1046,9 +1046,24 @@ serve(async (req: Request) => {
               plan_id: plan.availability.planId,
             },
           });
+          // This was already correctly detected and recorded, just never
+          // emailed -- record_monitoring_alert's own de-dup (6-hour cooldown
+          // per fingerprint) already exists to prevent spam, it just had no
+          // caller reading its shouldEmail result on this alert type. Found
+          // 2026-09-12 investigating why a real, repeated Airtel/VTUnaija
+          // failure was invisible until manually queried from the database.
+          if (shouldEmail && isResendConfigured()) {
+            await sendEmail(
+              ALERT_EMAIL,
+              `[WARNING] KaysPay: VTUnaija plan auto-disabled (${plan.availability.network})`,
+              `<p>A data plan was automatically disabled because the provider reported it no longer exists.</p>` +
+                `<p>Network: ${plan.availability.network}<br>Plan family: ${plan.availability.familyKey}<br>Plan id: ${plan.availability.planId}</p>` +
+                `<p>Customers can no longer buy this specific plan until it's manually reviewed.</p>`,
+            );
+          }
         }
       } else if (body.service === "data" && plan.availability) {
-        await supabase.rpc("record_monitoring_alert", {
+        const { data: shouldEmail } = await supabase.rpc("record_monitoring_alert", {
           p_fingerprint: `vtunaija_failure_${plan.availability.network}_${plan.availability.familyKey.replace(/[^a-z0-9_-]/gi, "_").toLowerCase()}`.slice(0, 100),
           p_type: "vtu_plan_provider_failure",
           p_severity: "warning",
@@ -1059,6 +1074,19 @@ serve(async (req: Request) => {
             failure_category: failureCategory,
           },
         });
+        // Same gap as above, on the alert that actually caught tonight's
+        // real Airtel "Insufficient balance" failures (fingerprint
+        // vtunaija_failure_airtel_corporate) -- correctly detected and
+        // recorded at 15:22 UTC, never emailed.
+        if (shouldEmail && isResendConfigured()) {
+          await sendEmail(
+            ALERT_EMAIL,
+            `[WARNING] KaysPay: ${plan.availability.network} data purchases failing (VTUnaija)`,
+            `<p>Customers buying ${plan.availability.network} data plans in the "${plan.availability.familyKey}" group are failing at the provider.</p>` +
+              `<p>Failure category: ${failureCategory}</p>` +
+              `<p>Each customer was automatically refunded. This will keep happening for other customers on this network/plan group until VTUnaija resolves it on their end (often a low balance on KaysPay's own VTUnaija account).</p>`,
+          );
+        }
       }
       return json({
         success: false,
