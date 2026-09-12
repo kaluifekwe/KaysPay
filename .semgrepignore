@@ -1,0 +1,14 @@
+# Excludes test files from the community-ruleset pass (both CI and the local
+# pre-push hook use this automatically -- Semgrep reads .semgrepignore the
+# same way git reads .gitignore). Generic security rules regularly false-
+# positive on test assertions that deliberately reference dangerous-looking
+# patterns to verify they're handled safely -- e.g.
+# supabase/functions/_shared/email-template.test.ts asserts that generated
+# HTML does NOT contain "<script>", which p/security-audit's XSS rule reads
+# as "message is used with a <script> tag" with no way to tell it's an
+# assertion, not a render. Confirmed via a real CI run (2026-09-12) blocking
+# on exactly this.
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx

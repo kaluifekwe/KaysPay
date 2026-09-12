@@ -74,15 +74,8 @@ jobs:
   semgrep:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: read
-      security-events: write # needed to upload SARIF to the Security tab
     steps:
       - uses: actions/checkout@v4
-      # Installed via pip rather than the semgrep/semgrep container image so
-      # this job stays a normal runner -- github/codeql-action/upload-sarif
-      # below is a JS action and needs a Node runtime, which that image
-      # doesn't have.
       - name: Install Semgrep
         run: pip install semgrep
       - name: Community security rules (blocking)
@@ -90,22 +83,18 @@ jobs:
       - name: KaysPay-specific rules (informational)
         if: always()
         run: semgrep scan --config=.semgrep/kayspay-rules.yml
-      - name: Generate SARIF for the Security tab
-        if: always()
-        run: semgrep scan --config=p/security-audit --config=p/javascript --config=p/typescript --config=.semgrep/kayspay-rules.yml --sarif --output=semgrep.sarif
-      - name: Upload SARIF to Code Scanning
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: semgrep.sarif
+      # No SARIF upload to the Security tab -- that needs GitHub Advanced
+      # Security, which isn't available on a private repo without a paid
+      # add-on. Confirmed via a real CI run (2026-09-12):
+      # "Code scanning is not enabled for this repository." Findings still
+      # show in this job's own log either way.
 
   osv-scan:
     permissions:
-      actions: read
-      security-events: write
       contents: read
     uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.5.0"
     with:
+      upload-sarif: false # see the semgrep job's comment -- Code Scanning needs GitHub Advanced Security, unavailable on a private repo
       scan-args: |-
         --recursive
         --config=.osv-scanner.toml

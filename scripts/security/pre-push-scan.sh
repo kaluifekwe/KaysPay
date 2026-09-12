@@ -67,7 +67,13 @@ for pair in "${LOCAL_SHAS[@]}"; do
     FAIL=1
   fi
 
-  SEMGREP_FILES=$(echo "$CHANGED_FILES" | grep -E '\.(ts|tsx|js|jsx)$' || true)
+  # .semgrepignore only applies to directory traversal, not files passed
+  # explicitly on the command line (same as git add -f bypassing
+  # .gitignore) -- so test files are excluded here too, same list as
+  # .semgrepignore. Generic security rules regularly false-positive on test
+  # assertions that deliberately reference dangerous-looking patterns to
+  # verify they're handled safely (confirmed via a real CI run, 2026-09-12).
+  SEMGREP_FILES=$(echo "$CHANGED_FILES" | grep -E '\.(ts|tsx|js|jsx)$' | grep -vE '\.(test|spec)\.(ts|tsx|js|jsx)$' || true)
   if [ -n "$SEMGREP_FILES" ]; then
     SRC_ARGS=$(echo "$SEMGREP_FILES" | sed 's|^|/src/|')
 
