@@ -18,7 +18,13 @@ const seen = new Map();
 const server = remoteTarget ? null : http.createServer((req, res) => {
   const idempotencyKey = req.headers['x-idempotency-key'];
   const sequence = Number(String(idempotencyKey).split('-').at(-1)) || 0;
-  const latency = sequence % 50 === 0 ? 350 : 5 + (sequence % 25);
+  // 600ms is deliberately far past any reasonable --timeout (default 250ms,
+  // 400ms in CI) so this slow-path request reliably times out on every run,
+  // on any machine -- 350ms sat too close to a 400ms cutoff and whether it
+  // actually tripped the timeout became a coin flip between runs (5/5 timed
+  // out locally, 0/1 on GitHub's runner, same code, same day). See the
+  // "Tune the resilience load test" commit for the full story.
+  const latency = sequence % 50 === 0 ? 600 : 5 + (sequence % 25);
   setTimeout(() => {
     if (sequence % 100 === 1) {
       res.writeHead(503, { 'content-type': 'application/json' });
