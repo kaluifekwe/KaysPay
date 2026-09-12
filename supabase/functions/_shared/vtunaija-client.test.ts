@@ -104,8 +104,8 @@ Deno.test("treats malformed or empty response as unknown, not success or failure
 
 Deno.test("uses nested transaction status for a successful query lookup", () => {
   const result = {
-    status: "success",
-    Status: "successful",
+    status: "true",
+    Status: "completed",
     message: "Transaction retrieved successfully.",
     data: {
       transaction_id: "209129180089",
@@ -125,8 +125,8 @@ Deno.test("uses nested transaction status for a successful query lookup", () => 
 
 Deno.test("does not mistake a successful lookup for a successful failed transaction", () => {
   const result = {
-    status: "success",
-    Status: "successful",
+    status: "true",
+    Status: "completed",
     message: "Transaction retrieved successfully.",
     data: {
       transaction_id: "209129180090",
@@ -149,7 +149,7 @@ Deno.test("treats query auth errors and malformed successful lookups as unknown"
     "query auth failure is not a customer transaction failure",
   );
   assertEquals(
-    normalizeVTUNaijaQueryResult({ Status: "successful", status: "success", data: {} }).outcome,
+    normalizeVTUNaijaQueryResult({ Status: "completed", status: "true", data: {} }).outcome,
     "unknown",
     "missing nested transaction status",
   );
