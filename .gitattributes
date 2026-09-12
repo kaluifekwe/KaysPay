@@ -1,0 +1,7 @@
+# core.autocrlf=true on Windows checkouts would otherwise convert these to
+# CRLF, which silently breaks shebang parsing (#!/bin/sh\r) and every line
+# inside the script -- confirmed the hard way getting the pre-push hook
+# working (git failed with "cannot spawn .husky/pre-push: No such file or
+# directory" until it had a real LF-terminated shebang line).
+.husky/* text eol=lf
+scripts/security/*.sh text eol=lf

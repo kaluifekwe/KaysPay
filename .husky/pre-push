@@ -1,1 +1,2 @@
+#!/bin/sh
 bash scripts/security/pre-push-scan.sh
