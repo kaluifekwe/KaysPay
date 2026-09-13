@@ -63,6 +63,17 @@ export default function UserLookupPage() {
   const [correctionBusy, setCorrectionBusy] = useState(false);
   const [correctionError, setCorrectionError] = useState<string | null>(null);
 
+  // Account deletion (see admin_delete_customer_account, migration 221) --
+  // anonymizes PII/KYC and disables login while leaving transaction history
+  // intact. Irreversible, so it needs a typed "DELETE" on top of the reason,
+  // unlike the other admin actions on this page.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleteConfirmBalance, setDeleteConfirmBalance] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const loadActivity = useCallback(async (userId: string, requestedFilters: ActivityFilters, before: string | null = null) => {
     setActivityLoading(true); setError(null);
     try {
@@ -91,6 +102,7 @@ export default function UserLookupPage() {
   const openDetail = async (userId: string) => {
     setError(null); setLoading(true); setActivities([]); setFilters(EMPTY_FILTERS); setAppliedFilters(EMPTY_FILTERS);
     setCorrectionOpen(false); setCorrectionAmount(''); setCorrectionReason(''); setCorrectionError(null);
+    setDeleteOpen(false); setDeleteReason(''); setDeleteConfirmBalance(false); setDeleteConfirmText(''); setDeleteError(null);
     try {
       const response = await callAdmin<{ user: UserDetail }>('admin-user-lookup', { query: { user_id: userId, source: 'user_lookup' } });
       setDetail(response.user); await loadActivity(userId, EMPTY_FILTERS);
@@ -126,6 +138,29 @@ export default function UserLookupPage() {
       setCorrectionError(correctionErr instanceof AdminApiError ? correctionErr.message : 'Could not complete the correction');
     } finally {
       setCorrectionBusy(false);
+    }
+  };
+
+  const submitDelete = async () => {
+    if (!detail) return;
+    setDeleteError(null);
+    if (deleteReason.trim().length < 5) { setDeleteError('A reason (at least 5 characters) is required'); return; }
+    if (deleteConfirmText.trim() !== 'DELETE') { setDeleteError('Type DELETE to confirm'); return; }
+    setDeleteBusy(true);
+    try {
+      await callAdmin('admin-refund', {
+        method: 'POST',
+        body: {
+          target: 'delete_account', user_id: detail.id,
+          reason: deleteReason.trim(), confirm_balance_handled: deleteConfirmBalance,
+        },
+      });
+      setDeleteOpen(false); setDeleteReason(''); setDeleteConfirmBalance(false); setDeleteConfirmText('');
+      await openDetail(detail.id); // refresh from the server so the deleted banner + wiped fields reflect reality
+    } catch (deleteErr) {
+      setDeleteError(deleteErr instanceof AdminApiError ? deleteErr.message : 'Could not delete this account');
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -180,6 +215,48 @@ export default function UserLookupPage() {
         {correctionError && <div className="error-text" style={{ marginTop: 8 }}>{correctionError}</div>}
       </div>}
       </div>
+
+      {!deletedAt && <div className="card" style={{ borderColor: 'var(--error)' }}>
+        <div className="row between" style={{ marginBottom: deleteOpen ? 10 : 0 }}>
+          <div>
+            <h4 style={{ margin: 0 }}>Delete account</h4>
+            <p className="muted" style={{ margin: '4px 0 0', fontSize: 12.5 }}>
+              Removes this customer's name, phone, PIN, biometric setting, KYC/BVN/NIN data, saved billing accounts,
+              push token and funding account, and disables their login. Transaction history is kept, dissociated
+              from their identity, for the regulatory retention period. This cannot be undone.
+            </p>
+          </div>
+          {!deleteOpen && <button className="danger" style={{ flexShrink: 0 }} onClick={() => setDeleteOpen(true)}>Delete account</button>}
+        </div>
+        {deleteOpen && <div>
+          {(detail.wallet_balance_kobo ?? 0) !== 0 || (detail.wallet_locked_kobo ?? 0) !== 0
+            ? <p className="error-text" style={{ marginTop: 0, fontSize: 12.5 }}>
+                This wallet still holds {formatNaira(detail.wallet_balance_kobo)}
+                {(detail.wallet_locked_kobo ?? 0) !== 0 && ` (plus ${formatNaira(detail.wallet_locked_kobo)} locked)`}.
+                Handle it first, then check the box below to confirm before deleting.
+              </p>
+            : null}
+          <div className="field">
+            <label>Reason (required)</label>
+            <input value={deleteReason} onChange={(e) => setDeleteReason(e.target.value)} disabled={deleteBusy} placeholder="e.g. Customer emailed requesting account deletion on 11 Sept 2026" autoFocus />
+          </div>
+          <label className="row" style={{ gap: 8, alignItems: 'center', fontSize: 12.5, marginBottom: 10 }}>
+            <input type="checkbox" checked={deleteConfirmBalance} onChange={(e) => setDeleteConfirmBalance(e.target.checked)} disabled={deleteBusy} style={{ width: 'auto' }} />
+            Any wallet balance has already been withdrawn or otherwise handled outside this deletion
+          </label>
+          <div className="field">
+            <label>Type DELETE to confirm</label>
+            <input value={deleteConfirmText} onChange={(e) => setDeleteConfirmText(e.target.value)} disabled={deleteBusy} style={{ maxWidth: 160 }} />
+          </div>
+          {deleteError && <div className="error-text" style={{ marginBottom: 8 }}>{deleteError}</div>}
+          <div className="row" style={{ gap: 8 }}>
+            <button className="danger" disabled={deleteBusy} onClick={() => void submitDelete()}>
+              {deleteBusy ? 'Deleting…' : 'Confirm deletion'}
+            </button>
+            <button className="secondary" disabled={deleteBusy} onClick={() => { setDeleteOpen(false); setDeleteError(null); }}>Cancel</button>
+          </div>
+        </div>}
+      </div>}
 
       <div className="activity-heading"><h2>Activity Timeline</h2><p className="muted">Server-recorded customer, financial, security, service, and admin events.</p></div>
       <div className="activity-filters">
