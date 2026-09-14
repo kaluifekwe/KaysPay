@@ -227,6 +227,22 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
     if (cleaned.length <= 15) setPhone(cleaned);
   };
 
+  // The "Continue" button disables itself while Step 1 is invalid, so
+  // handleNext's own failure-tracking branch below can never actually fire --
+  // a disabled TouchableOpacity never calls onPress. Without this, a real
+  // rejection (e.g. a valid-looking phone number that doesn't match any
+  // prefix in NETWORK_MAP) was indistinguishable from someone just changing
+  // their mind and leaving. Fires once per blur on a field the user actually
+  // typed into and left invalid, not on every keystroke.
+  const trackFieldInvalid = (field: 'full_name' | 'email' | 'phone', value: string, error: string) => {
+    if (value.trim() && error) {
+      void analytics.track('registration_validation_failed', {
+        outcome: 'failed',
+        failureCode: field === 'full_name' ? 'name_invalid' : field === 'email' ? 'email_invalid' : 'phone_invalid',
+      });
+    }
+  };
+
   const handleNext = () => {
     if (!isStep1Valid) {
       void analytics.track('registration_validation_failed', { outcome: 'failed', failureCode: 'personal_details_invalid' });
@@ -489,7 +505,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                     value={fullName}
                     onChangeText={setFullName}
                     onFocus={() => setFocusedField('fullName')}
-                    onBlur={() => setFocusedField(null)}
+                    onBlur={() => { setFocusedField(null); trackFieldInvalid('full_name', fullName, fullNameError); }}
                     autoCapitalize="words"
                     autoCorrect={false}
                   />
@@ -510,7 +526,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                     value={email}
                     onChangeText={setEmail}
                     onFocus={() => setFocusedField('email')}
-                    onBlur={() => setFocusedField(null)}
+                    onBlur={() => { setFocusedField(null); trackFieldInvalid('email', email, emailError); }}
                     keyboardType="email-address"
                     autoCapitalize="none"
                     autoCorrect={false}
@@ -536,7 +552,7 @@ export default function RegistrationScreen({ navigation }: RegistrationScreenPro
                       setFocusedField('phone');
                       scrollRef.current?.scrollToEnd({ animated: true });
                     }}
-                    onBlur={() => setFocusedField(null)}
+                    onBlur={() => { setFocusedField(null); trackFieldInvalid('phone', phone, phoneError); }}
                     keyboardType="numeric"
                     maxLength={15}
                   />
