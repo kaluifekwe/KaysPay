@@ -44,7 +44,10 @@ async function fetchFreshToken(): Promise<{ token: string; expiresInSeconds: num
   }
   return {
     token: data.accessToken as string,
-    expiresInSeconds: typeof data.expiresIn === "number" && data.expiresIn > 0 ? data.expiresIn : 300,
+    // Confirmed live against the sandbox (2026-09-15): 9PSB returns
+    // expiresIn as a numeric STRING (e.g. "7200"), not a number -- a plain
+    // `typeof === "number"` check silently fell back to 300s always.
+    expiresInSeconds: Number.isFinite(Number(data.expiresIn)) && Number(data.expiresIn) > 0 ? Number(data.expiresIn) : 300,
   };
 }
 
