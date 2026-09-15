@@ -51,7 +51,11 @@ for pair in "${LOCAL_SHAS[@]}"; do
     base_sha="$remote_sha"
   fi
 
-  CHANGED_FILES="$(git diff --name-only "$base_sha" "$local_sha" -- . ':!*.lock' ':!package-lock.json' || true)"
+  # --diff-filter=d excludes deleted files -- Semgrep (below) scans real
+  # files on disk, and a path that was deleted in this push doesn't exist to
+  # scan. Gitleaks and the package.json check below are unaffected either
+  # way (Gitleaks scans the commit range directly, not this file list).
+  CHANGED_FILES="$(git diff --name-only --diff-filter=d "$base_sha" "$local_sha" -- . ':!*.lock' ':!package-lock.json' || true)"
   if [ -z "$CHANGED_FILES" ]; then
     continue
   fi
