@@ -1,12 +1,15 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCors } from "../_shared/cors.ts";
-import { getAuthUser, adminClient, enforceRateLimit } from "../_shared/auth.ts";
+import { getAuthUser, adminClient, enforceRateLimit, isServiceEnabled } from "../_shared/auth.ts";
 import { createCustomer, createStaticVirtualAccount, isFlutterwaveConfigured } from "../_shared/flutterwave-client.ts";
 import { createPaystackDedicatedAccount, getOrCreatePaystackCustomer, isPaystackConfigured } from "../_shared/paystack-client.ts";
+import { is9PsbConfigured, identityVerifyOtp, openWallet } from "../_shared/9psb-client.ts";
+import { normalizeForNinePsb, IdentityNormalizeError } from "../_shared/9psb-identity-normalize.ts";
+import { startNinePsbProvisioning } from "../_shared/9psb-provisioning.ts";
 import { redactSecrets } from "../_shared/redact.ts";
 
 // Flutterwave's top-level error.message is a generic "Request is not valid"
-// â€?the actually useful reason is in error.validation_errors. Surface both
+// â€”the actually useful reason is in error.validation_errors. Surface both
 // so callers (and our own logs) see what actually failed.
 function flwErrorMessage(data: any, fallback: string): string {
   const details = data?.error?.validation_errors
@@ -57,10 +60,30 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
   } catch {
     // no body is fine; identity data is always loaded from the server record
   }
-  const provider = body.provider === "paystack" ? "paystack" : body.provider === "flutterwave" ? "flutterwave" : null;
+  const provider = body.provider === "paystack" ? "paystack" : body.provider === "flutterwave" ? "flutterwave" : body.provider === "9psb" ? "9psb" : null;
   if (!provider) return json({ success: false, error: "Please choose a valid provider" }, 400);
 
-  // Config gate is per-provider â€?a Paystack outage or missing secret must
+  const supabase = adminClient();
+
+  // 9PSB is folded in here rather than getting its own function (Supabase's
+  // 100-function project cap was already hit with zero room to spare) â€” but
+  // its flow is a completely different shape (mandatory two-round-trip
+  // identity/OTP verification vs. the other two's atomic create-then-done),
+  // so it dispatches to its own handler immediately, before any of the
+  // Flutterwave/Paystack-specific code below ever runs. Gated behind the
+  // closed-testing-only kill switch â€” a Flutterwave/Paystack request is
+  // completely unaffected by 9psb_waas being disabled.
+  if (provider === "9psb") {
+    if (!(await isServiceEnabled(supabase, "9psb_waas"))) {
+      return json({ success: false, error: "9PSB wallet setup isn't available right now." }, 503);
+    }
+    if (!is9PsbConfigured()) {
+      return json({ success: false, error: "9PSB wallet setup isn't configured." }, 503);
+    }
+    return await handle9PsbRequest(req, user, supabase, body);
+  }
+
+  // Config gate is per-provider â€”a Paystack outage or missing secret must
   // never block Flutterwave (the existing, working path), and vice versa.
   if (provider === "flutterwave" && !isFlutterwaveConfigured()) {
     return json({ error: "Bank transfer funding not configured" }, 500);
@@ -68,8 +91,6 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
   if (provider === "paystack" && !isPaystackConfigured()) {
     return json({ success: false, error: "Paystack funding isn't available right now. Please use Flutterwave for now." }, 503);
   }
-
-  const supabase = adminClient();
 
   // Never trust an identifier supplied by the app. Funding eligibility and
   // the BVN/NIN sent to a provider must come from the verified server record.
@@ -88,7 +109,7 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
   }
 
   // 1. Already provisioned FOR THIS PROVIDER? Return it (idempotent). A user
-  // may hold one account per provider â€?requesting Paystack after already
+  // may hold one account per provider â€”requesting Paystack after already
   // having a Flutterwave account provisions a fresh Paystack row, not the
   // existing flutterwave one.
   const { data: existing } = await supabase
@@ -102,13 +123,13 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
     return json({ success: true, account: existing });
   }
 
-  // A stable, alphanumeric-only reference derived from the user id â€?safe
+  // A stable, alphanumeric-only reference derived from the user id â€”safe
   // for both providers, and doubles as an idempotency key.
   const refBase = `kp${user.id.replace(/-/g, "")}`;
 
   // Derive a clean display name for both providers. Flutterwave requires
   // name.first/name.last to each be 2-50 chars of only letters/spaces/
-  // commas/periods/apostrophes/hyphens â€?sanitize and fall back
+  // commas/periods/apostrophes/hyphens â€”sanitize and fall back
   // defensively, since user_metadata.full_name can be missing,
   // whitespace-only, or contain characters it rejects (e.g. digits).
   const meta = (user.user_metadata || {}) as Record<string, string>;
@@ -133,7 +154,7 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
 
   const custRes = await createCustomer(supabase, { firstName, lastName, email: user.email }, refBase);
   if (custRes.status >= 400 || custRes.data?.status !== "success") {
-    // Log only a safe summary â€?never the raw response body, which can echo
+    // Log only a safe summary â€”never the raw response body, which can echo
     // back submitted PII (see the bvnOrNin case below) on validation failures.
     console.error("Flutterwave create-customer failed:", redactSecrets(JSON.stringify({ status: custRes.status, message: custRes.data?.message })));
     return json(
@@ -147,7 +168,7 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
   const vaRes = await createStaticVirtualAccount(supabase, {
     customerId,
     reference: refBase,
-    // Combines brand + real KYC'd name â€?the bank's own name-enquiry may
+    // Combines brand + real KYC'd name â€”the bank's own name-enquiry may
     // still only surface the verified customer name regardless of this
     // (untested), but this is the best-effort branding option that doesn't
     // risk breaking the fraud-prevention purpose of name-enquiry. Avoiding
@@ -157,11 +178,11 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
     bvnOrNin: verifiedIdentifier,
   }, `${refBase}va`);
   if (vaRes.status >= 400 || vaRes.data?.status !== "success") {
-    // Log only which fields failed, never the validation message text â€?this
+    // Log only which fields failed, never the validation message text â€”this
     // request includes bvnOrNin, and KYC validation errors can echo the
     // submitted value back in the message.
     const failedFields = vaRes.data?.error?.validation_errors?.map((v: any) => v.field_name);
-    // Deliberately DO NOT log vaRes.data.message â€?this request carries BVN/NIN
+    // Deliberately DO NOT log vaRes.data.message â€”this request carries BVN/NIN
     // and KYC validation messages can echo the submitted value back. Fields only.
     console.error("Flutterwave create-virtual-account failed:", JSON.stringify({ status: vaRes.status, failedFields }));
     return json(
@@ -179,7 +200,7 @@ async function handleRequest(req: Request, user: NonNullable<Awaited<ReturnType<
 
   // 4. Persist the mapping (service role). customer_code/dva_id are reused
   // generically for Flutterwave's customer id ("cus_...") and account id
-  // ("van_...") â€?see migration 023.
+  // ("van_...") â€”see migration 023.
   const { error: mappingError } = await supabase.from("virtual_accounts").upsert({
     user_id: user.id,
     provider,
@@ -267,4 +288,127 @@ async function createPaystackAccount(
   if (persistError) throw persistError;
 
   return json({ success: true, account });
+}
+
+// 9PSB WAAS wallet provisioning â€” a mandatory two-round-trip flow (identity/
+// initiate -> OTP -> open_wallet), unlike Flutterwave/Paystack's atomic
+// create-customer-then-create-account above. Call 1 (no transaction_ref/otp
+// in the body) starts it; Call 2 (transaction_ref + otp) finishes it.
+// Closed-testing only per the approved plan's Deployment constraints â€”
+// reachable only while the 9psb_waas service_controls row is enabled.
+async function handle9PsbRequest(
+  req: Request,
+  user: NonNullable<Awaited<ReturnType<typeof getAuthUser>>>,
+  supabase: ReturnType<typeof adminClient>,
+  body: Record<string, unknown>,
+) {
+  const submittedRef = typeof body.transaction_ref === "string" ? body.transaction_ref : undefined;
+  const submittedOtp = typeof body.otp === "string" ? body.otp : undefined;
+
+  const { data: kyc, error: kycError } = await supabase
+    .from("user_kyc")
+    .select("status, nin, bvn, verified_record")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (kycError) throw kycError;
+  if (kyc?.status !== "verified") {
+    return json({ success: false, error: "Complete identity verification before setting up your 9PSB wallet." }, 403);
+  }
+  const verifiedIdentifier = String(kyc.nin || kyc.bvn || "").trim();
+  if (!/^\d{11}$/.test(verifiedIdentifier)) {
+    return json({ success: false, error: "Your verified identity record is incomplete. Please contact support." }, 409);
+  }
+  const usingNin = !!kyc.nin;
+
+  // Call 2: finishing an in-progress setup.
+  if (submittedRef && submittedOtp) {
+    const { data: existing } = await supabase
+      .from("virtual_accounts")
+      .select("status, customer_code")
+      .eq("user_id", user.id)
+      .eq("provider", "9psb")
+      .maybeSingle();
+    if (!existing || existing.status !== "pending_identity" || existing.customer_code !== submittedRef) {
+      return json({ success: false, error: "This verification session has expired. Please start again." }, 409);
+    }
+
+    const otpRes = await identityVerifyOtp(supabase, { transactionRef: submittedRef, otp: submittedOtp });
+    if (otpRes.status >= 400 || otpRes.data?.status !== "SUCCESS") {
+      console.error("9PSB identity/verify-otp failed:", JSON.stringify({ status: otpRes.status, responseCode: otpRes.data?.responseCode }));
+      return json({ success: false, error: otpRes.data?.message || "That code didn't work. Please try again." }, 400);
+    }
+
+    let fields;
+    try {
+      fields = normalizeForNinePsb(
+        (kyc.verified_record || {}) as Record<string, unknown>,
+        user.phone || undefined,
+        user.email || undefined,
+      );
+    } catch (e) {
+      if (e instanceof IdentityNormalizeError) {
+        return json({ success: false, error: e.message }, 409);
+      }
+      throw e;
+    }
+
+    const openRes = await openWallet(supabase, {
+      transactionTrackingRef: submittedRef,
+      lastName: fields.lastName,
+      otherNames: fields.otherNames,
+      phoneNo: fields.phoneNo,
+      gender: fields.gender,
+      dateOfBirth: fields.dateOfBirth,
+      address: fields.address,
+      bvn: usingNin ? undefined : verifiedIdentifier,
+      nationalIdentityNo: usingNin ? verifiedIdentifier : undefined,
+      email: fields.email,
+    });
+    if (openRes.status >= 400 || openRes.data?.status !== "SUCCESS") {
+      console.error("9PSB open_wallet failed:", JSON.stringify({ status: openRes.status, responseCode: openRes.data?.responseCode }));
+      return json({ success: false, error: openRes.data?.message || "Could not open your 9PSB wallet" }, 400);
+    }
+
+    const acct = openRes.data.data;
+    const account = {
+      account_number: String(acct.accountNumber),
+      bank_name: "9 Payment Service Bank",
+      account_name: String(acct.fullName || fields.otherNames + " " + fields.lastName),
+    };
+
+    const { error: updateError } = await supabase.from("virtual_accounts").update({
+      status: "active",
+      account_number: account.account_number,
+      bank_name: account.bank_name,
+      account_name: account.account_name,
+      dva_id: String(acct.orderRef ?? ""),
+      customer_id: String(acct.customerID ?? ""),
+    }).eq("user_id", user.id).eq("provider", "9psb");
+    if (updateError) {
+      console.error("9psb virtual-account activation failed:", redactSecrets(updateError));
+      return json({
+        success: false,
+        error: "Your wallet was created but could not be linked safely. Please contact support before funding it.",
+      }, 503);
+    }
+
+    return json({ success: true, account });
+  }
+
+  // Call 1: start (or resume) a fresh setup. Same shared helper
+  // kyc-verify-nin uses to kick this off automatically on KYC completion.
+  const result = await startNinePsbProvisioning(supabase, {
+    userId: user.id,
+    verifiedIdentifier,
+    usingNin,
+    phone: user.phone || undefined,
+  });
+  if (result.outcome === "already_active") {
+    return json({ success: true, account: result.account });
+  }
+  if (result.outcome === "error") {
+    console.error("9PSB provisioning start failed:", redactSecrets(result.message));
+    return json({ success: false, error: "Could not start 9PSB wallet setup" }, 400);
+  }
+  return json({ success: true, requires_otp: true, transaction_ref: result.transactionRef });
 }

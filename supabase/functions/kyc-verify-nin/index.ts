@@ -11,6 +11,9 @@ import {
   verifyBvn as verifyBvnNinBvn,
   isNinBvnConfigured,
 } from "../_shared/ninbvn-client.ts";
+import { isServiceEnabled } from "../_shared/auth.ts";
+import { is9PsbConfigured } from "../_shared/9psb-client.ts";
+import { startNinePsbProvisioning } from "../_shared/9psb-provisioning.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -247,6 +250,29 @@ serve(async (req: Request) => {
     // Verification itself remains valid; reconciliation/support can safely
     // retry the idempotent release without risking a double credit.
     console.error("Could not release verified funding holds:", releaseError.code || "UNKNOWN");
+  }
+
+  // Best-effort, non-blocking: kick off 9PSB WAAS wallet provisioning's
+  // Call 1 automatically the moment KYC completes, so the customer doesn't
+  // need to separately visit "Fund Wallet" later to discover a 9PSB option
+  // exists. Verification itself must never fail because of this — gated
+  // behind the closed-testing-only kill switch, and any failure here is
+  // just logged; startNinePsbProvisioning is safely re-callable later
+  // (by 9psb-create-wallet itself, or a future retry) since it self-heals
+  // from whatever partial state it finds.
+  if (await isServiceEnabled(supabase, "9psb_waas").catch(() => false)) {
+    if (is9PsbConfigured()) {
+      try {
+        await startNinePsbProvisioning(supabase, {
+          userId: user.id,
+          verifiedIdentifier: String(idType === "nin" ? nin : bvn),
+          usingNin: idType === "nin",
+          phone: user.phone || undefined,
+        });
+      } catch (e) {
+        console.error("9PSB auto-provisioning on KYC completion failed:", e instanceof Error ? e.message : "UNKNOWN");
+      }
+    }
   }
 
   return json({ success: true, verified_name: verifiedName || undefined });

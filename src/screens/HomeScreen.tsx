@@ -12,6 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect } from '@react-navigation/native';
 import DataPromoBanner from '../components/DataPromoBanner';
 import { Typography } from '../constants/typography';
@@ -156,6 +157,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   // for instant updates; null means "no push yet, defer to the cache".
   const [realtimeBalance, setRealtimeBalance] = useState<number | null>(null);
   const [balanceVisible, setBalanceVisible] = useState(true);
+  const [ninePsbAccountCopied, setNinePsbAccountCopied] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [userName, setUserName] = useState('User');
   // Time-based greeting (from the phone's clock); recomputes whenever Home
@@ -234,6 +236,23 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   }, []);
   const { data: walletData, refresh: refreshWallet } = useCachedData('home_wallet', fetchWalletOrThrow);
 
+  // Permanently-visible 9PSB account number (closed testing only — see the
+  // approved 9PSB WAAS plan's §9/§11). null/undefined for both fields while
+  // nothing is provisioned yet renders exactly today's layout, no
+  // special-casing needed. The two are mutually exclusive server-side (a
+  // row is either active or pending_identity, never both).
+  const fetchNinePsbAccountOrThrow = useCallback(async () => {
+    const result = await walletService.getNinePsbAccount();
+    if (!result.success) throw new Error(result.error || 'Could not load account');
+    return { account: result.account ?? null, pendingTransactionRef: result.pendingTransactionRef ?? null };
+  }, []);
+  const { data: ninePsbData, refresh: refreshNinePsbAccount } = useCachedData(
+    'home_9psb_account',
+    fetchNinePsbAccountOrThrow,
+  );
+  const ninePsbAccount = ninePsbData?.account ?? null;
+  const ninePsbPendingRef = ninePsbData?.pendingTransactionRef ?? null;
+
   const fetchTransactionsOrThrow = useCallback(async () => {
     const result = await walletService.getRecentTransactions(5);
     if (!result.success) throw new Error(result.error || 'Could not load transactions');
@@ -249,8 +268,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const recentTransactions = recentTransactionsData ?? [];
 
   const loadData = useCallback(async () => {
-    await Promise.all([refreshWallet(), refreshTransactions()]);
-  }, [refreshWallet, refreshTransactions]);
+    await Promise.all([refreshWallet(), refreshTransactions(), refreshNinePsbAccount()]);
+  }, [refreshWallet, refreshTransactions, refreshNinePsbAccount]);
 
   useEffect(() => {
     loadBalanceVisibility();
@@ -330,6 +349,17 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     const newValue = !balanceVisible;
     setBalanceVisible(newValue);
     await storageHelpers.setBoolean(StorageKeys.BALANCE_VISIBLE, newValue);
+  };
+
+  const handleCopyNinePsbAccountNumber = async () => {
+    if (!ninePsbAccount?.account_number) return;
+    try {
+      await Clipboard.setStringAsync(ninePsbAccount.account_number);
+      setNinePsbAccountCopied(true);
+      setTimeout(() => setNinePsbAccountCopied(false), 2000);
+    } catch {
+      Alert.alert('Copy account number', 'Could not copy the account number. Please try again.');
+    }
   };
 
   const getServiceIcon = (type: string) => {
@@ -420,6 +450,44 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               <Text style={styles.eyeIcon}>{balanceVisible ? '👁️' : '👁️‍🗨️'}</Text>
             </TouchableOpacity>
           </View>
+          {ninePsbAccount && (
+            <TouchableOpacity
+              style={styles.ninePsbAccountRow}
+              onPress={handleCopyNinePsbAccountNumber}
+              activeOpacity={0.75}
+              accessibilityRole="button"
+              accessibilityLabel="Copy your account number"
+            >
+              <Ionicons name="business-outline" size={18} color="rgba(255,255,255,0.85)" />
+              <View style={styles.ninePsbAccountTextGroup}>
+                <Text style={styles.ninePsbAccountNumber} selectable>
+                  {ninePsbAccount.account_number}
+                </Text>
+                <Text style={styles.ninePsbAccountCaption}>
+                  9PSB · {userName} · transfer anytime
+                </Text>
+              </View>
+              <Ionicons
+                name={ninePsbAccountCopied ? 'checkmark' : 'copy-outline'}
+                size={16}
+                color="rgba(255,255,255,0.85)"
+              />
+            </TouchableOpacity>
+          )}
+          {!ninePsbAccount && ninePsbPendingRef && (
+            <TouchableOpacity
+              style={styles.ninePsbAccountRow}
+              onPress={() => navigation.navigate('NinePsbActivate', { transactionRef: ninePsbPendingRef })}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="key-outline" size={18} color="rgba(255,255,255,0.85)" />
+              <View style={styles.ninePsbAccountTextGroup}>
+                <Text style={styles.ninePsbAccountNumber}>Activate your account number</Text>
+                <Text style={styles.ninePsbAccountCaption}>Enter the code sent to your phone</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.85)" />
+            </TouchableOpacity>
+          )}
           <View style={styles.walletButtons}>
             <TouchableOpacity style={styles.walletButton} onPress={() => navigation.navigate('FundIntent')}>
               <Text style={styles.walletButtonText}>{Strings.HOME_FUND_WALLET}</Text>
@@ -661,6 +729,31 @@ function createStyles(theme: AppTheme) {
   },
   eyeIcon: {
     fontSize: 20,
+  },
+  ninePsbAccountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+    gap: 10,
+  },
+  ninePsbAccountTextGroup: {
+    flex: 1,
+  },
+  ninePsbAccountNumber: {
+    fontFamily: 'Helvetica-Bold',
+    fontSize: 14,
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  ninePsbAccountCaption: {
+    ...Typography.CAPTION,
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.65)',
+    marginTop: 2,
   },
   walletButtons: {
     flexDirection: 'row',

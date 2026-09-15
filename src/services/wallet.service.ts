@@ -23,6 +23,20 @@ export interface TransactionSummaryResult {
   error?: string;
 }
 
+export interface NinePsbAccount {
+  account_number: string;
+  bank_name: string;
+  account_name: string;
+}
+
+export interface NinePsbAccountResult {
+  success: boolean;
+  account?: NinePsbAccount | null;
+  /** Set when setup was started (KYC-completion hook or the admin backfill) but the OTP step hasn't been completed yet. */
+  pendingTransactionRef?: string | null;
+  error?: string;
+}
+
 /**
  * The wallet is server-authoritative. The client may only READ its balance
  * and history and subscribe to realtime changes. Every credit/debit happens
@@ -77,6 +91,43 @@ export const walletService = {
         cashback_balance: koboToNaira(data.cashback_balance_kobo ?? 0),
       };
       return { success: true, wallet };
+    } catch (error: any) {
+      return { success: false, error: safeErrorMessage(error) };
+    }
+  },
+
+  /**
+   * The customer's permanently-visible 9PSB account number, if one has been
+   * provisioned (see supabase.migrations 228-232 and the 9PSB WAAS plan).
+   * Returns success:true with account:null when nothing is active yet —
+   * KYC not done, or provisioning/OTP not completed — so the caller can
+   * fall back to today's layout with no special-casing of an error state.
+   * RLS ("Users can view own virtual account") already scopes this to the
+   * signed-in user's own row, same guarantee getWallet() relies on.
+   */
+  async getNinePsbAccount(): Promise<NinePsbAccountResult> {
+    try {
+      const { data: { session } } = await withTimeout(supabase.auth.getSession());
+      const user = session?.user;
+      if (!user) return { success: false, error: 'Not authenticated' };
+
+      const { data, error } = await withTimeout(
+        (async () => supabase
+          .from('virtual_accounts')
+          .select('status, account_number, bank_name, account_name, customer_code')
+          .eq('user_id', user.id)
+          .eq('provider', '9psb')
+          .maybeSingle())(),
+      );
+      if (error) throw error;
+
+      if (data?.status === 'active' && data.account_number) {
+        return { success: true, account: data };
+      }
+      if (data?.status === 'pending_identity' && data.customer_code) {
+        return { success: true, account: null, pendingTransactionRef: data.customer_code };
+      }
+      return { success: true, account: null };
     } catch (error: any) {
       return { success: false, error: safeErrorMessage(error) };
     }

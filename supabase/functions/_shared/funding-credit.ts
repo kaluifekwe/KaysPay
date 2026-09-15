@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-export type FundingProvider = "paystack" | "flutterwave";
+export type FundingProvider = "paystack" | "flutterwave" | "9psb";
 export type FundingSource = "webhook" | "reconcile";
 
 export interface FundingCandidate {
@@ -71,19 +71,27 @@ async function ensureEvent(db: SupabaseClient, candidate: FundingCandidate) {
   // a payload mismatch the first time the sweep re-examined it. Amount and
   // currency stay strictly compared, and a genuine conflict — two different
   // accounts claiming one reference — is still rejected.
-  const identifierMatches = candidate.provider === "paystack"
-    ? (
+  // 9PSB has no separate DVA-id concept — account_number IS the sole
+  // identifier (already uniquely indexed across all providers, migration
+  // 090), so its match check is account-number-only, unlike Paystack/
+  // Flutterwave's account-or-customer-code pairs.
+  let identifierMatches: boolean;
+  if (candidate.provider === "paystack") {
+    identifierMatches =
       (!candidate.accountNumber || !existing.receiving_account ||
         String(existing.receiving_account) === String(candidate.accountNumber)) &&
       (!candidate.customerCode || !existing.provider_customer_code ||
-        String(existing.provider_customer_code) === String(candidate.customerCode))
-    )
-    : (
+        String(existing.provider_customer_code) === String(candidate.customerCode));
+  } else if (candidate.provider === "9psb") {
+    identifierMatches = !candidate.accountNumber || !existing.receiving_account ||
+      String(existing.receiving_account) === String(candidate.accountNumber);
+  } else {
+    identifierMatches =
       (!candidate.virtualAccountId || !existing.provider_virtual_account_id ||
         String(existing.provider_virtual_account_id) === String(candidate.virtualAccountId)) &&
       (!candidate.customerCode || !existing.provider_customer_code ||
-        String(existing.provider_customer_code) === String(candidate.customerCode))
-    );
+        String(existing.provider_customer_code) === String(candidate.customerCode));
+  }
   if (
     Number(existing.amount_kobo) !== candidate.amountKobo ||
     String(existing.currency) !== candidate.currency ||
@@ -130,6 +138,18 @@ async function resolveUserId(db: SupabaseClient, candidate: FundingCandidate): P
       .select("user_id")
       .eq("provider", "paystack")
       .eq("customer_code", candidate.customerCode)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.user_id || null;
+  }
+
+  if (candidate.provider === "9psb") {
+    if (!candidate.accountNumber) return null;
+    const { data, error } = await db
+      .from("virtual_accounts")
+      .select("user_id")
+      .eq("provider", "9psb")
+      .eq("account_number", candidate.accountNumber)
       .maybeSingle();
     if (error) throw error;
     return data?.user_id || null;

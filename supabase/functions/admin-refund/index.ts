@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { adminClient, readJsonBody, RequestBodyError } from "../_shared/auth.ts";
+import { adminClient, readJsonBody, RequestBodyError, isServiceEnabled } from "../_shared/auth.ts";
 import { AdminAuthError, requireAdmin } from "../_shared/admin-auth.ts";
 import {
   confirmServiceRefund,
@@ -11,6 +11,8 @@ import {
   normalizeVTUNaijaQueryResult,
   queryVTUNaijaTransaction,
 } from "../_shared/vtunaija-client.ts";
+import { is9PsbConfigured, otherBanksEnquiry, walletOtherBanks, walletRequery } from "../_shared/9psb-client.ts";
+import { startNinePsbProvisioning } from "../_shared/9psb-provisioning.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -108,6 +110,131 @@ serve(async (req) => {
   } catch (error) {
     const e = error instanceof RequestBodyError ? error : new RequestBodyError(400, "Invalid request body");
     return json({ error: e.message }, e.status);
+  }
+
+  // Third, unrelated action folded into this function to stay under
+  // Supabase's 100-function project cap (same reason wallet_correction and
+  // delete_account below are here too) -- an admin/closed-testing-only way
+  // to prove 9PSB's wallet_other_banks transfer-out API works end to end,
+  // using 9PSB's own sandbox wallets directly. Never touches KaysPay's
+  // wallets table or debit_for_transfer RPC -- real customer transfers keep
+  // working through transfer-send.ts's Flutterwave->Paystack chain,
+  // completely untouched. See the approved 9PSB WAAS plan's Deployment
+  // constraints (preview channel + closed testing track only) and §5.
+  if (body.target === "9psb_transfer_test") {
+    const db = adminClient();
+    if (!(await isServiceEnabled(db, "9psb_waas"))) {
+      return json({ error: "9PSB integration isn't enabled." }, 503);
+    }
+    if (!is9PsbConfigured()) {
+      return json({ error: "9PSB isn't configured." }, 503);
+    }
+
+    const senderAccountNumber = String(body.sender_account_number || "");
+    const senderName = String(body.sender_name || "");
+    const bank = String(body.bank_code || "");
+    const recipientNumber = String(body.recipient_account_number || "");
+    const recipientName = String(body.recipient_name || "");
+    const amountNaira = String(body.amount_naira || "");
+    if (!senderAccountNumber || !senderName || !bank || !recipientNumber || !recipientName || !amountNaira) {
+      return json({ error: "Missing required test-transfer fields" }, 400);
+    }
+
+    // Same name-resolution safety net already used for the Paystack
+    // fallback in transfer-send.ts, reimplemented locally (not imported --
+    // transfer-send.ts is not touched by this build) so an imprecise
+    // bank-code/name match can never send money to the wrong place.
+    const namesRoughlyMatch = (a: string, b: string) => {
+      const norm = (s: string) => s.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean).sort().join(" ");
+      return norm(a) === norm(b);
+    };
+
+    const enquiry = await otherBanksEnquiry(db, { bank, number: recipientNumber });
+    const resolvedName = enquiry.data?.data?.name || enquiry.data?.name;
+    if (enquiry.status >= 400 || !resolvedName) {
+      return json({ error: "Could not resolve the recipient account" }, 400);
+    }
+    if (!namesRoughlyMatch(resolvedName, recipientName)) {
+      return json({ error: "The recipient name doesn't match the account on file. Refusing to send.", resolved_name: resolvedName }, 409);
+    }
+
+    const reference = `9psbtest${Date.now()}`;
+    const transferRes = await walletOtherBanks(db, {
+      senderAccountNumber,
+      senderName,
+      bank,
+      recipientName: resolvedName,
+      recipientNumber,
+      amountNaira,
+      reference,
+      narration: "9PSB integration test transfer",
+    });
+
+    // NIBSS-style response codes 9PSB documents: 00 = approved. 51/61/91 =
+    // definitive rejection. 09/96/97/98/99 = ambiguous, requery required
+    // before assuming either way -- same "requery, don't guess" discipline
+    // already used for Flutterwave/Paystack transfer settlement.
+    const code = String(transferRes.data?.responseCode ?? transferRes.data?.code ?? "");
+    if (code === "00") {
+      return json({ success: true, status: "pending", reference, response_code: code });
+    }
+    if (code === "51" || code === "61" || code === "91") {
+      return json({ success: false, status: "rejected", reference, response_code: code, message: transferRes.data?.message }, 400);
+    }
+    if (["09", "96", "97", "98", "99"].includes(code) || transferRes.status >= 500) {
+      const requery = await walletRequery(db, { transactionId: reference });
+      return json({ success: true, status: "ambiguous_requeried", reference, response_code: code, requery_result: requery.data });
+    }
+    return json({ success: false, status: "unknown_response", reference, response_code: code, message: transferRes.data?.message }, 502);
+  }
+
+  // Fourth, unrelated action folded into this function for the same
+  // 100-function-cap reason as the others here -- admin-triggered, batched
+  // backfill that kicks off 9PSB provisioning's Call 1 for customers who
+  // were already KYC-verified before this integration shipped (new
+  // customers get this automatically via kyc-verify-nin's own hook; this
+  // covers everyone who verified earlier). Deliberately NOT automatic on
+  // deploy -- the owner runs this explicitly, only against closed-testing
+  // accounts, once ready. Small batches (p_limit, default 5) since each
+  // candidate costs a real call to 9PSB's sandbox; call repeatedly to work
+  // through the full backlog.
+  if (body.target === "9psb_backfill_provisioning") {
+    const db = adminClient();
+    if (!(await isServiceEnabled(db, "9psb_waas"))) {
+      return json({ error: "9PSB integration isn't enabled." }, 503);
+    }
+    if (!is9PsbConfigured()) {
+      return json({ error: "9PSB isn't configured." }, 503);
+    }
+    const limit = Math.max(1, Math.min(Number(body.limit) || 5, 20));
+
+    const { data: candidates, error: candidatesError } = await db.rpc(
+      "admin_list_kyc_verified_without_9psb_wallet",
+      { p_limit: limit },
+    );
+    if (candidatesError) throw candidatesError;
+
+    const results: Array<{ user_id: string; outcome: string; detail?: string }> = [];
+    for (const c of candidates ?? []) {
+      const verifiedIdentifier = String(c.nin || c.bvn || "").trim();
+      if (!/^\d{11}$/.test(verifiedIdentifier)) {
+        results.push({ user_id: c.user_id, outcome: "skipped", detail: "incomplete identity record" });
+        continue;
+      }
+      try {
+        const result = await startNinePsbProvisioning(db, {
+          userId: c.user_id,
+          verifiedIdentifier,
+          usingNin: !!c.nin,
+          phone: c.phone || undefined,
+        });
+        results.push({ user_id: c.user_id, outcome: result.outcome, detail: result.outcome === "error" ? result.message : undefined });
+      } catch (e) {
+        results.push({ user_id: c.user_id, outcome: "error", detail: e instanceof Error ? e.message : "unknown error" });
+      }
+    }
+
+    return json({ success: true, processed: results.length, results });
   }
 
   // Second, unrelated action folded into this function to stay under

@@ -17,6 +17,7 @@ import ExamPinPayScreen from '../screens/ExamPinPayScreen';
 import TVScreen from '../screens/TVScreen';
 import TVPayScreen from '../screens/TVPayScreen';
 import NinServicesScreen from '../screens/NinServicesScreen';
+import NinePsbActivateScreen from '../screens/NinePsbActivateScreen';
 import TravelEsimScreen from '../screens/TravelEsimScreen';
 import WalletFundingScreen from '../screens/WalletFundingScreen';
 import FundIntentScreen from '../screens/FundIntentScreen';
@@ -66,6 +67,7 @@ function MainStackScreen() {
       <MainStack.Screen name="TV" component={TVScreen} />
       <MainStack.Screen name="TVPay" component={TVPayScreen} />
       <MainStack.Screen name="NinServices" component={NinServicesScreen} />
+      <MainStack.Screen name="NinePsbActivate" component={NinePsbActivateScreen as React.ComponentType<any>} />
       <MainStack.Screen name="TravelEsim" component={TravelEsimScreen} />
       <MainStack.Screen name="WalletFunding" component={WalletFundingScreen} />
       <MainStack.Screen name="FundIntent" component={FundIntentScreen} />

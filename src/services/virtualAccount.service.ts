@@ -13,6 +13,9 @@ export interface VirtualAccount {
 export interface VirtualAccountResult {
   success: boolean;
   account?: VirtualAccount;
+  /** 9PSB only — Call 1 succeeded but setup isn't finished until verifyNinePsbOtp() completes Call 2. */
+  requiresOtp?: boolean;
+  transactionRef?: string;
   error?: string;
 }
 
@@ -59,7 +62,7 @@ export const virtualAccountService = {
    * is created for that provider; not needed on subsequent calls (already
    * provisioned).
    */
-  async create(provider: VirtualAccountProvider, bvnOrNin?: string): Promise<VirtualAccountResult> {
+  async create(provider: VirtualAccountProvider | '9psb', bvnOrNin?: string): Promise<VirtualAccountResult> {
     try {
       const { data, error } = await withTimeout(
         supabase.functions.invoke('create-virtual-account', {
@@ -76,6 +79,34 @@ export const virtualAccountService = {
       }
       if (!data?.success) {
         return { success: false, error: data?.error || 'Could not set up your account' };
+      }
+      if (data.requires_otp) {
+        return { success: true, requiresOtp: true, transactionRef: data.transaction_ref };
+      }
+      return { success: true, account: data.account };
+    } catch (e: unknown) {
+      return { success: false, error: safeErrorMessage(e, 'Network error') };
+    }
+  },
+
+  /** 9PSB Call 2 — same create-virtual-account function, now with the OTP that finishes wallet setup. */
+  async verifyNinePsbOtp(transactionRef: string, otp: string): Promise<VirtualAccountResult> {
+    try {
+      const { data, error } = await withTimeout(
+        supabase.functions.invoke('create-virtual-account', {
+          body: { provider: '9psb', transaction_ref: transactionRef, otp },
+        }),
+      );
+      if (error) {
+        let msg = safeErrorMessage(error, 'That code didn’t work');
+        try {
+          const body = await (error as any)?.context?.json?.();
+          if (body?.error) msg = String(body.error);
+        } catch {}
+        return { success: false, error: msg };
+      }
+      if (!data?.success) {
+        return { success: false, error: data?.error || 'That code didn’t work' };
       }
       return { success: true, account: data.account };
     } catch (e: unknown) {
