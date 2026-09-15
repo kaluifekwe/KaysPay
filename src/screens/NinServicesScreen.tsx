@@ -300,8 +300,7 @@ export function buildStandardSlipHtml(record: NinRecord, fullName: string, nin: 
   <style>
     body { font-family: -apple-system, Helvetica, Arial, sans-serif; padding: 32px; color: #111; }
     .card { position: relative; width: 540px; margin: 0 auto; border: 1px solid #cfe3d6; border-radius: 10px;
-            padding: 20px 24px; background: #f4faf6; overflow: hidden; }
-    .bg-pattern { position: absolute; inset: 0; background-image: repeating-linear-gradient(135deg, rgba(26,92,58,0.05) 0px, rgba(26,92,58,0.05) 1px, transparent 1px, transparent 6px); }
+            padding: 20px 24px; background: #cfe6d8; overflow: hidden; }
     .watermark { position: absolute; opacity: 0.14; left: 50%; top: 48%; transform: translate(-50%, -50%); }
     .vwm { position: absolute; font-size: 10.5px; letter-spacing: 3px; color: rgba(26,92,58,0.3); font-family: 'Courier New', monospace; white-space: nowrap; }
     .vwm-left { left: -20px; top: 50%; transform: translateY(-50%) rotate(-90deg); }
@@ -331,7 +330,6 @@ export function buildStandardSlipHtml(record: NinRecord, fullName: string, nin: 
   </style></head>
   <body>
     <div class="card">
-      <div class="bg-pattern"></div>
       ${emblemTag(emblemBase64, 'watermark', 300)}
       <div class="vwm vwm-left">${vwmText}</div>
       <div class="vwm vwm-right">${vwmText}</div>
@@ -368,7 +366,7 @@ export function buildStandardSlipHtml(record: NinRecord, fullName: string, nin: 
       </div>
       <div class="nin-row">
         <div class="nin-label">National Identification Number (NIN)</div>
-        <div class="nin-digits">${(record.nin || nin || '').replace(/(\d{3})(?=\d)/g, '$1 ')}</div>
+        <div class="nin-digits">${(record.nin || nin || '').replace(/^(\d{4})(\d{3})(\d{4})$/, '$1 $2 $3')}</div>
       </div>
     </div>
     <div class="fold-gap">
